@@ -9,6 +9,10 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeft,
+  ShoppingBag,
+  BarChart3,
+  Mail,
+  Megaphone,
 } from "lucide-react";
 
 const navSections = [
@@ -16,13 +20,22 @@ const navSections = [
     label: "Основни",
     items: [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
-      { href: "/analysis", icon: Search, label: "Анализ" },
-      { href: "/agents", icon: Sparkles, label: "Агенти" },
+      { href: "/analysis", icon: Search, label: "AI Анализ" },
+    ],
+  },
+  {
+    label: "Отчети",
+    items: [
+      { href: "/products", icon: ShoppingBag, label: "Продукти" },
+      { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
+      { href: "/email", icon: Mail, label: "Имейли" },
+      { href: "/ads", icon: Megaphone, label: "Реклама" },
     ],
   },
   {
     label: "Система",
     items: [
+      { href: "/agents", icon: Sparkles, label: "Агенти" },
       { href: "/settings", icon: Settings, label: "Настройки" },
     ],
   },

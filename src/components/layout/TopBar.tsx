@@ -5,7 +5,11 @@ import { Sun, Moon } from "lucide-react";
 
 const pageTitles: Record<string, string> = {
   "/": "Дашборд",
-  "/analysis": "Пазарен Анализ",
+  "/analysis": "AI Анализ",
+  "/products": "Продуктов Анализ",
+  "/traffic": "Трафик & SEO",
+  "/email": "Имейл Маркетинг",
+  "/ads": "Рекламен Отчет",
   "/agents": "Агенти",
   "/settings": "Настройки",
 };
