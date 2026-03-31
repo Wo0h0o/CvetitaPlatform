@@ -6,6 +6,12 @@
       "runtimeExecutable": "fnm",
       "runtimeArgs": ["exec", "--", "npm", "run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "tlz-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
     }
   ]
 }

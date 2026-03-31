@@ -76,11 +76,12 @@ const agents: {
   },
   {
     icon: MapPin,
-    name: "Пазар България",
-    description: "Конкуренти, тенденции, регулации — дълбок анализ на БГ пазара",
-    status: "soon",
-    color: "text-orange",
-    bg: "bg-orange-soft",
+    name: "Пазарен Разузнавач",
+    description: "Реално търсене в интернет · конкуренти, тенденции, възможности · Claude Opus",
+    status: "active",
+    href: "/agents/market-intel",
+    color: "text-blue",
+    bg: "bg-blue-soft",
   },
   {
     icon: Globe,
