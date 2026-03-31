@@ -1,5 +1,5 @@
 import { KpiGrid } from "@/components/dashboard/KpiGrid";
-import { MarketPulse } from "@/components/dashboard/MarketPulse";
+import { TopProducts } from "@/components/dashboard/TopProducts";
 import { NewsFeed } from "@/components/dashboard/NewsFeed";
 
 export default function DashboardPage() {
@@ -8,7 +8,7 @@ export default function DashboardPage() {
       <KpiGrid />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <MarketPulse />
+        <TopProducts />
         <NewsFeed />
       </div>
     </>

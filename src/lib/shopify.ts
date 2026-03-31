@@ -8,6 +8,7 @@ interface ShopifyOrder {
   financial_status: string;
   cancelled_at: string | null;
   created_at: string;
+  line_items: { title: string; quantity: number; price: string }[];
 }
 
 async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrder[]> {
@@ -19,7 +20,7 @@ async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrd
       created_at_max: dateMax,
       status: "any",
       limit: "250",
-      fields: "id,total_price,financial_status,cancelled_at,created_at",
+      fields: "id,total_price,financial_status,cancelled_at,created_at,line_items",
     }).toString();
 
   while (url) {
@@ -35,13 +36,11 @@ async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrd
     const data = await res.json();
     orders.push(...(data.orders || []));
 
-    // Cursor pagination via Link header
     const link = res.headers.get("Link");
     const nextMatch = link?.match(/<([^>]+)>;\s*rel="next"/);
     url = nextMatch ? nextMatch[1] : null;
   }
 
-  // Filter: keep paid/pending, exclude cancelled
   return orders.filter(
     (o) =>
       ["paid", "pending", "partially_paid", "authorized"].includes(o.financial_status) &&
@@ -88,4 +87,30 @@ export async function getShopifyKPIs() {
     orders: { value: todayCount, change: calcChange(todayCount, yesterdayCount) },
     aov: { value: Math.round(todayAov * 100) / 100, change: calcChange(todayAov, yesterdayAov) },
   };
+}
+
+export interface TopProduct {
+  title: string;
+  quantity: number;
+  revenue: number;
+}
+
+export async function getTopProducts(): Promise<TopProduct[]> {
+  const orders = await fetchOrders(startOfDay(0), endOfDay(0));
+
+  const productMap = new Map<string, { quantity: number; revenue: number }>();
+
+  for (const order of orders) {
+    for (const item of order.line_items || []) {
+      const existing = productMap.get(item.title) || { quantity: 0, revenue: 0 };
+      existing.quantity += item.quantity;
+      existing.revenue += parseFloat(item.price) * item.quantity;
+      productMap.set(item.title, existing);
+    }
+  }
+
+  return Array.from(productMap.entries())
+    .map(([title, data]) => ({ title, ...data }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
 }
