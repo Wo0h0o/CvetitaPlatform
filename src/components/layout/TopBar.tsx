@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { Sun, Moon } from "lucide-react";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 
 const pageTitles: Record<string, string> = {
   "/": "Дашборд",
@@ -14,6 +15,9 @@ const pageTitles: Record<string, string> = {
   "/settings": "Настройки",
 };
 
+// Pages where date range filter is relevant
+const dateFilterPages = ["/", "/products", "/traffic", "/email"];
+
 export function TopBar({
   sidebarCollapsed,
   darkMode,
@@ -25,12 +29,7 @@ export function TopBar({
 }) {
   const pathname = usePathname();
   const title = pageTitles[pathname] || "";
-
-  const today = new Date().toLocaleDateString("bg-BG", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+  const showDateFilter = dateFilterPages.includes(pathname);
 
   return (
     <header
@@ -43,13 +42,18 @@ export function TopBar({
         ${sidebarCollapsed ? "left-[72px]" : "left-[var(--sidebar-width)]"}
       `}
     >
-      <div>
+      <div className="flex-shrink-0">
         <h1 className="text-[17px] font-semibold text-text">{title}</h1>
       </div>
 
-      <div className="flex items-center gap-4">
-        <span className="text-[13px] text-text-3 capitalize">{today}</span>
+      {/* Date Range Picker - center */}
+      {showDateFilter && (
+        <div className="hidden md:flex">
+          <DateRangePicker />
+        </div>
+      )}
 
+      <div className="flex items-center gap-4 flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
           <span className="text-[12px] text-text-3">Live</span>
