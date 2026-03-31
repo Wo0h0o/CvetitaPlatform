@@ -18,7 +18,7 @@ export function KpiGrid() {
   const { data, isLoading } = useSWR<KpiResponse>(
     "/api/dashboard/kpis",
     fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: true }
+    { refreshInterval: 300_000, revalidateOnFocus: false }
   );
 
   if (isLoading || !data) {

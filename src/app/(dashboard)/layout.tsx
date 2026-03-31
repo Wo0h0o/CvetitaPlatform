@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { Shell } from "@/components/layout/Shell";
+import { DataProvider } from "@/providers/DataProvider";
 
 // Force dynamic rendering for all dashboard pages (they use useSearchParams for date filters)
 export const dynamic = "force-dynamic";
@@ -11,9 +12,11 @@ export default function DashboardLayout({
 }) {
   return (
     <Suspense>
-      <Shell>
-        <Suspense>{children}</Suspense>
-      </Shell>
+      <DataProvider>
+        <Shell>
+          <Suspense>{children}</Suspense>
+        </Shell>
+      </DataProvider>
     </Suspense>
   );
 }
