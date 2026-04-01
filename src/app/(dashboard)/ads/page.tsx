@@ -331,9 +331,16 @@ function AdCard({ ad, isSelected, isConfirming, onSelect, onConfirmStart, onConf
           {ad.score}
         </div>
         {ad.isVideo && (
-          <div className="absolute top-3 left-3 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center">
-            <Film size={14} className="text-white" />
-          </div>
+          <>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110">
+                <Play size={24} className="text-white ml-1" fill="white" />
+              </div>
+            </div>
+            <div className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/60 text-[10px] font-medium text-white flex items-center gap-1">
+              <Film size={10} /> Video
+            </div>
+          </>
         )}
       </div>
       <div className="p-4">
