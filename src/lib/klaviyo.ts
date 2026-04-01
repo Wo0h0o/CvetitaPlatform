@@ -30,7 +30,7 @@ export async function getKlaviyoMetrics() {
       klaviyoGet("/api/flows/") as Promise<{
         data?: { id: string; attributes: { name: string; status: string; trigger_type: string } }[];
       }>,
-      klaviyoGet("/api/campaigns/?filter=equals(messages.channel,'email')&sort=-send_time") as Promise<{
+      klaviyoGet("/api/campaigns/?filter=equals(messages.channel,'email')&sort=-updated_at") as Promise<{
         data?: {
           id: string;
           attributes: {
