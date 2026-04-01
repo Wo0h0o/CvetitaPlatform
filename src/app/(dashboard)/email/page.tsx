@@ -7,6 +7,7 @@ import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { Badge } from "@/components/shared/Badge";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { SortButton, FilterPill, type SortDir } from "@/components/shared/SortButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import {
   TrendingUp,
@@ -15,7 +16,6 @@ import {
   Eye,
   Zap,
   ArrowRight,
-  ArrowUpDown,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -62,21 +62,8 @@ const statusVariant: Record<string, "green" | "blue" | "orange" | "neutral"> = {
 };
 
 type CampaignFilter = "all" | "Sent" | "Draft" | "Scheduled";
-type CampaignSort = "date" | "revenue" | "openRate";
+type CampaignSort = "date" | "revenue" | "openRate" | "clickRate";
 type FlowFilter = "active" | "all";
-
-const campaignFilters: { id: CampaignFilter; label: string }[] = [
-  { id: "all", label: "Всички" },
-  { id: "Sent", label: "Sent" },
-  { id: "Draft", label: "Draft" },
-  { id: "Scheduled", label: "Planned" },
-];
-
-const campaignSorts: { id: CampaignSort; label: string }[] = [
-  { id: "date", label: "Дата" },
-  { id: "revenue", label: "Revenue" },
-  { id: "openRate", label: "Open Rate" },
-];
 
 export default function EmailPage() {
   const { queryString, label } = useDateRange();
@@ -88,8 +75,18 @@ export default function EmailPage() {
 
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilter>("all");
   const [campaignSort, setCampaignSort] = useState<CampaignSort>("date");
+  const [campaignSortDir, setCampaignSortDir] = useState<SortDir>("desc");
   const [flowFilter, setFlowFilter] = useState<FlowFilter>("active");
   const [showAllCampaigns, setShowAllCampaigns] = useState(false);
+
+  const toggleCampaignSort = (key: CampaignSort) => {
+    if (campaignSort === key) {
+      setCampaignSortDir(campaignSortDir === "desc" ? "asc" : "desc");
+    } else {
+      setCampaignSort(key);
+      setCampaignSortDir("desc");
+    }
+  };
 
   const filteredCampaigns = useMemo(() => {
     if (!data?.campaigns) return [];
@@ -99,20 +96,20 @@ export default function EmailPage() {
       campaigns = campaigns.filter((c) => c.status === campaignFilter);
     }
 
+    const mult = campaignSortDir === "desc" ? -1 : 1;
     campaigns = [...campaigns].sort((a, b) => {
       switch (campaignSort) {
-        case "revenue":
-          return b.revenue - a.revenue;
-        case "openRate":
-          return b.openRate - a.openRate;
+        case "revenue": return (a.revenue - b.revenue) * mult;
+        case "openRate": return (a.openRate - b.openRate) * mult;
+        case "clickRate": return (a.clickRate - b.clickRate) * mult;
         case "date":
         default:
-          return new Date(b.sendTime || b.name).getTime() - new Date(a.sendTime || a.name).getTime();
+          return (new Date(a.sendTime || 0).getTime() - new Date(b.sendTime || 0).getTime()) * mult;
       }
     });
 
     return campaigns;
-  }, [data?.campaigns, campaignFilter, campaignSort]);
+  }, [data?.campaigns, campaignFilter, campaignSort, campaignSortDir]);
 
   const visibleCampaigns = showAllCampaigns ? filteredCampaigns : filteredCampaigns.slice(0, 10);
   const totalCampaigns = filteredCampaigns.length;
@@ -132,17 +129,11 @@ export default function EmailPage() {
           <DateRangePicker />
         </PageHeader>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {[1, 2, 3, 4].map((i) => (
-            <KpiSkeleton key={i} />
-          ))}
+          {[1, 2, 3, 4].map((i) => <KpiSkeleton key={i} />)}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="lg:col-span-2">
-            <CardBody><Skeleton className="h-64 w-full" /></CardBody>
-          </Card>
-          <Card>
-            <CardBody><Skeleton className="h-64 w-full" /></CardBody>
-          </Card>
+          <Card className="lg:col-span-2"><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
+          <Card><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
         </div>
       </>
     );
@@ -158,9 +149,7 @@ export default function EmailPage() {
               <div className="w-14 h-14 rounded-2xl bg-blue-soft flex items-center justify-center mx-auto mb-4">
                 <Mail size={24} className="text-blue" />
               </div>
-              <h2 className="text-[18px] font-semibold text-text mb-2">
-                Klaviyo не е свързан
-              </h2>
+              <h2 className="text-[18px] font-semibold text-text mb-2">Klaviyo не е свързан</h2>
               <p className="text-[14px] text-text-2 max-w-md mx-auto mb-6">
                 Добави Klaviyo Private API Key в Vercel Environment Variables.
               </p>
@@ -197,16 +186,8 @@ export default function EmailPage() {
           value={`${fmt(data?.totalRevenue || 0)} EUR`}
           sub={`Кампании: ${fmt(data?.campaignRevenue || 0)} | Flows: ${fmt(data?.flowRevenue || 0)}`}
         />
-        <MiniKpi
-          icon={Eye}
-          label="Open Rate"
-          value={pct(data?.avgOpenRate || 0)}
-        />
-        <MiniKpi
-          icon={MousePointerClick}
-          label="Click Rate"
-          value={pct(data?.avgClickRate || 0)}
-        />
+        <MiniKpi icon={Eye} label="Open Rate" value={pct(data?.avgOpenRate || 0)} />
+        <MiniKpi icon={MousePointerClick} label="Click Rate" value={pct(data?.avgClickRate || 0)} />
         <MiniKpi
           icon={Zap}
           label="Активни Flows"
@@ -219,66 +200,51 @@ export default function EmailPage() {
         {/* Campaigns */}
         <Card className="lg:col-span-2">
           <CardHeader
-            action={
-              <span className="text-[12px] text-text-3">
-                {totalCampaigns} кампании
-              </span>
-            }
+            action={<span className="text-[12px] text-text-3">{totalCampaigns} кампании</span>}
           >
             Кампании
           </CardHeader>
           <CardBody>
-            {/* Filters + Sort */}
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              {/* Status filter pills */}
-              <div className="flex items-center gap-1">
-                {campaignFilters.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => { setCampaignFilter(f.id); setShowAllCampaigns(false); }}
-                    className={`
-                      px-3 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 cursor-pointer
-                      ${campaignFilter === f.id
-                        ? "bg-accent text-white shadow-sm"
-                        : "text-text-3 hover:text-text-2 hover:bg-surface-2"
-                      }
-                    `}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Sort pills */}
-              <div className="flex items-center gap-1 ml-auto">
-                <ArrowUpDown size={12} className="text-text-3" />
-                {campaignSorts.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setCampaignSort(s.id)}
-                    className={`
-                      px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 cursor-pointer
-                      ${campaignSort === s.id
-                        ? "bg-surface-2 text-text border border-border-strong"
-                        : "text-text-3 hover:text-text-2"
-                      }
-                    `}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-1 mb-4">
+              {(
+                [
+                  { id: "all", label: "Всички" },
+                  { id: "Sent", label: "Sent" },
+                  { id: "Draft", label: "Draft" },
+                  { id: "Scheduled", label: "Planned" },
+                ] as { id: CampaignFilter; label: string }[]
+              ).map((f) => (
+                <FilterPill
+                  key={f.id}
+                  label={f.label}
+                  value={f.id}
+                  currentValue={campaignFilter}
+                  onChange={(v) => { setCampaignFilter(v); setShowAllCampaigns(false); }}
+                />
+              ))}
             </div>
 
             {/* Table */}
             <div className="overflow-x-auto -mx-5 px-5">
               <div className="min-w-[500px]">
-                <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
-                  <div className="col-span-5">Кампания</div>
-                  <div className="col-span-2 text-right">Revenue</div>
-                  <div className="col-span-2 text-right">Open</div>
-                  <div className="col-span-2 text-right">Click</div>
-                  <div className="col-span-1 text-right">Статус</div>
+                {/* Header with sort buttons */}
+                <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
+                  <div className="col-span-5 text-[11px] font-medium uppercase tracking-wider text-text-3 flex items-center">
+                    Кампания
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <SortButton label="Revenue" sortKey="revenue" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <SortButton label="Open" sortKey="openRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <SortButton label="Click" sortKey="clickRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
+                  </div>
+                  <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3 text-right flex items-center justify-end">
+                    Статус
+                  </div>
                 </div>
 
                 {visibleCampaigns.map((c, i) => (
@@ -287,15 +253,10 @@ export default function EmailPage() {
                     className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
                   >
                     <div className="col-span-5 min-w-0">
-                      <div className="text-[13px] font-medium text-text truncate">
-                        {c.name}
-                      </div>
+                      <div className="text-[13px] font-medium text-text truncate">{c.name}</div>
                       {c.sendTime && (
                         <div className="text-[11px] text-text-3">
-                          {new Date(c.sendTime).toLocaleDateString("bg-BG", {
-                            day: "numeric",
-                            month: "short",
-                          })}
+                          {new Date(c.sendTime).toLocaleDateString("bg-BG", { day: "numeric", month: "short" })}
                           {" | "}
                           {c.recipients.toLocaleString("bg-BG")} получатели
                         </div>
@@ -311,22 +272,17 @@ export default function EmailPage() {
                       {c.recipients > 0 ? pct(c.clickRate) : "—"}
                     </div>
                     <div className="col-span-1 flex justify-end">
-                      <Badge variant={statusVariant[c.status] || "neutral"}>
-                        {c.status}
-                      </Badge>
+                      <Badge variant={statusVariant[c.status] || "neutral"}>{c.status}</Badge>
                     </div>
                   </div>
                 ))}
 
                 {visibleCampaigns.length === 0 && (
-                  <div className="text-center py-8 text-text-3 text-[13px]">
-                    Няма кампании
-                  </div>
+                  <div className="text-center py-8 text-text-3 text-[13px]">Няма кампании</div>
                 )}
               </div>
             </div>
 
-            {/* Show more/less */}
             {!showAllCampaigns && totalCampaigns > 10 && (
               <button
                 onClick={() => setShowAllCampaigns(true)}
@@ -351,21 +307,8 @@ export default function EmailPage() {
           <CardHeader
             action={
               <div className="flex items-center gap-1">
-                {(["active", "all"] as FlowFilter[]).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFlowFilter(f)}
-                    className={`
-                      px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 cursor-pointer
-                      ${flowFilter === f
-                        ? "bg-accent text-white shadow-sm"
-                        : "text-text-3 hover:text-text-2 hover:bg-surface-2"
-                      }
-                    `}
-                  >
-                    {f === "active" ? "Active" : "Всички"}
-                  </button>
-                ))}
+                <FilterPill label="Active" value="active" currentValue={flowFilter} onChange={setFlowFilter} />
+                <FilterPill label="Всички" value="all" currentValue={flowFilter} onChange={setFlowFilter} />
               </div>
             }
           >
@@ -374,18 +317,13 @@ export default function EmailPage() {
           <CardBody>
             <div className="space-y-1">
               {filteredFlows.map((f, i) => (
-                <div
-                  key={i}
-                  className="py-3 px-2 rounded-lg hover:bg-surface-2 transition-colors"
-                >
+                <div key={i} className="py-3 px-2 rounded-lg hover:bg-surface-2 transition-colors">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="flex items-center justify-center w-5 h-5 rounded-md bg-accent-soft text-accent text-[10px] font-bold flex-shrink-0">
                         {i + 1}
                       </div>
-                      <span className="text-[13px] font-medium text-text truncate">
-                        {f.name}
-                      </span>
+                      <span className="text-[13px] font-medium text-text truncate">{f.name}</span>
                     </div>
                     <span className="text-[13px] font-semibold text-text flex-shrink-0">
                       {fmt(f.revenue)} EUR
@@ -398,11 +336,8 @@ export default function EmailPage() {
                   </div>
                 </div>
               ))}
-
               {filteredFlows.length === 0 && (
-                <div className="text-center py-8 text-text-3 text-[13px]">
-                  Няма flow данни
-                </div>
+                <div className="text-center py-8 text-text-3 text-[13px]">Няма flow данни</div>
               )}
             </div>
           </CardBody>
@@ -413,30 +348,18 @@ export default function EmailPage() {
 }
 
 function MiniKpi({
-  icon: Icon,
-  label,
-  value,
-  sub,
+  icon: Icon, label, value, sub,
 }: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  sub?: string;
+  icon: React.ElementType; label: string; value: string; sub?: string;
 }) {
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">
-          {label}
-        </span>
+        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
       </div>
-      <div className="text-[22px] font-bold tracking-tight text-text">
-        {value}
-      </div>
-      {sub && (
-        <div className="text-[11px] text-text-3 mt-1">{sub}</div>
-      )}
+      <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
+      {sub && <div className="text-[11px] text-text-3 mt-1">{sub}</div>}
     </div>
   );
 }

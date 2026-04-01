@@ -8,21 +8,18 @@ import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { SortButton, type SortDir } from "@/components/shared/SortButton";
 import {
   ShoppingCart,
   Repeat,
   Package,
   TrendingUp,
   Search,
-  ArrowUpDown,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type SortKey = "revenue" | "quantity" | "orders" | "avgPrice";
-type SortDir = "asc" | "desc";
 
 interface Product {
   title: string;
@@ -183,12 +180,20 @@ export default function ProductsPage() {
               <div className="min-w-[600px]">
                 {/* Table header with sorting */}
                 <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
-                  <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3">#</div>
-                  <div className="col-span-4 text-[11px] font-medium uppercase tracking-wider text-text-3">Продукт</div>
-                  <SortHeader label="Бройки" col="col-span-2" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  <SortHeader label="Revenue" col="col-span-2" sortKey="revenue" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  <SortHeader label="Поръчки" col="col-span-1" sortKey="orders" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  <SortHeader label="Ср. цена" col="col-span-2" sortKey="avgPrice" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3 flex items-center">#</div>
+                  <div className="col-span-4 text-[11px] font-medium uppercase tracking-wider text-text-3 flex items-center">Продукт</div>
+                  <div className="col-span-2 flex justify-end">
+                    <SortButton label="Бройки" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <SortButton label="Revenue" sortKey="revenue" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <SortButton label="Пор." sortKey="orders" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <SortButton label="Ср. цена" sortKey="avgPrice" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  </div>
                 </div>
 
                 {/* Rows */}
@@ -274,35 +279,3 @@ function KpiWithChange({
   );
 }
 
-function SortHeader({
-  label,
-  col,
-  sortKey: key,
-  currentKey,
-  dir,
-  onToggle,
-}: {
-  label: string;
-  col: string;
-  sortKey: SortKey;
-  currentKey: SortKey;
-  dir: SortDir;
-  onToggle: (key: SortKey) => void;
-}) {
-  const isActive = currentKey === key;
-  return (
-    <button
-      onClick={() => onToggle(key)}
-      className={`${col} text-right text-[11px] font-medium uppercase tracking-wider flex items-center justify-end gap-1 cursor-pointer ${
-        isActive ? "text-accent" : "text-text-3 hover:text-text-2"
-      }`}
-    >
-      {label}
-      {isActive ? (
-        dir === "desc" ? <ChevronDown size={12} /> : <ChevronUp size={12} />
-      ) : (
-        <ArrowUpDown size={10} className="opacity-40" />
-      )}
-    </button>
-  );
-}
