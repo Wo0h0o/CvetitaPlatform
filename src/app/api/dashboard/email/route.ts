@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getKlaviyoMetrics } from "@/lib/klaviyo";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!process.env.KLAVIYO_API_KEY) {
     return NextResponse.json({ error: "Klaviyo not configured" });
   }
 
+  const preset = request.nextUrl.searchParams.get("preset") || "30d";
+
   try {
-    const data = await getKlaviyoMetrics();
+    const data = await getKlaviyoMetrics(preset);
 
     if (!data) {
       return NextResponse.json({ error: "Klaviyo fetch failed" });
