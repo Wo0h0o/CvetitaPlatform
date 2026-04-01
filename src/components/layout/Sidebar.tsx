@@ -13,6 +13,7 @@ import {
   BarChart3,
   Mail,
   Megaphone,
+  Sunrise,
 } from "lucide-react";
 
 interface NavChild {
@@ -37,6 +38,7 @@ const navSections: NavSection[] = [
     label: "Основни",
     items: [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
+      { href: "/morning-report", icon: Sunrise, label: "Сутрешен Доклад" },
       { href: "/analysis", icon: Search, label: "AI Анализ" },
     ],
   },
@@ -53,6 +55,7 @@ const navSections: NavSection[] = [
         children: [
           { href: "/ads", label: "Реклами" },
           { href: "/ads/campaigns", label: "Кампании" },
+          { href: "/agents/ads-intel", label: "AI Стратег" },
         ],
       },
     ],

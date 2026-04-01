@@ -69,9 +69,10 @@ const agents: {
   },
   {
     icon: Megaphone,
-    name: "Рекламен Отчет",
-    description: "ROAS, CPA, spend от Meta Ads и Google Ads по кампания",
-    status: "soon",
+    name: "Рекламен Стратег",
+    description: "AI анализ на реклами · scores, фуния, бюджет, creatives · Claude Opus",
+    status: "active",
+    href: "/agents/ads-intel",
     color: "text-orange",
     bg: "bg-orange-soft",
   },
@@ -102,11 +103,12 @@ const agents: {
   },
   {
     icon: Sunrise,
-    name: "Автоматичен Сутрешен Доклад",
-    description: "Ежедневен имейл с новини, метрики и действия за деня",
-    status: "planned",
-    color: "text-orange",
-    bg: "bg-orange-soft",
+    name: "Сутрешен Доклад",
+    description: "AI доклад с реални данни от Shopify, Meta Ads, GA4, Klaviyo",
+    status: "active",
+    href: "/morning-report",
+    color: "text-accent",
+    bg: "bg-accent-soft",
   },
 ];
 

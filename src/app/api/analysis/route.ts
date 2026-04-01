@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { analysisPrompts } from "@/lib/prompts";
+import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
 
 // Using Node.js runtime for env var access; switch to edge on Vercel if needed
 export const maxDuration = 30;
@@ -17,7 +18,10 @@ export async function POST(req: NextRequest) {
     return new Response("CLAUDE_API_KEY not configured", { status: 500 });
   }
 
-  const prompt = promptFn(country);
+  const baseUrl = req.nextUrl.origin;
+  const ctx = await fetchBusinessContext(baseUrl);
+  const businessContext = formatContextForPrompt(ctx);
+  const prompt = promptFn(country) + "\n\n" + businessContext;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
