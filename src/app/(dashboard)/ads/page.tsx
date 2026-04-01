@@ -109,9 +109,8 @@ export default function AdsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
 
-  const closeModal = useCallback(() => { setSelectedId(null); setPlayingVideoId(null); }, []);
+  const closeModal = useCallback(() => { setSelectedId(null); }, []);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -311,9 +310,7 @@ export default function AdsPage() {
                   ad={ad}
                   isSelected={selectedId === ad.id}
                   isConfirming={confirmingId === ad.id}
-                  isPlaying={playingVideoId === ad.id}
                   onSelect={() => setSelectedId(selectedId === ad.id ? null : ad.id)}
-                  onPlayVideo={() => setPlayingVideoId(playingVideoId === ad.id ? null : ad.id)}
                   onConfirmStart={() => setConfirmingId(ad.id)}
                   onConfirmCancel={() => setConfirmingId(null)}
                   onToggleStatus={(status) => handleToggleStatus(ad.id, status)}
@@ -341,9 +338,9 @@ export default function AdsPage() {
 
 // ---- Ad Card ----
 
-function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo, onConfirmStart, onConfirmCancel, onToggleStatus }: {
-  ad: AdItem; isSelected: boolean; isConfirming: boolean; isPlaying: boolean;
-  onSelect: () => void; onPlayVideo: () => void; onConfirmStart: () => void; onConfirmCancel: () => void;
+function AdCard({ ad, isSelected, isConfirming, onSelect, onConfirmStart, onConfirmCancel, onToggleStatus }: {
+  ad: AdItem; isSelected: boolean; isConfirming: boolean;
+  onSelect: () => void; onConfirmStart: () => void; onConfirmCancel: () => void;
   onToggleStatus: (status: "ACTIVE" | "PAUSED") => void;
 }) {
   const scoreStyle = getScoreStyle(ad.score);
@@ -353,18 +350,9 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
   return (
     <Card hover className={isSelected ? "ring-2 ring-accent" : ""}>
       <div className="relative">
-        {/* Inline video player */}
-        {isPlaying && ad.videoUrl ? (
-          <video
-            src={ad.videoUrl}
-            controls
-            autoPlay
-            poster={ad.thumbnail || undefined}
-            className="w-full rounded-t-xl bg-black aspect-video object-contain"
-            onError={(e) => { (e.target as HTMLVideoElement).poster = ""; (e.target as HTMLVideoElement).style.display = "none"; }}
-          />
-        ) : (
-          <div className="cursor-pointer" onClick={ad.isVideo && ad.videoUrl ? onPlayVideo : onSelect}>
+        {/* Thumbnail — click opens modal (video plays there) */}
+        {(
+          <div className="cursor-pointer" onClick={onSelect}>
             {ad.thumbnail ? (
               <img
                 src={ad.thumbnail}
@@ -379,8 +367,8 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
             )}
             {ad.isVideo && ad.videoUrl && (
               <>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
                     <Play size={24} className="text-white ml-1" fill="white" />
                   </div>
                 </div>
