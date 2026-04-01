@@ -369,11 +369,11 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
               <img
                 src={ad.thumbnail}
                 alt=""
-                className="w-full object-cover rounded-t-xl bg-surface-2 aspect-[4/3]"
+                className="w-full object-contain rounded-t-xl bg-surface-2 max-h-[350px]"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             ) : (
-              <div className="w-full aspect-[4/3] rounded-t-xl bg-surface-2 flex items-center justify-center">
+              <div className="w-full h-[160px] rounded-t-xl bg-surface-2 flex items-center justify-center">
                 <ImageIcon size={32} className="text-text-3" />
               </div>
             )}
@@ -481,7 +481,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
             <img
               src={ad.thumbnail}
               alt=""
-              className="w-full rounded-xl bg-surface-2 aspect-[4/3] object-cover"
+              className="w-full rounded-xl bg-surface-2 max-h-[400px] object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           ) : null}
