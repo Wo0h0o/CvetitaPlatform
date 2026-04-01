@@ -1,12 +1,13 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { ChangeBadge } from "@/components/shared/Badge";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { useDateRange } from "@/hooks/useDateRange";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import {
   ShoppingCart,
   Repeat,
@@ -106,6 +107,10 @@ export default function ProductsPage() {
 
   return (
     <>
+      <PageHeader title="Продуктов Анализ">
+        <DateRangePicker />
+      </PageHeader>
+
       {/* KPIs with comparison */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <KpiWithChange icon={TrendingUp} label={`Revenue (${label})`} value={`${s?.totalRevenue?.toLocaleString("bg-BG")} EUR`} change={ch?.revenue} />
@@ -173,47 +178,52 @@ export default function ProductsPage() {
               />
             </div>
 
-            {/* Table header with sorting */}
-            <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
-              <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3">#</div>
-              <div className="col-span-4 text-[11px] font-medium uppercase tracking-wider text-text-3">Продукт</div>
-              <SortHeader label="Бройки" col="col-span-2" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-              <SortHeader label="Revenue" col="col-span-2" sortKey="revenue" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-              <SortHeader label="Поръчки" col="col-span-1" sortKey="orders" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-              <SortHeader label="Ср. цена" col="col-span-2" sortKey="avgPrice" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-            </div>
+            {/* Scrollable table wrapper for mobile */}
+            <div className="overflow-x-auto -mx-5 px-5">
+              <div className="min-w-[600px]">
+                {/* Table header with sorting */}
+                <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
+                  <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3">#</div>
+                  <div className="col-span-4 text-[11px] font-medium uppercase tracking-wider text-text-3">Продукт</div>
+                  <SortHeader label="Бройки" col="col-span-2" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  <SortHeader label="Revenue" col="col-span-2" sortKey="revenue" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  <SortHeader label="Поръчки" col="col-span-1" sortKey="orders" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                  <SortHeader label="Ср. цена" col="col-span-2" sortKey="avgPrice" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                </div>
 
-            {/* Rows */}
-            {filteredProducts.map((p, i) => (
-              <div
-                key={p.title}
-                className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
-              >
-                <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
-                <div className="col-span-4 text-[13px] font-medium text-text truncate">{p.title}</div>
-                <div className="col-span-2 text-right text-[13px] text-text-2">{p.quantity}</div>
-                <div className="col-span-2 text-right text-[14px] font-semibold text-text">{p.revenue.toFixed(2)}</div>
-                <div className="col-span-1 text-right text-[13px] text-text-2">{p.orders}</div>
-                <div className="col-span-2 text-right text-[12px] text-text-3">{p.avgPrice.toFixed(2)} EUR</div>
+                {/* Rows */}
+                {filteredProducts.map((p, i) => (
+                  <div
+                    key={p.title}
+                    className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
+                  >
+                    <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
+                    <div className="col-span-4 text-[13px] font-medium text-text truncate">{p.title}</div>
+                    <div className="col-span-2 text-right text-[13px] text-text-2">{p.quantity}</div>
+                    <div className="col-span-2 text-right text-[14px] font-semibold text-text">{p.revenue.toFixed(2)}</div>
+                    <div className="col-span-1 text-right text-[13px] text-text-2">{p.orders}</div>
+                    <div className="col-span-2 text-right text-[12px] text-text-3">{p.avgPrice.toFixed(2)} EUR</div>
+                  </div>
+                ))}
+
+                {!showAll && totalCount > 15 && (
+                  <button
+                    onClick={() => setShowAll(true)}
+                    className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
+                  >
+                    Покажи всички {totalCount} продукта
+                  </button>
+                )}
+                {showAll && totalCount > 15 && (
+                  <button
+                    onClick={() => setShowAll(false)}
+                    className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
+                  >
+                    Покажи по-малко
+                  </button>
+                )}
               </div>
-            ))}
-
-            {!showAll && totalCount > 15 && (
-              <button
-                onClick={() => setShowAll(true)}
-                className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
-              >
-                Покажи всички {totalCount} продукта
-              </button>
-            )}
-            {showAll && totalCount > 15 && (
-              <button
-                onClick={() => setShowAll(false)}
-                className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
-              >
-                Покажи по-малко
-              </button>
-            )}
+            </div>
           </CardBody>
         </Card>
 

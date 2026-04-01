@@ -1,57 +1,38 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { Sun, Moon } from "lucide-react";
-import { DateRangePicker } from "@/components/shared/DateRangePicker";
-
-const pageTitles: Record<string, string> = {
-  "/": "Дашборд",
-  "/analysis": "AI Анализ",
-  "/products": "Продуктов Анализ",
-  "/traffic": "Трафик & SEO",
-  "/email": "Имейл Маркетинг",
-  "/ads": "Рекламен Отчет",
-  "/agents": "Агенти",
-  "/settings": "Настройки",
-};
-
-// Pages where date range filter is relevant
-const dateFilterPages = ["/", "/products", "/traffic", "/email"];
+import { Sun, Moon, Menu } from "lucide-react";
 
 export function TopBar({
   sidebarCollapsed,
   darkMode,
   onToggleDarkMode,
+  onBurgerClick,
 }: {
   sidebarCollapsed: boolean;
   darkMode: boolean;
   onToggleDarkMode: () => void;
+  onBurgerClick: () => void;
 }) {
-  const pathname = usePathname();
-  const title = pageTitles[pathname] || "";
-  const showDateFilter = dateFilterPages.includes(pathname);
-
   return (
     <header
       className={`
         fixed top-0 right-0 z-30
         h-[var(--topbar-height)] bg-surface/80 backdrop-blur-xl
         border-b border-border
-        flex items-center justify-between px-6
+        flex items-center justify-between px-4 md:px-6
         transition-all duration-300 ease-out
-        ${sidebarCollapsed ? "left-[72px]" : "left-[var(--sidebar-width)]"}
+        left-0 ${sidebarCollapsed ? "md:left-[72px]" : "md:left-[var(--sidebar-width)]"}
       `}
     >
-      <div className="flex-shrink-0">
-        <h1 className="text-[17px] font-semibold text-text">{title}</h1>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <button
+          onClick={onBurgerClick}
+          className="md:hidden p-2.5 -ml-2 rounded-lg text-text-2 hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
+          aria-label="Toggle menu"
+        >
+          <Menu size={20} />
+        </button>
       </div>
-
-      {/* Date Range Picker - center */}
-      {showDateFilter && (
-        <div className="hidden md:flex">
-          <DateRangePicker />
-        </div>
-      )}
 
       <div className="flex items-center gap-4 flex-shrink-0">
         <div className="flex items-center gap-1.5">
@@ -61,7 +42,7 @@ export function TopBar({
 
         <button
           onClick={onToggleDarkMode}
-          className="p-2 rounded-lg text-text-3 hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
+          className="p-2.5 rounded-lg text-text-3 hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
         >
           {darkMode ? <Sun size={18} /> : <Moon size={18} />}
         </button>

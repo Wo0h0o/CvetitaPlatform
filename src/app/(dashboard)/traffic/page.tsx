@@ -4,6 +4,8 @@ import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { Users, MousePointerClick, Eye, ShoppingCart, Monitor, Smartphone, Tablet } from "lucide-react";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -67,6 +69,10 @@ export default function TrafficPage() {
 
   return (
     <>
+      <PageHeader title="Трафик & SEO">
+        <DateRangePicker />
+      </PageHeader>
+
       {/* Overview KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <MiniKpi icon={Eye} label="Сесии (30д)" value={ov?.sessions?.toLocaleString("bg-BG") || "0"} />
@@ -141,25 +147,29 @@ export default function TrafficPage() {
       <Card>
         <CardHeader>Топ 10 страници</CardHeader>
         <CardBody>
-          <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
-            <div className="col-span-1">#</div>
-            <div className="col-span-6">Страница</div>
-            <div className="col-span-2 text-right">Сесии</div>
-            <div className="col-span-2 text-right">Engagement</div>
-            <div className="col-span-1 text-right">Conv.</div>
-          </div>
-          {data?.topPages?.map((p, i) => (
-            <div
-              key={p.page}
-              className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
-            >
-              <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
-              <div className="col-span-6 text-[13px] text-text truncate font-mono">{p.page}</div>
-              <div className="col-span-2 text-right text-[13px] text-text-2">{p.sessions.toLocaleString("bg-BG")}</div>
-              <div className="col-span-2 text-right text-[13px] text-text-2">{(p.engagementRate * 100).toFixed(1)}%</div>
-              <div className="col-span-1 text-right text-[13px] font-semibold text-text">{p.conversions}</div>
+          <div className="overflow-x-auto -mx-5 px-5">
+            <div className="min-w-[600px]">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
+                <div className="col-span-1">#</div>
+                <div className="col-span-6">Страница</div>
+                <div className="col-span-2 text-right">Сесии</div>
+                <div className="col-span-2 text-right">Engagement</div>
+                <div className="col-span-1 text-right">Conv.</div>
+              </div>
+              {data?.topPages?.map((p, i) => (
+                <div
+                  key={p.page}
+                  className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
+                >
+                  <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
+                  <div className="col-span-6 text-[13px] text-text truncate font-mono">{p.page}</div>
+                  <div className="col-span-2 text-right text-[13px] text-text-2">{p.sessions.toLocaleString("bg-BG")}</div>
+                  <div className="col-span-2 text-right text-[13px] text-text-2">{(p.engagementRate * 100).toFixed(1)}%</div>
+                  <div className="col-span-1 text-right text-[13px] font-semibold text-text">{p.conversions}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </CardBody>
       </Card>
     </>

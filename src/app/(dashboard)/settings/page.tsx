@@ -2,10 +2,13 @@
 
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Save } from "lucide-react";
 
 export default function SettingsPage() {
   return (
+    <>
+    <PageHeader title="Настройки" />
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
         <CardHeader>Бизнес профил</CardHeader>
@@ -55,6 +58,7 @@ export default function SettingsPage() {
         </CardBody>
       </Card>
     </div>
+    </>
   );
 }
 

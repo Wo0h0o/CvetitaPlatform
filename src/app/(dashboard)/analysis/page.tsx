@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, CardBody } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Search, Loader2, Copy, Check } from "lucide-react";
 
 const analysisTypes = [
@@ -68,6 +69,8 @@ export default function AnalysisPage() {
 
   return (
     <>
+      <PageHeader title="AI Анализ" />
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
         {analysisTypes.map((type) => (
@@ -102,7 +105,7 @@ export default function AnalysisPage() {
         <Button
           onClick={runAnalysis}
           disabled={loading}
-          className="ml-auto"
+          className="ml-auto w-full md:w-auto"
         >
           {loading ? (
             <Loader2 size={16} className="animate-spin" />

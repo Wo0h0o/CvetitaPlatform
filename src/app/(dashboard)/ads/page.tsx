@@ -1,8 +1,11 @@
 import { Card, CardBody } from "@/components/shared/Card";
 import { Megaphone, ArrowRight } from "lucide-react";
+import { PageHeader } from "@/components/shared/PageHeader";
 
 export default function AdsPage() {
   return (
+    <>
+    <PageHeader title="Рекламен Отчет" />
     <Card>
       <CardBody>
         <div className="text-center py-16">
@@ -35,5 +38,6 @@ export default function AdsPage() {
         </div>
       </CardBody>
     </Card>
+    </>
   );
 }

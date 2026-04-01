@@ -5,6 +5,8 @@ import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { Badge } from "@/components/shared/Badge";
 import { Users, Zap, Mail, ArrowRight, Send } from "lucide-react";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -86,6 +88,10 @@ export default function EmailPage() {
 
   return (
     <>
+      <PageHeader title="Имейл Маркетинг">
+        <DateRangePicker />
+      </PageHeader>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <MiniKpi icon={Users} label="Абонати" value={data?.totalSubscribers?.toLocaleString("bg-BG") || "0"} />

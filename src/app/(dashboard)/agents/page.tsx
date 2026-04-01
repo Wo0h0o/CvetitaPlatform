@@ -1,5 +1,6 @@
 import { Card } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
+import { PageHeader } from "@/components/shared/PageHeader";
 import {
   BarChart3,
   Mail,
@@ -112,6 +113,7 @@ const agents: {
 export default function AgentsPage() {
   return (
     <>
+      <PageHeader title="Агенти" />
       <p className="text-text-2 text-[14px] mb-6">
         Модули на платформата — активни, в разработка и планирани
       </p>

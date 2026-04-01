@@ -92,3 +92,21 @@ body {
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* Mobile sidebar backdrop */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease-out;
+}
+.sidebar-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dark .sidebar-backdrop.open {
+  background: rgba(0, 0, 0, 0.6);
+}
