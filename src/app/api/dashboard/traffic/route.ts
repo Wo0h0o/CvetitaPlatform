@@ -77,9 +77,9 @@ export async function GET() {
 
     const [channelRows, pageRows, deviceRows, overviewRows] = await Promise.all([
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
-      runReport(["sessions", "engagementRate", "conversions"], ["pagePath"], start, end, 10),
+      runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
       runReport(["sessions", "totalUsers"], ["deviceCategory"], start, end),
-      runReport(["sessions", "totalUsers", "engagementRate", "conversions", "ecommercePurchases"], [], start, end),
+      runReport(["sessions", "totalUsers", "engagementRate", "keyEvents", "ecommercePurchases"], [], start, end),
     ]);
 
     const channels = channelRows.map((r) => ({
