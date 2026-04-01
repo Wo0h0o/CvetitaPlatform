@@ -8,10 +8,11 @@ import { LoadingScreen } from "@/components/layout/LoadingScreen";
 // This ensures the loading screen only shows on page load, not on tab switching
 let hasPreloaded = false;
 
-// Critical APIs to prefetch — these feed the main dashboard components
+// Critical APIs to prefetch — these feed dashboard + subpages
 const CRITICAL_APIS = [
   "/api/dashboard/kpis",
   "/api/dashboard/top-products",
+  "/api/dashboard/products-analytics?preset=30d",
   "/api/dashboard/traffic",
   "/api/dashboard/email",
 ];
