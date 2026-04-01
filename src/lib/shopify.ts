@@ -112,6 +112,7 @@ export interface ShopifyProduct {
     sku: string;
     inventory_quantity: number;
     option1: string | null;
+    inventory_management: string | null;
   }[];
 }
 

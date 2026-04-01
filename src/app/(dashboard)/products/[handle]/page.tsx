@@ -27,6 +27,7 @@ interface Variant {
   compareAtPrice: string | null;
   sku: string;
   inventory: number;
+  tracked: boolean;
 }
 
 interface ProductDetail {
@@ -240,9 +241,13 @@ export default function ProductDetailPage({
                       </div>
                       <div className="col-span-2 text-right text-[12px] text-text-3">{v.sku || "—"}</div>
                       <div className="col-span-2 text-right">
-                        <Badge variant={v.inventory > 0 ? "green" : "neutral"}>
-                          {v.inventory > 0 ? v.inventory : "Out"}
-                        </Badge>
+                        {v.tracked ? (
+                          <Badge variant={v.inventory > 0 ? "green" : "neutral"}>
+                            {v.inventory > 0 ? v.inventory : "Out"}
+                          </Badge>
+                        ) : (
+                          <span className="text-[12px] text-text-3">Неограничено</span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -295,9 +300,13 @@ export default function ProductDetailPage({
                 )}
                 <div className="flex justify-between text-[13px]">
                   <span className="text-text-3">Наличност</span>
-                  <Badge variant={product.variants[0].inventory > 0 ? "green" : "neutral"}>
-                    {product.variants[0].inventory > 0 ? `${product.variants[0].inventory} бр.` : "Изчерпан"}
-                  </Badge>
+                  {product.variants[0].tracked ? (
+                    <Badge variant={product.variants[0].inventory > 0 ? "green" : "neutral"}>
+                      {product.variants[0].inventory > 0 ? `${product.variants[0].inventory} бр.` : "Изчерпан"}
+                    </Badge>
+                  ) : (
+                    <span className="text-[13px] font-medium text-accent">Винаги наличен</span>
+                  )}
                 </div>
                 <div className="flex justify-between text-[13px]">
                   <span className="text-text-3">Добавен</span>

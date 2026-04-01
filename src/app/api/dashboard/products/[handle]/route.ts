@@ -125,6 +125,7 @@ export async function GET(
           compareAtPrice: v.compare_at_price,
           sku: v.sku,
           inventory: v.inventory_quantity,
+          tracked: v.inventory_management === "shopify",
         })) || [],
       },
       sales: {
