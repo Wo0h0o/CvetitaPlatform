@@ -11,12 +11,10 @@ import { useDateRange } from "@/hooks/useDateRange";
 import {
   Megaphone, Euro, ShoppingCart, MousePointerClick,
   Eye, Target, TrendingUp, ArrowRight, ShoppingBag,
-  CreditCard, Calendar,
+  CreditCard, Search, ArrowUpDown, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
-// ---- Types ----
 
 interface Campaign {
   name: string; id: string; status: string; spend: number; revenue: number;
@@ -24,8 +22,6 @@ interface Campaign {
   cpc: number; ctr: number; addToCart: number;
   createdTime: string | null; startTime: string | null;
 }
-
-type CreatedFilter = "all" | "7d" | "30d" | "90d";
 
 interface AdsData {
   overview: {
@@ -53,10 +49,12 @@ const PRESET_MAP: Record<string, string> = {
   today: "today", "7d": "7d", "30d": "30d", "90d": "30d",
 };
 
+type SortKey = "spend" | "revenue" | "roas" | "purchases" | "ctr" | "cpc";
+type FilterKey = "all" | "ACTIVE" | "PAUSED";
+
 function fmt(n: number, decimals = 2): string {
   return n.toLocaleString("bg-BG", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
-
 function fmtInt(n: number): string {
   return Math.round(n).toLocaleString("bg-BG");
 }
@@ -71,19 +69,26 @@ export default function CampaignsPage() {
     { revalidateOnFocus: false }
   );
 
-  const [createdFilter, setCreatedFilter] = useState<CreatedFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("spend");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const allCampaigns = data?.campaigns || [];
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+
   const campaigns = useMemo(() => {
-    if (createdFilter === "all") return allCampaigns;
-    const days = createdFilter === "7d" ? 7 : createdFilter === "30d" ? 30 : 90;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    return allCampaigns.filter((c) => {
-      if (!c.createdTime) return true;
-      return new Date(c.createdTime) >= cutoff;
-    });
-  }, [allCampaigns, createdFilter]);
+    let list = data?.campaigns || [];
+    if (filter !== "all") list = list.filter((c) => c.status === filter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((c) => c.name.toLowerCase().includes(q));
+    }
+    const dir = sortDir === "desc" ? -1 : 1;
+    return [...list].sort((a, b) => ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * dir);
+  }, [data?.campaigns, filter, searchQuery, sortKey, sortDir]);
 
   if (isLoading) {
     return (
@@ -107,9 +112,7 @@ export default function CampaignsPage() {
               <Megaphone size={24} className="text-blue" />
             </div>
             <p className="text-[15px] font-medium text-text mb-2">Meta Ads не е свързан</p>
-            <p className="text-[13px] text-text-3">
-              Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID в Vercel Environment Variables.
-            </p>
+            <p className="text-[13px] text-text-3">Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID.</p>
           </div>
         </CardBody></Card>
       </>
@@ -174,35 +177,56 @@ export default function CampaignsPage() {
         </Card>
       </div>
 
-      {/* Created Filter + Campaigns Table */}
-      <Card>
-        <CardHeader action={
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
-              <Calendar size={12} className="text-text-3" />
-              {([["all", "Всички"], ["7d", "< 7 дни"], ["30d", "< 30 дни"], ["90d", "< 90 дни"]] as [CreatedFilter, string][]).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setCreatedFilter(key)}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    createdFilter === key ? "bg-accent text-white" : "text-text-3 hover:text-text-2 hover:bg-surface-2"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="text-[12px] text-text-3">{campaigns.length} кампании</span>
+      {/* Sort + Filter + Search + Campaigns Table */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div className="flex items-center gap-1 flex-wrap">
+          {([["spend", "Spend"], ["revenue", "Revenue"], ["roas", "ROAS"], ["purchases", "Покупки"], ["ctr", "CTR"], ["cpc", "CPC"]] as [SortKey, string][]).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => toggleSort(key)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                sortKey === key ? "bg-surface-2 text-text border border-border" : "text-text-3 hover:text-text-2"
+              }`}
+            >
+              {label}
+              {sortKey === key ? (sortDir === "desc" ? <ChevronDown size={12} /> : <ChevronUp size={12} />) : <ArrowUpDown size={10} className="opacity-40" />}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Търси..."
+              className="pl-8 pr-3 py-1.5 rounded-lg bg-surface-2 border border-border text-[12px] text-text outline-none focus:border-accent w-36 md:w-48"
+            />
           </div>
-        }>
-          Кампании
-        </CardHeader>
+          <div className="flex items-center gap-1">
+            {([["all", "Всички"], ["ACTIVE", "Active"], ["PAUSED", "Paused"]] as [FilterKey, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
+                  filter === key ? "bg-accent text-white" : "text-text-3 hover:text-text-2 hover:bg-surface-2"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[12px] text-text-3">{campaigns.length} кампании</span>
+        </div>
+      </div>
+
+      <Card>
         <CardBody>
           <div className="overflow-x-auto -mx-5 px-5">
             <div className="min-w-[1000px]">
               <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
                 <div className="col-span-3">Кампания</div>
-                <div className="col-span-1 text-right">Създадена</div>
                 <div className="col-span-1 text-right">Spend</div>
                 <div className="col-span-1 text-right">Revenue</div>
                 <div className="col-span-1 text-right">ROAS</div>
@@ -214,15 +238,11 @@ export default function CampaignsPage() {
               </div>
               {campaigns.map((c) => {
                 const st = STATUS_MAP[c.status] || { label: c.status, variant: "neutral" as const };
-                const created = c.createdTime ? new Date(c.createdTime) : null;
                 return (
                   <div key={c.id} className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors">
                     <div className="col-span-3">
                       <div className="text-[13px] font-medium text-text truncate">{c.name}</div>
                       <Badge variant={st.variant}>{st.label}</Badge>
-                    </div>
-                    <div className="col-span-1 text-right text-[11px] text-text-3">
-                      {created ? created.toLocaleDateString("bg-BG", { day: "numeric", month: "short" }) : "—"}
                     </div>
                     <div className="col-span-1 text-right text-[13px] text-text-2">€{fmt(c.spend)}</div>
                     <div className="col-span-1 text-right text-[13px] text-text-2">€{fmt(c.revenue)}</div>
@@ -247,8 +267,6 @@ export default function CampaignsPage() {
     </>
   );
 }
-
-// ---- Components ----
 
 function MiniKpi({ icon: Icon, label, value, highlight }: {
   icon: React.ElementType; label: string; value: string; highlight?: boolean;

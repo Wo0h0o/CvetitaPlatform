@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { useDateRange } from "@/hooks/useDateRange";
 import {
   Users, UserPlus, Repeat, ShoppingCart, Clock, Euro,
 } from "lucide-react";
@@ -30,7 +31,9 @@ interface CustomersData {
   error?: string;
 }
 
-type Preset = "30d" | "60d" | "90d" | "all";
+const PRESET_MAP: Record<string, string> = {
+  today: "7d", "7d": "7d", "30d": "30d", "90d": "90d",
+};
 
 function fmt(n: number): string {
   return n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -48,10 +51,11 @@ function retentionColor(pct: number): string {
 }
 
 export default function CustomersPage() {
-  const [preset, setPreset] = useState<Preset>("90d");
+  const { preset } = useDateRange();
+  const customerPreset = PRESET_MAP[preset] || "90d";
 
   const { data, isLoading, error: swrError } = useSWR<CustomersData>(
-    `/api/dashboard/customers?preset=${preset}`,
+    `/api/dashboard/customers?preset=${customerPreset}`,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -92,19 +96,7 @@ export default function CustomersPage() {
   return (
     <>
       <PageHeader title="Клиенти">
-        <div className="flex items-center gap-1">
-          {([["30d", "30 дни"], ["60d", "60 дни"], ["90d", "90 дни"], ["all", "Всичко"]] as [Preset, string][]).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setPreset(key)}
-              className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
-                preset === key ? "bg-accent text-white" : "text-text-3 hover:text-text-2 hover:bg-surface-2"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker />
       </PageHeader>
 
       {/* KPI Row */}

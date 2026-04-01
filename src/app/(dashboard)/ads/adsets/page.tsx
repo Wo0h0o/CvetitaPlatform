@@ -44,7 +44,7 @@ const PRESET_MAP: Record<string, string> = {
   today: "today", "7d": "7d", "30d": "30d", "90d": "30d",
 };
 
-type SortKey = "spend" | "roas" | "purchases" | "ctr" | "frequency";
+type SortKey = "spend" | "revenue" | "roas" | "purchases" | "cpa" | "ctr" | "frequency";
 type FilterKey = "all" | "ACTIVE" | "PAUSED";
 
 function fmt(n: number, decimals = 2): string {
@@ -160,7 +160,7 @@ export default function AdSetsPage() {
       {/* Filters */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div className="flex items-center gap-1 flex-wrap">
-          {([["spend", "Spend"], ["roas", "ROAS"], ["purchases", "Покупки"], ["ctr", "CTR"], ["frequency", "Freq"]] as [SortKey, string][]).map(([key, label]) => (
+          {([["spend", "Spend"], ["revenue", "Revenue"], ["roas", "ROAS"], ["purchases", "Покупки"], ["cpa", "CPA"], ["ctr", "CTR"], ["frequency", "Freq"]] as [SortKey, string][]).map(([key, label]) => (
             <button
               key={key}
               onClick={() => toggleSort(key)}

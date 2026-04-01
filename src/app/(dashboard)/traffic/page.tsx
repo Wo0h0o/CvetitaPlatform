@@ -1,9 +1,10 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
-import { Users, MousePointerClick, Eye, ShoppingCart, Monitor, Smartphone, Tablet } from "lucide-react";
+import { Users, MousePointerClick, Eye, ShoppingCart, Monitor, Smartphone, Tablet, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 
@@ -31,12 +32,28 @@ const deviceIcons: Record<string, any> = {
   tablet: Tablet,
 };
 
+type PageSortKey = "sessions" | "engagementRate" | "conversions";
+
 export default function TrafficPage() {
+  const [pageSortKey, setPageSortKey] = useState<PageSortKey>("sessions");
+  const [pageSortDir, setPageSortDir] = useState<"desc" | "asc">("desc");
+
   const { data, isLoading } = useSWR<TrafficData>(
     "/api/dashboard/traffic",
     fetcher,
     { revalidateOnFocus: false }
   );
+
+  const togglePageSort = (key: PageSortKey) => {
+    if (pageSortKey === key) setPageSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setPageSortKey(key); setPageSortDir("desc"); }
+  };
+
+  const sortedPages = useMemo(() => {
+    if (!data?.topPages) return [];
+    const dir = pageSortDir === "desc" ? -1 : 1;
+    return [...data.topPages].sort((a, b) => ((a[pageSortKey] ?? 0) - (b[pageSortKey] ?? 0)) * dir);
+  }, [data?.topPages, pageSortKey, pageSortDir]);
 
   if (isLoading) {
     return (
@@ -145,7 +162,22 @@ export default function TrafficPage() {
 
       {/* Top Pages */}
       <Card>
-        <CardHeader>Топ 10 страници</CardHeader>
+        <CardHeader action={
+          <div className="flex items-center gap-1">
+            {([["sessions", "Сесии"], ["engagementRate", "Engagement"], ["conversions", "Конверсии"]] as [PageSortKey, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => togglePageSort(key)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                  pageSortKey === key ? "bg-surface-2 text-text border border-border" : "text-text-3 hover:text-text-2"
+                }`}
+              >
+                {label}
+                {pageSortKey === key ? (pageSortDir === "desc" ? <ChevronDown size={10} /> : <ChevronUp size={10} />) : <ArrowUpDown size={9} className="opacity-40" />}
+              </button>
+            ))}
+          </div>
+        }>Топ страници</CardHeader>
         <CardBody>
           <div className="overflow-x-auto -mx-5 px-5">
             <div className="min-w-[600px]">
@@ -156,7 +188,7 @@ export default function TrafficPage() {
                 <div className="col-span-2 text-right">Engagement</div>
                 <div className="col-span-1 text-right">Conv.</div>
               </div>
-              {data?.topPages?.map((p, i) => (
+              {sortedPages.map((p, i) => (
                 <div
                   key={p.page}
                   className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
