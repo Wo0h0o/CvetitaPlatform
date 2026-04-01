@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import useSWR, { mutate } from "swr";
 import Masonry from "react-masonry-css";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
@@ -106,6 +106,14 @@ export default function AdsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selectedId && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selectedId]);
 
   // KPI overview
   const { data: overviewData, isLoading: ovLoading } = useSWR<{ overview: AdsOverview; error?: string }>(
@@ -277,7 +285,9 @@ export default function AdsPage() {
                   ad={ad}
                   isSelected={selectedId === ad.id}
                   isConfirming={confirmingId === ad.id}
+                  isPlaying={playingVideoId === ad.id}
                   onSelect={() => setSelectedId(selectedId === ad.id ? null : ad.id)}
+                  onPlayVideo={() => setPlayingVideoId(playingVideoId === ad.id ? null : ad.id)}
                   onConfirmStart={() => setConfirmingId(ad.id)}
                   onConfirmCancel={() => setConfirmingId(null)}
                   onToggleStatus={(status) => handleToggleStatus(ad.id, status)}
@@ -291,7 +301,7 @@ export default function AdsPage() {
           )}
 
           {selectedAd && (
-            <div className="mt-4">
+            <div className="mt-4" ref={detailRef}>
               <AdDetailPanel
                 ad={selectedAd}
                 averages={adsData?.accountAverages}
@@ -308,9 +318,9 @@ export default function AdsPage() {
 
 // ---- Ad Card ----
 
-function AdCard({ ad, isSelected, isConfirming, onSelect, onConfirmStart, onConfirmCancel, onToggleStatus }: {
-  ad: AdItem; isSelected: boolean; isConfirming: boolean;
-  onSelect: () => void; onConfirmStart: () => void; onConfirmCancel: () => void;
+function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo, onConfirmStart, onConfirmCancel, onToggleStatus }: {
+  ad: AdItem; isSelected: boolean; isConfirming: boolean; isPlaying: boolean;
+  onSelect: () => void; onPlayVideo: () => void; onConfirmStart: () => void; onConfirmCancel: () => void;
   onToggleStatus: (status: "ACTIVE" | "PAUSED") => void;
 }) {
   const scoreStyle = getScoreStyle(ad.score);
@@ -319,29 +329,42 @@ function AdCard({ ad, isSelected, isConfirming, onSelect, onConfirmStart, onConf
 
   return (
     <Card hover className={isSelected ? "ring-2 ring-accent" : ""}>
-      <div className="relative cursor-pointer" onClick={onSelect}>
-        {ad.thumbnail ? (
-          <img src={ad.thumbnail} alt="" className="w-full object-contain rounded-t-xl bg-surface-2 max-h-[300px]" />
+      <div className="relative">
+        {/* Inline video player */}
+        {isPlaying && ad.videoUrl ? (
+          <video
+            src={ad.videoUrl}
+            controls
+            autoPlay
+            poster={ad.thumbnail || undefined}
+            className="w-full rounded-t-xl bg-black max-h-[400px]"
+          />
         ) : (
-          <div className="w-full h-[160px] rounded-t-xl bg-surface-2 flex items-center justify-center">
-            <ImageIcon size={32} className="text-text-3" />
+          <div className="cursor-pointer" onClick={ad.isVideo && ad.videoUrl ? onPlayVideo : onSelect}>
+            {ad.thumbnail ? (
+              <img src={ad.thumbnail} alt="" className="w-full object-contain rounded-t-xl bg-surface-2 max-h-[300px]" />
+            ) : (
+              <div className="w-full h-[160px] rounded-t-xl bg-surface-2 flex items-center justify-center">
+                <ImageIcon size={32} className="text-text-3" />
+              </div>
+            )}
+            {ad.isVideo && ad.videoUrl && (
+              <>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110">
+                    <Play size={24} className="text-white ml-1" fill="white" />
+                  </div>
+                </div>
+                <div className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/60 text-[10px] font-medium text-white flex items-center gap-1">
+                  <Film size={10} /> Video
+                </div>
+              </>
+            )}
           </div>
         )}
         <div className={`absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shadow-lg ${scoreStyle.colorClass} ${ad.confidence < 0.5 ? "border-2 border-dashed border-white/50" : ""}`}>
           {ad.score}
         </div>
-        {ad.isVideo && (
-          <>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110">
-                <Play size={24} className="text-white ml-1" fill="white" />
-              </div>
-            </div>
-            <div className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/60 text-[10px] font-medium text-white flex items-center gap-1">
-              <Film size={10} /> Video
-            </div>
-          </>
-        )}
       </div>
       <div className="p-4">
         <div className="cursor-pointer" onClick={onSelect}>
