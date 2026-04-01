@@ -27,10 +27,10 @@ export async function getKlaviyoMetrics() {
 
   try {
     const [flowsRes, campaignsRes, listsRes] = await Promise.all([
-      klaviyoGet("/api/flows/?page%5Bsize%5D=50") as Promise<{
+      klaviyoGet("/api/flows/?page[size]=50") as Promise<{
         data?: { id: string; attributes: { name: string; status: string; trigger_type: string } }[];
       }>,
-      klaviyoGet("/api/campaigns/?filter=equals(messages.channel,'email')&sort=-send_time&page%5Bsize%5D=10") as Promise<{
+      klaviyoGet("/api/campaigns/?filter=equals(messages.channel,'email')&sort=-send_time&page[size]=10") as Promise<{
         data?: {
           id: string;
           attributes: {
@@ -40,7 +40,7 @@ export async function getKlaviyoMetrics() {
           };
         }[];
       }>,
-      klaviyoGet("/api/lists/?page%5Bsize%5D=50") as Promise<{
+      klaviyoGet("/api/lists/?page[size]=50") as Promise<{
         data?: { id: string; attributes: { name: string; profile_count?: number } }[];
       }>,
     ]);
