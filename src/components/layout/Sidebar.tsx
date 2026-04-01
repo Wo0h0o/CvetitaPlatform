@@ -15,7 +15,24 @@ import {
   Megaphone,
 } from "lucide-react";
 
-const navSections = [
+interface NavChild {
+  href: string;
+  label: string;
+}
+
+interface NavItem {
+  href: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  children?: NavChild[];
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
   {
     label: "Основни",
     items: [
@@ -29,7 +46,15 @@ const navSections = [
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
       { href: "/email", icon: Mail, label: "Имейли" },
-      { href: "/ads", icon: Megaphone, label: "Реклама" },
+      {
+        href: "/ads",
+        icon: Megaphone,
+        label: "Реклама",
+        children: [
+          { href: "/ads", label: "Реклами" },
+          { href: "/ads/campaigns", label: "Кампании" },
+        ],
+      },
     ],
   },
   {
@@ -100,29 +125,56 @@ export function Sidebar({
               </div>
               <div className="space-y-0.5">
                 {section.items.map((item) => {
-                  const isActive = pathname === item.href;
+                  const isActive = item.children
+                    ? pathname.startsWith(item.href)
+                    : pathname === item.href;
+                  const showChildren = item.children && isActive && !collapsed;
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={onMobileClose}
-                      className={`
-                        flex items-center gap-3 rounded-lg transition-all duration-150
-                        px-3 py-3 md:py-2.5
-                        ${collapsed ? "md:justify-center md:px-2" : ""}
-                        ${
-                          isActive
-                            ? "bg-accent-soft text-accent font-medium border-l-2 border-accent"
-                            : "text-text-2 hover:text-text hover:bg-surface-2"
-                        }
-                      `}
-                      title={collapsed ? item.label : undefined}
-                    >
-                      <item.icon size={20} strokeWidth={isActive ? 2 : 1.5} />
-                      <span className={`text-[14px] ${collapsed ? "md:hidden" : ""}`}>
-                        {item.label}
-                      </span>
-                    </Link>
+                    <div key={item.href + item.label}>
+                      <Link
+                        href={item.href}
+                        onClick={onMobileClose}
+                        className={`
+                          flex items-center gap-3 rounded-lg transition-all duration-150
+                          px-3 py-3 md:py-2.5
+                          ${collapsed ? "md:justify-center md:px-2" : ""}
+                          ${
+                            isActive
+                              ? "bg-accent-soft text-accent font-medium border-l-2 border-accent"
+                              : "text-text-2 hover:text-text hover:bg-surface-2"
+                          }
+                        `}
+                        title={collapsed ? item.label : undefined}
+                      >
+                        <item.icon size={20} strokeWidth={isActive ? 2 : 1.5} />
+                        <span className={`text-[14px] ${collapsed ? "md:hidden" : ""}`}>
+                          {item.label}
+                        </span>
+                      </Link>
+                      {showChildren && (
+                        <div className="ml-6 mt-0.5 space-y-0.5">
+                          {item.children!.map((child) => {
+                            const childActive = pathname === child.href;
+                            return (
+                              <Link
+                                key={child.href}
+                                href={child.href}
+                                onClick={onMobileClose}
+                                className={`
+                                  block px-3 py-1.5 rounded-lg text-[12px] transition-colors
+                                  ${childActive
+                                    ? "text-accent font-medium"
+                                    : "text-text-3 hover:text-text hover:bg-surface-2"
+                                  }
+                                `}
+                              >
+                                {child.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
