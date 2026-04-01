@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   LayoutDashboard,
   MessageSquare,
-  Sparkles,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -63,7 +62,6 @@ const navSections: NavSection[] = [
   {
     label: "Система",
     items: [
-      { href: "/agents", icon: Sparkles, label: "Агенти" },
       { href: "/settings", icon: Settings, label: "Настройки" },
     ],
   },
