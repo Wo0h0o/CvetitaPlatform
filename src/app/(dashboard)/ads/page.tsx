@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import useSWR, { mutate } from "swr";
 import Masonry from "react-masonry-css";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
@@ -107,13 +107,16 @@ export default function AdsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
-  const detailRef = useRef<HTMLDivElement>(null);
+
+  const closeModal = useCallback(() => { setSelectedId(null); setPlayingVideoId(null); }, []);
 
   useEffect(() => {
-    if (selectedId && detailRef.current) {
-      detailRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [selectedId]);
+    if (!selectedId) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeModal(); };
+    document.addEventListener("keydown", handleKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", handleKey); document.body.style.overflow = ""; };
+  }, [selectedId, closeModal]);
 
   // KPI overview
   const { data: overviewData, isLoading: ovLoading } = useSWR<{ overview: AdsOverview; error?: string }>(
@@ -301,14 +304,12 @@ export default function AdsPage() {
           )}
 
           {selectedAd && (
-            <div className="mt-4" ref={detailRef}>
-              <AdDetailPanel
-                ad={selectedAd}
-                averages={adsData?.accountAverages}
-                onClose={() => setSelectedId(null)}
-                onToggleStatus={(status) => handleToggleStatus(selectedAd.id, status)}
-              />
-            </div>
+            <AdModal
+              ad={selectedAd}
+              averages={adsData?.accountAverages}
+              onClose={closeModal}
+              onToggleStatus={(status) => handleToggleStatus(selectedAd.id, status)}
+            />
           )}
         </>
       )}
@@ -401,29 +402,62 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
 
 // ---- Detail Panel ----
 
-function AdDetailPanel({ ad, averages, onClose, onToggleStatus }: {
+function AdModal({ ad, averages, onClose, onToggleStatus }: {
   ad: AdItem; averages: AdsIndividualData["accountAverages"] | undefined;
   onClose: () => void; onToggleStatus: (status: "ACTIVE" | "PAUSED") => void;
 }) {
   const isActive = ad.status === "ACTIVE";
   const b = ad.scoreBreakdown;
+  const scoreStyle = getScoreStyle(ad.score);
 
   return (
-    <Card>
-      <CardHeader action={<button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-2 transition-colors"><X size={16} className="text-text-3" /></button>}>
-        {ad.name}
-      </CardHeader>
-      <CardBody>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-[22px] font-bold ${getScoreStyle(ad.score).colorClass}`}>{ad.score}</div>
-              <div>
-                <div className="text-[15px] font-semibold text-text">Performance Score</div>
-                <div className="text-[12px] text-text-3">Confidence: {Math.round(ad.confidence * 100)}%</div>
-              </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Modal */}
+      <div className="relative w-full h-full md:h-auto md:max-h-[90vh] md:max-w-lg md:rounded-2xl bg-surface shadow-2xl overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-border bg-surface/95 backdrop-blur-sm">
+          <div className="min-w-0 flex-1 mr-3">
+            <div className="text-[15px] font-semibold text-text truncate">{ad.name}</div>
+            <div className="text-[11px] text-text-3 truncate">{ad.campaignName}</div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-surface-2 transition-colors flex-shrink-0">
+            <X size={18} className="text-text-3" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-5 space-y-5">
+          {/* Creative */}
+          {ad.videoUrl ? (
+            <video src={ad.videoUrl} controls autoPlay poster={ad.thumbnail || undefined} className="w-full rounded-xl bg-black max-h-[300px]" />
+          ) : ad.thumbnail ? (
+            <img src={ad.thumbnail} alt="" className="w-full rounded-xl bg-surface-2 max-h-[300px] object-contain" />
+          ) : null}
+
+          {/* Score + Key Metrics */}
+          <div className="flex gap-4">
+            <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${scoreStyle.colorClass}`}>
+              <div className="text-[22px] font-bold leading-none">{ad.score}</div>
+              <div className="text-[9px] font-medium opacity-80 mt-0.5">{scoreStyle.label}</div>
             </div>
-            <div className="space-y-3">
+            <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <StatRow label="Spend" value={`€${fmt(ad.spend)}`} />
+              <StatRow label="Revenue" value={`€${fmt(ad.revenue)}`} />
+              <StatRow label="ROAS" value={ad.roas > 0 ? `${fmt(ad.roas)}x` : "—"} />
+              <StatRow label="Покупки" value={fmtInt(ad.purchases)} />
+              <StatRow label="CPA" value={ad.cpa > 0 ? `€${fmt(ad.cpa)}` : "—"} />
+              <StatRow label="CTR" value={`${fmt(ad.ctr)}%`} />
+              <StatRow label="Frequency" value={fmt(ad.frequency)} />
+            </div>
+          </div>
+
+          {/* Score Breakdown */}
+          <div>
+            <h4 className="text-[12px] font-medium text-text-3 uppercase tracking-wider mb-2">Score Breakdown</h4>
+            <div className="space-y-2">
               <ScoreBar label="ROAS (35%)" value={b.roas} avg={averages?.roas} current={ad.roas} unit="x" />
               <ScoreBar label="CPA (25%)" value={b.cpa} avg={averages?.cpa} current={ad.cpa} unit="€" inverted />
               <ScoreBar label="CTR (15%)" value={b.ctr} avg={averages?.ctr} current={ad.ctr} unit="%" />
@@ -431,69 +465,35 @@ function AdDetailPanel({ ad, averages, onClose, onToggleStatus }: {
               <ScoreBar label="Fatigue (10%)" value={b.fatigue} current={ad.frequency} unit="freq" />
             </div>
           </div>
-          <div>
-            <h4 className="text-[13px] font-semibold text-text mb-3">Метрики</h4>
-            <div className="space-y-2.5">
-              <StatRow label="Spend" value={`€${fmt(ad.spend)}`} />
-              <StatRow label="Revenue" value={`€${fmt(ad.revenue)}`} />
-              <StatRow label="ROAS" value={ad.roas > 0 ? `${fmt(ad.roas)}x` : "—"} />
-              <StatRow label="Purchases" value={fmtInt(ad.purchases)} />
-              <StatRow label="CPA" value={ad.cpa > 0 ? `€${fmt(ad.cpa)}` : "—"} />
-              <StatRow label="Impressions" value={fmtInt(ad.impressions)} />
-              <StatRow label="Reach" value={fmtInt(ad.reach)} />
-              <StatRow label="Clicks" value={fmtInt(ad.clicks)} />
-              <StatRow label="CTR" value={`${fmt(ad.ctr)}%`} />
-              <StatRow label="CPC" value={`€${fmt(ad.cpc)}`} />
-              <StatRow label="CPM" value={`€${fmt(ad.cpm)}`} />
-              <StatRow label="Frequency" value={fmt(ad.frequency)} />
-              <StatRow label="Add to Cart" value={fmtInt(ad.addToCart)} />
+
+          {/* Creative text */}
+          {(ad.creativeTitle || ad.creativeBody) && (
+            <div>
+              {ad.creativeTitle && <p className="text-[13px] font-medium text-text mb-1">{ad.creativeTitle}</p>}
+              {ad.creativeBody && <p className="text-[12px] text-text-2 whitespace-pre-line line-clamp-4">{ad.creativeBody}</p>}
             </div>
-          </div>
-          <div>
-            <h4 className="text-[13px] font-semibold text-text mb-3">Creative</h4>
-            {ad.videoUrl ? (
-              <video
-                src={ad.videoUrl}
-                controls
-                poster={ad.thumbnail || undefined}
-                className="w-full rounded-lg mb-3 bg-black max-h-[400px]"
-                preload="metadata"
-              />
-            ) : ad.thumbnail ? (
-              <img src={ad.thumbnail} alt="" className="w-full rounded-lg mb-3 bg-surface-2" />
-            ) : null}
-            {ad.creativeTitle && (
-              <div className="mb-2">
-                <span className="text-[11px] text-text-3 uppercase tracking-wider">Заглавие</span>
-                <p className="text-[13px] text-text">{ad.creativeTitle}</p>
-              </div>
-            )}
-            {ad.creativeBody && (
-              <div className="mb-4">
-                <span className="text-[11px] text-text-3 uppercase tracking-wider">Текст</span>
-                <p className="text-[12px] text-text-2 whitespace-pre-line line-clamp-6">{ad.creativeBody}</p>
-              </div>
-            )}
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[12px] text-text-3">Campaign:</span>
-              <span className="text-[12px] text-text">{ad.campaignName}</span>
-            </div>
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-[12px] text-text-3">Ad Set:</span>
-              <span className="text-[12px] text-text">{ad.adsetName}</span>
-            </div>
-            <button
-              onClick={() => onToggleStatus(isActive ? "PAUSED" : "ACTIVE")}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${
-                isActive ? "bg-surface border border-border text-text hover:bg-surface-2" : "bg-accent text-white hover:bg-accent-hover"
-              }`}
-            >
-              {isActive ? <><Pause size={14} /> Pause Ad</> : <><Play size={14} /> Resume Ad</>}
-            </button>
+          )}
+
+          {/* Campaign info */}
+          <div className="text-[11px] text-text-3 space-y-0.5">
+            <div>Campaign: <span className="text-text-2">{ad.campaignName}</span></div>
+            <div>Ad Set: <span className="text-text-2">{ad.adsetName}</span></div>
           </div>
         </div>
-      </CardBody>
-    </Card>
+
+        {/* Sticky action button */}
+        <div className="sticky bottom-0 p-4 border-t border-border bg-surface/95 backdrop-blur-sm">
+          <button
+            onClick={() => onToggleStatus(isActive ? "PAUSED" : "ACTIVE")}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[14px] font-medium transition-colors ${
+              isActive ? "bg-surface-2 border border-border text-text hover:bg-border" : "bg-accent text-white hover:bg-accent-hover"
+            }`}
+          >
+            {isActive ? <><Pause size={16} /> Pause Ad</> : <><Play size={16} /> Resume Ad</>}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
