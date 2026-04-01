@@ -10,9 +10,10 @@
 - Skip this for simple, obvious fixes — don't over-engineer
 - If it doesn't look like something you'd proudly demo to a client, it's not done
 
-### 2. Mobile First (Always)
+### 2. Mobile First & Flexible (Always)
 - Design for 375px first, then scale up with `md:` and `lg:`
 - Touch targets: 44px min. flex-wrap and overflow-x-auto for overflow
+- No fixed heights on content — use `flex-1` + `min-h-[]` instead of `h-`
 - Test mobile layout before committing any UI change
 
 ### 3. KISS
@@ -37,6 +38,9 @@
 ### 8. Graceful Degradation
 - Each integration is independent — one failure doesn't cascade
 - Loading states (Skeleton), error states, empty states — design all three
+
+### Self-Iteration
+When a new pattern or anti-pattern is discovered during development, immediately update these principles AND the memory file (`feedback_platform_ux.md`). These rules are a living document.
 
 ## What This Is
 
@@ -67,7 +71,7 @@ src/app/api/             # Backend API routes (serverless)
 src/components/layout/   # Shell, Sidebar (mobile drawer), TopBar (burger menu)
 src/components/shared/   # Reusable: PageHeader, Card, Button, Badge, DateRangePicker
 src/components/dashboard/# KPI cards, TopProducts, NewsFeed, MarketPulse
-src/lib/                 # API clients: shopify.ts, ga4.ts, klaviyo.ts, auth.ts, prompts.ts
+src/lib/                 # API clients: shopify.ts, ga4.ts, klaviyo.ts, meta.ts, auth.ts, prompts.ts
 src/hooks/               # useDateRange (URL-based state)
 src/providers/           # DataProvider (SWR prefetch with loading screen)
 ```
@@ -106,5 +110,5 @@ src/providers/           # DataProvider (SWR prefetch with loading screen)
 | Klaviyo (OAuth) | `src/lib/klaviyo.ts` | Active |
 | Claude API | `@ai-sdk/anthropic` | Active |
 | Tavily Search | `src/lib/tavily.ts` | Active |
-| Meta Ads | — | Not yet |
+| Meta Ads | `src/lib/meta.ts` | Active |
 | Google Ads | — | Not yet |
