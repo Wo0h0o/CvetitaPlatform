@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import { getKlaviyoMetrics } from "@/lib/klaviyo";
 
 export async function GET() {
-  try {
-    const hasKey = !!process.env.KLAVIYO_API_KEY;
-    const keyPrefix = process.env.KLAVIYO_API_KEY?.slice(0, 6) || "MISSING";
-    console.log(`[email] KLAVIYO_API_KEY present: ${hasKey}, prefix: ${keyPrefix}`);
+  if (!process.env.KLAVIYO_API_KEY) {
+    return NextResponse.json({ error: "Klaviyo not configured" });
+  }
 
+  try {
     const data = await getKlaviyoMetrics();
 
     if (!data) {
-      return NextResponse.json({ error: "Klaviyo not configured" });
+      return NextResponse.json({ error: "Klaviyo fetch failed" });
     }
 
     return NextResponse.json(data, {
@@ -18,6 +18,9 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Email API error:", error);
-    return NextResponse.json({ error: "Klaviyo fetch failed" });
+    return NextResponse.json({
+      error: "Klaviyo fetch failed",
+      detail: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }

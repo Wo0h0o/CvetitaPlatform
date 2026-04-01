@@ -67,6 +67,6 @@ export async function getKlaviyoMetrics() {
     };
   } catch (error) {
     console.error("Klaviyo error:", error);
-    return null;
+    throw error;
   }
 }
