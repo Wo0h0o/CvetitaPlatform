@@ -97,6 +97,8 @@ interface MetaCampaign {
   name: string;
   effective_status: string;
   objective: string;
+  created_time?: string;
+  start_time?: string;
 }
 
 export function actionVal(actions: MetaAction[] | undefined, type: string): number {
@@ -133,7 +135,7 @@ async function fetchCampaigns(): Promise<MetaCampaign[]> {
   const token = await getToken();
   let url: string | null = `${BASE}/${getAccountId()}/campaigns?` +
     new URLSearchParams({
-      fields: "name,effective_status,objective",
+      fields: "name,effective_status,objective,created_time,start_time",
       limit: "100",
       access_token: token,
     }).toString();
@@ -199,16 +201,19 @@ export async function getMetaCampaignInsights(datePreset: string = "last_7d") {
     fetchCampaigns(),
   ]);
 
-  const statusMap = new Map(campaigns.map((c) => [c.id, c.effective_status]));
+  const campaignMap = new Map(campaigns.map((c) => [c.id, c]));
 
   return insightRows.map((r) => {
     const spend = parseFloat(r.spend);
     const revenue = actionVal(r.action_values, "omni_purchase");
     const purchases = actionVal(r.actions, "omni_purchase");
+    const campaign = campaignMap.get(r.campaign_id || "");
     return {
       name: r.campaign_name || "Unknown",
       id: r.campaign_id || "",
-      status: statusMap.get(r.campaign_id || "") || "UNKNOWN",
+      status: campaign?.effective_status || "UNKNOWN",
+      createdTime: campaign?.created_time || null,
+      startTime: campaign?.start_time || null,
       spend,
       revenue,
       roas: spend > 0 ? revenue / spend : 0,

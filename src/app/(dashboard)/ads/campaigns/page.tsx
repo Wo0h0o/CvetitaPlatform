@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
@@ -10,7 +11,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import {
   Megaphone, Euro, ShoppingCart, MousePointerClick,
   Eye, Target, TrendingUp, ArrowRight, ShoppingBag,
-  CreditCard,
+  CreditCard, Calendar,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -21,7 +22,10 @@ interface Campaign {
   name: string; id: string; status: string; spend: number; revenue: number;
   roas: number; purchases: number; impressions: number; clicks: number;
   cpc: number; ctr: number; addToCart: number;
+  createdTime: string | null; startTime: string | null;
 }
+
+type CreatedFilter = "all" | "7d" | "30d" | "90d";
 
 interface AdsData {
   overview: {
@@ -99,7 +103,19 @@ export default function CampaignsPage() {
   }
 
   const ov = data?.overview;
-  const campaigns = data?.campaigns || [];
+  const allCampaigns = data?.campaigns || [];
+  const [createdFilter, setCreatedFilter] = useState<CreatedFilter>("all");
+
+  const campaigns = useMemo(() => {
+    if (createdFilter === "all") return allCampaigns;
+    const days = createdFilter === "7d" ? 7 : createdFilter === "30d" ? 30 : 90;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return allCampaigns.filter((c) => {
+      if (!c.createdTime) return true;
+      return new Date(c.createdTime) >= cutoff;
+    });
+  }, [allCampaigns, createdFilter]);
 
   return (
     <>
@@ -157,14 +173,35 @@ export default function CampaignsPage() {
         </Card>
       </div>
 
-      {/* Campaigns Table */}
+      {/* Created Filter + Campaigns Table */}
       <Card>
-        <CardHeader action={<span className="text-[12px] text-text-3">{campaigns.length} кампании</span>}>Кампании</CardHeader>
+        <CardHeader action={
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Calendar size={12} className="text-text-3" />
+              {([["all", "Всички"], ["7d", "< 7 дни"], ["30d", "< 30 дни"], ["90d", "< 90 дни"]] as [CreatedFilter, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setCreatedFilter(key)}
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                    createdFilter === key ? "bg-accent text-white" : "text-text-3 hover:text-text-2 hover:bg-surface-2"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[12px] text-text-3">{campaigns.length} кампании</span>
+          </div>
+        }>
+          Кампании
+        </CardHeader>
         <CardBody>
           <div className="overflow-x-auto -mx-5 px-5">
-            <div className="min-w-[900px]">
+            <div className="min-w-[1000px]">
               <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
-                <div className="col-span-4">Кампания</div>
+                <div className="col-span-3">Кампания</div>
+                <div className="col-span-1 text-right">Създадена</div>
                 <div className="col-span-1 text-right">Spend</div>
                 <div className="col-span-1 text-right">Revenue</div>
                 <div className="col-span-1 text-right">ROAS</div>
@@ -176,11 +213,15 @@ export default function CampaignsPage() {
               </div>
               {campaigns.map((c) => {
                 const st = STATUS_MAP[c.status] || { label: c.status, variant: "neutral" as const };
+                const created = c.createdTime ? new Date(c.createdTime) : null;
                 return (
                   <div key={c.id} className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors">
-                    <div className="col-span-4">
+                    <div className="col-span-3">
                       <div className="text-[13px] font-medium text-text truncate">{c.name}</div>
                       <Badge variant={st.variant}>{st.label}</Badge>
+                    </div>
+                    <div className="col-span-1 text-right text-[11px] text-text-3">
+                      {created ? created.toLocaleDateString("bg-BG", { day: "numeric", month: "short" }) : "—"}
                     </div>
                     <div className="col-span-1 text-right text-[13px] text-text-2">€{fmt(c.spend)}</div>
                     <div className="col-span-1 text-right text-[13px] text-text-2">€{fmt(c.revenue)}</div>
