@@ -125,12 +125,27 @@ export default function AdsPage() {
     { revalidateOnFocus: false }
   );
 
-  // Individual ads
-  const { data: adsData, isLoading: adsLoading } = useSWR<AdsIndividualData>(
-    `/api/dashboard/ads/individual?preset=${metaPreset}`,
+  // Active ads first (fast), then rest in background
+  const { data: activeData, isLoading: adsLoading } = useSWR<AdsIndividualData>(
+    `/api/dashboard/ads/individual?preset=${metaPreset}&status=ACTIVE`,
     fetcher,
     { revalidateOnFocus: false }
   );
+  const { data: restData } = useSWR<AdsIndividualData>(
+    activeData ? `/api/dashboard/ads/individual?preset=${metaPreset}&status=PAUSED,CAMPAIGN_PAUSED,ADSET_PAUSED` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  // Merge active + rest
+  const adsData = useMemo((): AdsIndividualData | undefined => {
+    if (!activeData) return undefined;
+    if (!restData) return activeData;
+    return {
+      ads: [...activeData.ads, ...restData.ads],
+      accountAverages: activeData.accountAverages,
+    };
+  }, [activeData, restData]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -153,12 +168,17 @@ export default function AdsPage() {
 
   const selectedAd = selectedId ? filtered.find((a) => a.id === selectedId) : null;
 
+  const activeKey = `/api/dashboard/ads/individual?preset=${metaPreset}&status=ACTIVE`;
+  const restKey = `/api/dashboard/ads/individual?preset=${metaPreset}&status=PAUSED,CAMPAIGN_PAUSED,ADSET_PAUSED`;
+
   const handleToggleStatus = async (adId: string, newStatus: "ACTIVE" | "PAUSED") => {
-    const key = `/api/dashboard/ads/individual?preset=${metaPreset}`;
-    mutate(key, (current: AdsIndividualData | undefined) => {
+    // Optimistic update on the source that contains this ad
+    const optimistic = (current: AdsIndividualData | undefined) => {
       if (!current) return current;
       return { ...current, ads: current.ads.map((ad) => ad.id === adId ? { ...ad, status: newStatus } : ad) };
-    }, { revalidate: false });
+    };
+    mutate(activeKey, optimistic, { revalidate: false });
+    mutate(restKey, optimistic, { revalidate: false });
     setConfirmingId(null);
 
     try {
@@ -168,10 +188,10 @@ export default function AdsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed");
-      mutate(key);
-    } catch {
-      mutate(key);
-    }
+    } catch { /* ignore */ }
+    // Revalidate both
+    mutate(activeKey);
+    mutate(restKey);
   };
 
   if (ovLoading) {

@@ -184,10 +184,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const preset = searchParams.get("preset") || "7d";
   const datePreset = PRESET_MAP[preset] || "last_7d";
+  const statusFilter = searchParams.get("status") || undefined;
 
   try {
-    // Step 1: Fetch ad-level insights
-    const rows = await getMetaAdInsights(datePreset);
+    // Step 1: Fetch ad-level insights (optionally filtered by status)
+    const rows = await getMetaAdInsights(datePreset, statusFilter);
     const parsed = rows.map(parseAdRow);
 
     // Step 2: Compute account stats for scoring

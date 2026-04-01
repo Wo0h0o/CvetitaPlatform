@@ -237,17 +237,21 @@ export interface MetaAdInsightRow extends MetaInsightRow {
   reach?: string;
 }
 
-export async function getMetaAdInsights(datePreset: string = "last_7d"): Promise<MetaAdInsightRow[]> {
+export async function getMetaAdInsights(datePreset: string = "last_7d", adStatus?: string): Promise<MetaAdInsightRow[]> {
   const all: MetaAdInsightRow[] = [];
   const token = await getToken();
+  const params: Record<string, string> = {
+    fields: "ad_id,ad_name,campaign_name,campaign_id,adset_name,spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,action_values",
+    date_preset: datePreset,
+    level: "ad",
+    limit: "500",
+    access_token: token,
+  };
+  if (adStatus) {
+    params.filtering = JSON.stringify([{ field: "ad.effective_status", operator: "IN", value: adStatus.split(",") }]);
+  }
   let url: string | null = `${BASE}/${getAccountId()}/insights?` +
-    new URLSearchParams({
-      fields: "ad_id,ad_name,campaign_name,campaign_id,adset_name,spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,action_values",
-      date_preset: datePreset,
-      level: "ad",
-      limit: "500",
-      access_token: token,
-    }).toString();
+    new URLSearchParams(params).toString();
 
   while (url) {
     const res: Response = await fetch(url);
