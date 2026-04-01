@@ -53,6 +53,7 @@ const navSections: NavSection[] = [
         label: "Реклама",
         children: [
           { href: "/ads", label: "Реклами" },
+          { href: "/ads/adsets", label: "Ad Sets" },
           { href: "/ads/campaigns", label: "Кампании" },
           { href: "/agents/ads-intel", label: "AI Стратег" },
         ],

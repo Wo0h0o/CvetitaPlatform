@@ -227,6 +227,70 @@ export async function getMetaCampaignInsights(datePreset: string = "last_7d") {
   }).sort((a, b) => b.spend - a.spend);
 }
 
+// ---- Ad Set level insights ----
+
+export interface MetaAdSetInsightRow extends MetaInsightRow {
+  adset_id?: string;
+  adset_name?: string;
+  frequency?: string;
+  reach?: string;
+}
+
+interface MetaAdSetMeta {
+  id: string;
+  name: string;
+  effective_status: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  optimization_goal?: string;
+  start_time?: string;
+  created_time?: string;
+}
+
+export async function getMetaAdSetInsights(datePreset: string = "last_7d"): Promise<MetaAdSetInsightRow[]> {
+  const all: MetaAdSetInsightRow[] = [];
+  const token = await getToken();
+  let url: string | null = `${BASE}/${getAccountId()}/insights?` +
+    new URLSearchParams({
+      fields: "adset_id,adset_name,campaign_name,campaign_id,spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,action_values",
+      date_preset: datePreset,
+      level: "adset",
+      limit: "500",
+      access_token: token,
+    }).toString();
+
+  while (url) {
+    const res: Response = await fetch(url);
+    if (!res.ok) break;
+    const data: { data?: MetaAdSetInsightRow[]; paging?: { next?: string } } = await res.json();
+    all.push(...(data.data || []));
+    url = data.paging?.next || null;
+  }
+
+  return all;
+}
+
+export async function fetchAdSetsMeta(): Promise<MetaAdSetMeta[]> {
+  const all: MetaAdSetMeta[] = [];
+  const token = await getToken();
+  let url: string | null = `${BASE}/${getAccountId()}/adsets?` +
+    new URLSearchParams({
+      fields: "name,effective_status,daily_budget,lifetime_budget,optimization_goal,start_time,created_time",
+      limit: "100",
+      access_token: token,
+    }).toString();
+
+  while (url) {
+    const res: Response = await fetch(url);
+    if (!res.ok) break;
+    const data: { data?: MetaAdSetMeta[]; paging?: { next?: string } } = await res.json();
+    all.push(...(data.data || []));
+    url = data.paging?.next || null;
+  }
+
+  return all;
+}
+
 // ---- Ad-level insights ----
 
 export interface MetaAdInsightRow extends MetaInsightRow {

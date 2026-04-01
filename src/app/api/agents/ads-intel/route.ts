@@ -19,7 +19,7 @@ interface Campaign {
 }
 
 interface AdItem {
-  name: string; campaignName: string; status: string; isVideo: boolean;
+  name: string; campaignName: string; adsetName: string; status: string; isVideo: boolean;
   spend: number; revenue: number; roas: number; purchases: number; cpa: number;
   ctr: number; cvr: number; frequency: number; score: number;
   scoreBreakdown: { hook: number; engage: number; convert: number; freshness: number };
@@ -187,9 +187,10 @@ export async function POST(req: NextRequest) {
         // 1. Fetch ads data + business context in parallel
         send({ t: "status", msg: "Зареждам рекламните данни..." });
 
-        const [adsRes, individualRes, ctx] = await Promise.all([
+        const [adsRes, individualRes, adsetsRes, ctx] = await Promise.all([
           fetch(`${baseUrl}/api/dashboard/ads?preset=7d`).then((r) => r.json()),
           fetch(`${baseUrl}/api/dashboard/ads/individual?preset=7d`).then((r) => r.json()),
+          fetch(`${baseUrl}/api/dashboard/ads/adsets?preset=7d`).then((r) => r.json()),
           fetchBusinessContext(baseUrl),
         ]);
 
@@ -205,8 +206,32 @@ export async function POST(req: NextRequest) {
           individualRes.ads || [],
           individualRes.accountAverages || { roas: 0, cpa: 0, ctr: 0, cvr: 0, frequency: 0 }
         );
+
+        // Build ad set hierarchy context
+        const adsets = adsetsRes?.adsets || [];
+        const ads = individualRes?.ads || [];
+        let adsetContext = "";
+        if (adsets.length > 0) {
+          const fmt2 = (n: number) => n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const lines: string[] = ["", "AD SETS (йерархия Campaign → Ad Set → Ads):"];
+          for (const adset of adsets.slice(0, 15)) {
+            const adsetAds = ads.filter((a: AdItem) => a.adsetName === adset.name);
+            const activeAds = adsetAds.filter((a: AdItem) => a.status === "ACTIVE").length;
+            const pausedAds = adsetAds.filter((a: AdItem) => a.status !== "ACTIVE").length;
+            lines.push(`  [${adset.status}] "${adset.name}" (${adset.campaignName})`);
+            lines.push(`    Budget: ${adset.budget} | Spend: ${fmt2(adset.spend)} EUR | Revenue: ${fmt2(adset.revenue)} EUR | ROAS: ${fmt2(adset.roas)}x | Freq: ${fmt2(adset.frequency)}`);
+            lines.push(`    Реклами: ${adsetAds.length} total (${activeAds} active, ${pausedAds} paused/other)`);
+            if (adsetAds.length > 0) {
+              const topAd = adsetAds.sort((a: AdItem, b: AdItem) => b.score - a.score)[0];
+              const worstAd = adsetAds[adsetAds.length - 1];
+              lines.push(`    Best ad: "${topAd.name}" score ${topAd.score} | Worst: "${worstAd.name}" score ${worstAd.score}`);
+            }
+          }
+          adsetContext = lines.join("\n");
+        }
+
         const businessContext = formatContextForPrompt(ctx);
-        const systemPrompt = buildSystemPrompt(adsContext, businessContext);
+        const systemPrompt = buildSystemPrompt(adsContext + adsetContext, businessContext);
 
         send({ t: "status", msg: "Анализирам рекламите..." });
 

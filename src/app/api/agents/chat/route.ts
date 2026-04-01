@@ -11,6 +11,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_email: "Имейли (Klaviyo)",
   get_ads_overview: "Реклами (Meta)",
   get_ads_detail: "Детайлни реклами",
+  get_adsets: "Ad Sets (Meta)",
 };
 
 const CUSTOM_TOOLS = [
@@ -69,6 +70,17 @@ const CUSTOM_TOOLS = [
       required: [] as string[],
     },
   },
+  {
+    name: "get_adsets",
+    description: "Получава данни за Ad Sets (групи реклами) — бюджет, spend, revenue, ROAS, CPA, CTR, frequency, статус, optimization goal. Ad Sets контролират аудиторията и бюджета. Показва и към коя кампания принадлежи всеки ad set.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        period: { type: "string", enum: ["today", "7d", "14d", "30d"], description: "Период. По подразбиране 7d." },
+      },
+      required: [] as string[],
+    },
+  },
 ];
 
 const WEB_SEARCH_TOOL = {
@@ -98,6 +110,7 @@ const SYSTEM_PROMPT = `Ти си Команден Чат — централен 
 • get_email — имейл кампании, flows, приходи (Klaviyo)
 • get_ads_overview — рекламен обзор, кампании, фуния (Meta Ads)
 • get_ads_detail — детайлни реклами със scores
+• get_adsets — Ad Sets с бюджет, аудитория, статус (Campaign → Ad Set → Ad)
 • web_search — реално търсене в интернет
 
 == ПРАВИЛА ==
@@ -150,6 +163,11 @@ async function executeTool(
       case "get_ads_detail": {
         const period = input.period || "7d";
         const data = await fetch(`${baseUrl}/api/dashboard/ads/individual?preset=${period}`).then((r) => r.json());
+        return JSON.stringify(data);
+      }
+      case "get_adsets": {
+        const period = input.period || "7d";
+        const data = await fetch(`${baseUrl}/api/dashboard/ads/adsets?preset=${period}`).then((r) => r.json());
         return JSON.stringify(data);
       }
       default:
