@@ -360,14 +360,20 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
             controls
             autoPlay
             poster={ad.thumbnail || undefined}
-            className="w-full rounded-t-xl bg-black max-h-[400px]"
+            className="w-full rounded-t-xl bg-black aspect-video object-contain"
+            onError={(e) => { (e.target as HTMLVideoElement).poster = ""; (e.target as HTMLVideoElement).style.display = "none"; }}
           />
         ) : (
           <div className="cursor-pointer" onClick={ad.isVideo && ad.videoUrl ? onPlayVideo : onSelect}>
             {ad.thumbnail ? (
-              <img src={ad.thumbnail} alt="" className="w-full object-contain rounded-t-xl bg-surface-2 max-h-[300px]" />
+              <img
+                src={ad.thumbnail}
+                alt=""
+                className="w-full object-cover rounded-t-xl bg-surface-2 aspect-[4/3]"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
             ) : (
-              <div className="w-full h-[160px] rounded-t-xl bg-surface-2 flex items-center justify-center">
+              <div className="w-full aspect-[4/3] rounded-t-xl bg-surface-2 flex items-center justify-center">
                 <ImageIcon size={32} className="text-text-3" />
               </div>
             )}
@@ -463,9 +469,21 @@ function AdModal({ ad, onClose, onToggleStatus }: {
         <div className="p-5 space-y-5">
           {/* Creative */}
           {ad.videoUrl ? (
-            <video src={ad.videoUrl} controls autoPlay poster={ad.thumbnail || undefined} className="w-full rounded-xl bg-black max-h-[300px]" />
+            <video
+              src={ad.videoUrl}
+              controls
+              autoPlay
+              poster={ad.thumbnail || undefined}
+              className="w-full rounded-xl bg-black aspect-video object-contain"
+              onError={(e) => { (e.target as HTMLVideoElement).style.display = "none"; }}
+            />
           ) : ad.thumbnail ? (
-            <img src={ad.thumbnail} alt="" className="w-full rounded-xl bg-surface-2 max-h-[300px] object-contain" />
+            <img
+              src={ad.thumbnail}
+              alt=""
+              className="w-full rounded-xl bg-surface-2 aspect-[4/3] object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
           ) : null}
 
           {/* Score + Key Metrics */}
