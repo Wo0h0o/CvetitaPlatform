@@ -270,6 +270,7 @@ interface RawCreativeData {
     };
     asset_feed_spec?: {
       images?: { hash: string }[];
+      videos?: { video_id: string }[];
     };
   };
 }
@@ -314,7 +315,7 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
   for (const raw of rawMap.values()) {
     const c = raw.creative;
     if (!c) continue;
-    const vid = c.object_story_spec?.video_data?.video_id || c.video_id;
+    const vid = c.object_story_spec?.video_data?.video_id || c.video_id || c.asset_feed_spec?.videos?.[0]?.video_id;
     if (vid) videoIds.add(vid);
     if (!c.image_url && c.asset_feed_spec?.images?.length) {
       imageHashes.add(c.asset_feed_spec.images[0].hash);
@@ -364,7 +365,7 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
   // Step 5: Resolve best image/video for each ad
   for (const [adId, raw] of rawMap) {
     const c = raw.creative;
-    const vid = c?.object_story_spec?.video_data?.video_id || c?.video_id || null;
+    const vid = c?.object_story_spec?.video_data?.video_id || c?.video_id || c?.asset_feed_spec?.videos?.[0]?.video_id || null;
     const isVideo = !!vid;
 
     // Best image: image_url > video cover > hash lookup > video picture > thumbnail
