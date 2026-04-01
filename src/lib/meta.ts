@@ -238,16 +238,26 @@ export interface MetaAdInsightRow extends MetaInsightRow {
 }
 
 export async function getMetaAdInsights(datePreset: string = "last_7d"): Promise<MetaAdInsightRow[]> {
-  const data = await metaFetch<{ data: MetaAdInsightRow[] }>(
-    `${getAccountId()}/insights`,
-    {
+  const all: MetaAdInsightRow[] = [];
+  const token = await getToken();
+  let url: string | null = `${BASE}/${getAccountId()}/insights?` +
+    new URLSearchParams({
       fields: "ad_id,ad_name,campaign_name,campaign_id,adset_name,spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,action_values",
       date_preset: datePreset,
       level: "ad",
-      limit: "100",
-    }
-  );
-  return data.data || [];
+      limit: "500",
+      access_token: token,
+    }).toString();
+
+  while (url) {
+    const res: Response = await fetch(url);
+    if (!res.ok) break;
+    const data: { data?: MetaAdInsightRow[]; paging?: { next?: string } } = await res.json();
+    all.push(...(data.data || []));
+    url = data.paging?.next || null;
+  }
+
+  return all;
 }
 
 // ---- Ad creatives (batch) ----
