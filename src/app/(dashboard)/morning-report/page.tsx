@@ -1,43 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Sunrise, Loader2, RefreshCw } from "lucide-react";
 import { Card } from "@/components/shared/Card";
+import { Markdown } from "@/components/shared/Markdown";
 import { PageHeader } from "@/components/shared/PageHeader";
 
-// --- Simple markdown renderer (same as agents) ---
-function renderInline(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
-  return parts.map((p, i) => {
-    if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
-    if (p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
-    return <span key={i}>{p}</span>;
-  });
-}
-
-function MarkdownText({ text }: { text: string }) {
-  const lines = text.split("\n");
-  return (
-    <div className="space-y-0.5 text-[14px] leading-relaxed text-text">
-      {lines.map((line, i) => {
-        if (line.startsWith("## ▶") || line.startsWith("## →"))
-          return <h2 key={i} className="font-bold text-[15px] text-accent mt-5 mb-2 flex items-center gap-2">{line.replace(/^## /, "")}</h2>;
-        if (line.startsWith("## "))
-          return <h2 key={i} className="font-bold text-[15px] text-text mt-5 mb-1.5 border-b border-border pb-1">{line.slice(3)}</h2>;
-        if (line.startsWith("### "))
-          return <h3 key={i} className="font-semibold text-[14px] text-text mt-3 mb-1">{line.slice(4)}</h3>;
-        if (line.startsWith("• ") || line.startsWith("- "))
-          return <div key={i} className="flex gap-2 py-0.5 pl-2"><span className="text-accent mt-1 flex-shrink-0 text-[10px]">●</span><span>{renderInline(line.slice(2))}</span></div>;
-        if (line.match(/^\d+\.\s/)) {
-          const [num, ...rest] = line.split(/\.\s(.+)/);
-          return <div key={i} className="flex gap-2 py-0.5 pl-2"><span className="text-accent font-bold flex-shrink-0 text-[12px] mt-0.5">{num}.</span><span>{renderInline(rest[0] ?? "")}</span></div>;
-        }
-        if (line === "" || line === "---") return <div key={i} className="h-2" />;
-        return <p key={i} className="py-0.5">{renderInline(line)}</p>;
-      })}
-    </div>
-  );
-}
+// MarkdownText now uses shared Markdown component
 
 export default function MorningReportPage() {
   const [content, setContent] = useState("");
@@ -155,7 +124,7 @@ export default function MorningReportPage() {
                   <p className="text-[11px] text-text-3">Базиран на реални данни от Shopify, Meta Ads, GA4, Klaviyo</p>
                 </div>
               </div>
-              <MarkdownText text={content} />
+              <Markdown text={content} />
               {loading && <span className="inline-block w-1 h-4 bg-accent animate-pulse ml-0.5 rounded-sm" />}
             </div>
           </Card>
