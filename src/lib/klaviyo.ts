@@ -1,10 +1,13 @@
-const KLAVIYO_API_KEY = process.env.KLAVIYO_API_KEY || "";
 const API_REVISION = "2024-10-15";
+
+function getApiKey() {
+  return process.env.KLAVIYO_API_KEY || "";
+}
 
 async function klaviyoGet(path: string): Promise<Record<string, unknown>> {
   const res = await fetch(`https://a.klaviyo.com${path}`, {
     headers: {
-      Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
+      Authorization: `Klaviyo-API-Key ${getApiKey()}`,
       revision: API_REVISION,
       Accept: "application/json",
     },
@@ -18,7 +21,7 @@ async function klaviyoGet(path: string): Promise<Record<string, unknown>> {
 }
 
 export async function getKlaviyoMetrics() {
-  if (!KLAVIYO_API_KEY) {
+  if (!getApiKey()) {
     return null;
   }
 
