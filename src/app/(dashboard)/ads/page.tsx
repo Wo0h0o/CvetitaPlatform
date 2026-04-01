@@ -596,24 +596,10 @@ function ModalCreative({ ad }: { ad: AdItem }) {
     );
   }
 
-  // Case 2: Video without URL or failed URL — show thumbnail with play overlay linking to Meta
-  if (ad.isVideo) {
+  // Case 2: Video without URL or failed URL — show thumbnail
+  if (ad.isVideo && ad.thumbnail) {
     return (
-      <div className="relative">
-        {ad.thumbnail && (
-          <img src={ad.thumbnail} alt="" className="w-full rounded-xl bg-surface-2 max-h-[400px] object-contain" />
-        )}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-              <Play size={24} className="text-white ml-1" fill="white" />
-            </div>
-            <span className="text-[11px] text-white bg-black/60 px-3 py-1 rounded-full">
-              Видеото не може да се зареди
-            </span>
-          </div>
-        </div>
-      </div>
+      <img src={ad.thumbnail} alt="" className="w-full rounded-xl bg-surface-2 max-h-[400px] object-contain" />
     );
   }
 

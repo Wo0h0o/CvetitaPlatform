@@ -459,10 +459,11 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
     }
     if (!imageUrl) imageUrl = c?.thumbnail_url || null;
 
-    // Video source URL
+    // Video source URL (treat empty string as null)
     let videoUrl: string | null = null;
     if (vid && videoSources.has(vid)) {
-      videoUrl = videoSources.get(vid)!.source || null;
+      const src = videoSources.get(vid)!.source;
+      videoUrl = src && src.length > 0 ? src : null;
     }
 
     map.set(adId, {
