@@ -58,7 +58,8 @@ interface MetricAggregateRequest {
   filter: string;
 }
 
-async function queryMetricAggregate(body: MetricAggregateRequest) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function _queryMetricAggregate(body: MetricAggregateRequest) {
   const token = await getAccessToken();
   const res = await fetch("https://a.klaviyo.com/api/metric-aggregates/", {
     method: "POST",
