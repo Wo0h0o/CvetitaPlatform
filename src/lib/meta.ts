@@ -99,7 +99,7 @@ interface MetaCampaign {
   objective: string;
 }
 
-function actionVal(actions: MetaAction[] | undefined, type: string): number {
+export function actionVal(actions: MetaAction[] | undefined, type: string): number {
   if (!actions) return 0;
   const a = actions.find((x) => x.action_type === type);
   return a ? parseFloat(a.value) : 0;
@@ -220,4 +220,86 @@ export async function getMetaCampaignInsights(datePreset: string = "last_7d") {
       addToCart: actionVal(r.actions, "omni_add_to_cart"),
     };
   }).sort((a, b) => b.spend - a.spend);
+}
+
+// ---- Ad-level insights ----
+
+export interface MetaAdInsightRow extends MetaInsightRow {
+  ad_id?: string;
+  ad_name?: string;
+  adset_name?: string;
+  frequency?: string;
+  reach?: string;
+}
+
+export async function getMetaAdInsights(datePreset: string = "last_7d"): Promise<MetaAdInsightRow[]> {
+  const data = await metaFetch<{ data: MetaAdInsightRow[] }>(
+    `${getAccountId()}/insights`,
+    {
+      fields: "ad_id,ad_name,campaign_name,campaign_id,adset_name,spend,impressions,clicks,cpc,cpm,ctr,reach,frequency,actions,action_values",
+      date_preset: datePreset,
+      level: "ad",
+      limit: "100",
+    }
+  );
+  return data.data || [];
+}
+
+// ---- Ad creatives (batch) ----
+
+export interface MetaAdCreative {
+  id: string;
+  name?: string;
+  effective_status?: string;
+  creative?: {
+    thumbnail_url?: string;
+    image_url?: string;
+    body?: string;
+    title?: string;
+  };
+}
+
+export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, MetaAdCreative>> {
+  const map = new Map<string, MetaAdCreative>();
+  if (!adIds.length) return map;
+
+  // Meta batch endpoint supports up to 50 IDs per request
+  const chunks: string[][] = [];
+  for (let i = 0; i < adIds.length; i += 50) {
+    chunks.push(adIds.slice(i, i + 50));
+  }
+
+  for (const chunk of chunks) {
+    const token = await getToken();
+    const url = new URL(`${BASE}/`);
+    url.searchParams.set("ids", chunk.join(","));
+    url.searchParams.set("fields", "id,name,effective_status,creative{thumbnail_url,image_url,body,title}");
+    url.searchParams.set("access_token", token);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) continue;
+    const data: Record<string, MetaAdCreative> = await res.json();
+    for (const [id, creative] of Object.entries(data)) {
+      map.set(id, creative);
+    }
+  }
+
+  return map;
+}
+
+// ---- Ad management ----
+
+export async function updateMetaAdStatus(adId: string, status: "ACTIVE" | "PAUSED"): Promise<boolean> {
+  const token = await getToken();
+  const res = await fetch(`${BASE}/${adId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ status, access_token: token }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("Meta status update error:", res.status, body);
+    return false;
+  }
+  return true;
 }
