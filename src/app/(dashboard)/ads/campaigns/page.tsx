@@ -71,6 +71,20 @@ export default function CampaignsPage() {
     { revalidateOnFocus: false }
   );
 
+  const [createdFilter, setCreatedFilter] = useState<CreatedFilter>("all");
+
+  const allCampaigns = data?.campaigns || [];
+  const campaigns = useMemo(() => {
+    if (createdFilter === "all") return allCampaigns;
+    const days = createdFilter === "7d" ? 7 : createdFilter === "30d" ? 30 : 90;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return allCampaigns.filter((c) => {
+      if (!c.createdTime) return true;
+      return new Date(c.createdTime) >= cutoff;
+    });
+  }, [allCampaigns, createdFilter]);
+
   if (isLoading) {
     return (
       <>
@@ -103,19 +117,6 @@ export default function CampaignsPage() {
   }
 
   const ov = data?.overview;
-  const allCampaigns = data?.campaigns || [];
-  const [createdFilter, setCreatedFilter] = useState<CreatedFilter>("all");
-
-  const campaigns = useMemo(() => {
-    if (createdFilter === "all") return allCampaigns;
-    const days = createdFilter === "7d" ? 7 : createdFilter === "30d" ? 30 : 90;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    return allCampaigns.filter((c) => {
-      if (!c.createdTime) return true;
-      return new Date(c.createdTime) >= cutoff;
-    });
-  }, [allCampaigns, createdFilter]);
 
   return (
     <>
