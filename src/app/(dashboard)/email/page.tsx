@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
@@ -14,6 +15,7 @@ import {
   Eye,
   Zap,
   ArrowRight,
+  ArrowUpDown,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -59,6 +61,23 @@ const statusVariant: Record<string, "green" | "blue" | "orange" | "neutral"> = {
   Cancelled: "neutral",
 };
 
+type CampaignFilter = "all" | "Sent" | "Draft" | "Scheduled";
+type CampaignSort = "date" | "revenue" | "openRate";
+type FlowFilter = "active" | "all";
+
+const campaignFilters: { id: CampaignFilter; label: string }[] = [
+  { id: "all", label: "Всички" },
+  { id: "Sent", label: "Sent" },
+  { id: "Draft", label: "Draft" },
+  { id: "Scheduled", label: "Planned" },
+];
+
+const campaignSorts: { id: CampaignSort; label: string }[] = [
+  { id: "date", label: "Дата" },
+  { id: "revenue", label: "Revenue" },
+  { id: "openRate", label: "Open Rate" },
+];
+
 export default function EmailPage() {
   const { queryString, label } = useDateRange();
   const { data, isLoading } = useSWR<EmailData>(
@@ -66,6 +85,45 @@ export default function EmailPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
+
+  const [campaignFilter, setCampaignFilter] = useState<CampaignFilter>("all");
+  const [campaignSort, setCampaignSort] = useState<CampaignSort>("date");
+  const [flowFilter, setFlowFilter] = useState<FlowFilter>("active");
+  const [showAllCampaigns, setShowAllCampaigns] = useState(false);
+
+  const filteredCampaigns = useMemo(() => {
+    if (!data?.campaigns) return [];
+    let campaigns = data.campaigns;
+
+    if (campaignFilter !== "all") {
+      campaigns = campaigns.filter((c) => c.status === campaignFilter);
+    }
+
+    campaigns = [...campaigns].sort((a, b) => {
+      switch (campaignSort) {
+        case "revenue":
+          return b.revenue - a.revenue;
+        case "openRate":
+          return b.openRate - a.openRate;
+        case "date":
+        default:
+          return new Date(b.sendTime || b.name).getTime() - new Date(a.sendTime || a.name).getTime();
+      }
+    });
+
+    return campaigns;
+  }, [data?.campaigns, campaignFilter, campaignSort]);
+
+  const visibleCampaigns = showAllCampaigns ? filteredCampaigns : filteredCampaigns.slice(0, 10);
+  const totalCampaigns = filteredCampaigns.length;
+
+  const filteredFlows = useMemo(() => {
+    if (!data?.topFlows) return [];
+    if (flowFilter === "active") {
+      return data.topFlows.filter((f) => f.status === "live");
+    }
+    return data.topFlows;
+  }, [data?.topFlows, flowFilter]);
 
   if (isLoading) {
     return (
@@ -80,14 +138,10 @@ export default function EmailPage() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
-            <CardBody>
-              <Skeleton className="h-64 w-full" />
-            </CardBody>
+            <CardBody><Skeleton className="h-64 w-full" /></CardBody>
           </Card>
           <Card>
-            <CardBody>
-              <Skeleton className="h-64 w-full" />
-            </CardBody>
+            <CardBody><Skeleton className="h-64 w-full" /></CardBody>
           </Card>
         </div>
       </>
@@ -113,10 +167,7 @@ export default function EmailPage() {
               <div className="bg-surface-2 rounded-xl p-4 max-w-sm mx-auto text-left">
                 <ol className="text-[12px] text-text-2 space-y-1.5">
                   <li className="flex items-start gap-2">
-                    <ArrowRight
-                      size={12}
-                      className="mt-0.5 flex-shrink-0 text-accent"
-                    />
+                    <ArrowRight size={12} className="mt-0.5 flex-shrink-0 text-accent" />
                     KLAVIYO_API_KEY (Private API Key от Klaviyo Settings)
                   </li>
                 </ol>
@@ -128,7 +179,8 @@ export default function EmailPage() {
     );
   }
 
-  const fmt = (n: number) => n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number) =>
+    n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pct = (n: number) => (n * 100).toFixed(1) + "%";
 
   return (
@@ -169,16 +221,58 @@ export default function EmailPage() {
           <CardHeader
             action={
               <span className="text-[12px] text-text-3">
-                {data?.campaigns?.length || 0} кампании
+                {totalCampaigns} кампании
               </span>
             }
           >
-            Последни кампании
+            Кампании
           </CardHeader>
           <CardBody>
+            {/* Filters + Sort */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {/* Status filter pills */}
+              <div className="flex items-center gap-1">
+                {campaignFilters.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => { setCampaignFilter(f.id); setShowAllCampaigns(false); }}
+                    className={`
+                      px-3 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 cursor-pointer
+                      ${campaignFilter === f.id
+                        ? "bg-accent text-white shadow-sm"
+                        : "text-text-3 hover:text-text-2 hover:bg-surface-2"
+                      }
+                    `}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort pills */}
+              <div className="flex items-center gap-1 ml-auto">
+                <ArrowUpDown size={12} className="text-text-3" />
+                {campaignSorts.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setCampaignSort(s.id)}
+                    className={`
+                      px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 cursor-pointer
+                      ${campaignSort === s.id
+                        ? "bg-surface-2 text-text border border-border-strong"
+                        : "text-text-3 hover:text-text-2"
+                      }
+                    `}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Table */}
             <div className="overflow-x-auto -mx-5 px-5">
               <div className="min-w-[500px]">
-                {/* Header */}
                 <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
                   <div className="col-span-5">Кампания</div>
                   <div className="col-span-2 text-right">Revenue</div>
@@ -187,7 +281,7 @@ export default function EmailPage() {
                   <div className="col-span-1 text-right">Статус</div>
                 </div>
 
-                {data?.campaigns?.map((c, i) => (
+                {visibleCampaigns.map((c, i) => (
                   <div
                     key={i}
                     className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
@@ -208,13 +302,13 @@ export default function EmailPage() {
                       )}
                     </div>
                     <div className="col-span-2 text-right text-[13px] font-semibold text-text">
-                      {c.revenue > 0 ? `${fmt(c.revenue)}` : "—"}
+                      {c.revenue > 0 ? fmt(c.revenue) : "—"}
                     </div>
                     <div className="col-span-2 text-right text-[13px] text-text-2">
-                      {pct(c.openRate)}
+                      {c.recipients > 0 ? pct(c.openRate) : "—"}
                     </div>
                     <div className="col-span-2 text-right text-[13px] text-text-2">
-                      {pct(c.clickRate)}
+                      {c.recipients > 0 ? pct(c.clickRate) : "—"}
                     </div>
                     <div className="col-span-1 flex justify-end">
                       <Badge variant={statusVariant[c.status] || "neutral"}>
@@ -224,22 +318,62 @@ export default function EmailPage() {
                   </div>
                 ))}
 
-                {(!data?.campaigns || data.campaigns.length === 0) && (
+                {visibleCampaigns.length === 0 && (
                   <div className="text-center py-8 text-text-3 text-[13px]">
-                    Няма кампании за периода
+                    Няма кампании
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Show more/less */}
+            {!showAllCampaigns && totalCampaigns > 10 && (
+              <button
+                onClick={() => setShowAllCampaigns(true)}
+                className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
+              >
+                Покажи всички {totalCampaigns} кампании
+              </button>
+            )}
+            {showAllCampaigns && totalCampaigns > 10 && (
+              <button
+                onClick={() => setShowAllCampaigns(false)}
+                className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
+              >
+                Покажи по-малко
+              </button>
+            )}
           </CardBody>
         </Card>
 
-        {/* Top Flows */}
+        {/* Flows */}
         <Card>
-          <CardHeader>Топ Flows по Revenue</CardHeader>
+          <CardHeader
+            action={
+              <div className="flex items-center gap-1">
+                {(["active", "all"] as FlowFilter[]).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFlowFilter(f)}
+                    className={`
+                      px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 cursor-pointer
+                      ${flowFilter === f
+                        ? "bg-accent text-white shadow-sm"
+                        : "text-text-3 hover:text-text-2 hover:bg-surface-2"
+                      }
+                    `}
+                  >
+                    {f === "active" ? "Active" : "Всички"}
+                  </button>
+                ))}
+              </div>
+            }
+          >
+            Flows по Revenue
+          </CardHeader>
           <CardBody>
             <div className="space-y-1">
-              {data?.topFlows?.map((f, i) => (
+              {filteredFlows.map((f, i) => (
                 <div
                   key={i}
                   className="py-3 px-2 rounded-lg hover:bg-surface-2 transition-colors"
@@ -265,9 +399,9 @@ export default function EmailPage() {
                 </div>
               ))}
 
-              {(!data?.topFlows || data.topFlows.length === 0) && (
+              {filteredFlows.length === 0 && (
                 <div className="text-center py-8 text-text-3 text-[13px]">
-                  Няма flow данни за периода
+                  Няма flow данни
                 </div>
               )}
             </div>

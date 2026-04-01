@@ -159,10 +159,9 @@ export async function getKlaviyoMetrics(preset?: string) {
     { revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0 }
   );
 
-  // --- Top flows by revenue ---
+  // --- All flows by revenue ---
   const topFlows = Array.from(flowMap.values())
     .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 8)
     .map((f) => ({
       name: f.name,
       revenue: f.revenue,
@@ -173,7 +172,7 @@ export async function getKlaviyoMetrics(preset?: string) {
     }));
 
   // --- Campaign details with stats ---
-  const campaignDetails = (campaignsList.data || []).slice(0, 10).map((c) => {
+  const campaignDetails = (campaignsList.data || []).map((c) => {
     const report = campaignResults.find((r) => r.groupings?.campaign_id === c.id);
     return {
       name: c.attributes.name,
