@@ -163,6 +163,7 @@ export async function getKlaviyoMetrics(preset?: string) {
   const topFlows = Array.from(flowMap.values())
     .sort((a, b) => b.revenue - a.revenue)
     .map((f) => ({
+      id: f.id,
       name: f.name,
       revenue: f.revenue,
       recipients: f.recipients,
@@ -209,5 +210,104 @@ export async function getKlaviyoMetrics(preset?: string) {
     totalFlows,
     topFlows,
     campaigns: campaignDetails,
+  };
+}
+
+// ---- Flow detail ----
+
+export async function getFlowDetail(flowId: string, preset?: string) {
+  if (!getApiKey()) return null;
+
+  const timeframe = { key: getTimeframeKey(preset) };
+
+  interface FlowResponse {
+    data?: {
+      attributes?: { name: string; status: string; trigger_type: string; created: string; updated: string };
+    };
+    included?: { type: string; id: string; attributes?: { action_type: string; status: string } }[];
+  }
+
+  interface FlowReportResponse {
+    data?: {
+      attributes?: {
+        results?: {
+          groupings?: Record<string, string>;
+          statistics: Record<string, number>;
+        }[];
+      };
+    };
+  }
+
+  const [flowData, messageStats] = await Promise.all([
+    klaviyoGet(`/api/flows/${flowId}/?include=flow-actions&fields[flow-action]=action_type,status`) as Promise<FlowResponse>,
+    klaviyoPost("/api/flow-values-reports/", {
+      data: {
+        type: "flow-values-report",
+        attributes: {
+          timeframe,
+          conversion_metric_id: PLACED_ORDER_METRIC_ID,
+          filter: `equals(flow_id,"${flowId}")`,
+          statistics: [
+            "recipients", "delivered", "open_rate", "click_rate",
+            "conversion_value", "revenue_per_recipient",
+            "unsubscribe_rate", "bounce_rate",
+          ],
+          group_by: ["flow_id", "flow_message_id", "flow_message_name"],
+        },
+      },
+    }) as Promise<FlowReportResponse>,
+  ]);
+
+  const attrs = flowData.data?.attributes;
+  const actions = flowData.included?.filter((i) => i.type === "flow-action") || [];
+  const emailActions = actions.filter((a) => a.attributes?.action_type === "SEND_EMAIL");
+  const delayActions = actions.filter((a) => a.attributes?.action_type === "TIME_DELAY");
+
+  const messageResults = messageStats.data?.attributes?.results || [];
+
+  // Aggregate totals
+  let totalRevenue = 0;
+  let totalRecipients = 0;
+  let openRateSum = 0;
+  let clickRateSum = 0;
+
+  const messages = messageResults.map((r) => {
+    const recip = r.statistics.recipients || 0;
+    totalRevenue += r.statistics.conversion_value || 0;
+    totalRecipients += recip;
+    openRateSum += (r.statistics.open_rate || 0) * recip;
+    clickRateSum += (r.statistics.click_rate || 0) * recip;
+
+    return {
+      id: r.groupings?.flow_message_id || "",
+      name: r.groupings?.flow_message_name || "Unnamed",
+      recipients: recip,
+      openRate: r.statistics.open_rate || 0,
+      clickRate: r.statistics.click_rate || 0,
+      revenue: r.statistics.conversion_value || 0,
+      revenuePerRecipient: r.statistics.revenue_per_recipient || 0,
+      unsubscribeRate: r.statistics.unsubscribe_rate || 0,
+      bounceRate: r.statistics.bounce_rate || 0,
+    };
+  });
+
+  return {
+    flow: {
+      id: flowId,
+      name: attrs?.name || "Unknown",
+      status: attrs?.status || "unknown",
+      triggerType: attrs?.trigger_type || "",
+      created: attrs?.created || "",
+      updated: attrs?.updated || "",
+      emailCount: emailActions.length,
+      delayCount: delayActions.length,
+    },
+    totals: {
+      revenue: totalRevenue,
+      recipients: totalRecipients,
+      avgOpenRate: totalRecipients > 0 ? openRateSum / totalRecipients : 0,
+      avgClickRate: totalRecipients > 0 ? clickRateSum / totalRecipients : 0,
+    },
+    messages,
   };
 }

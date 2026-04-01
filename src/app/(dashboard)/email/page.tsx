@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
@@ -21,6 +22,7 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface FlowData {
+  id: string;
   name: string;
   revenue: number;
   recipients: number;
@@ -317,7 +319,7 @@ export default function EmailPage() {
           <CardBody>
             <div className="space-y-1">
               {filteredFlows.map((f, i) => (
-                <div key={i} className="py-3 px-2 rounded-lg hover:bg-surface-2 transition-colors">
+                <Link key={f.id} href={`/email/flows/${f.id}`} className="block py-3 px-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="flex items-center justify-center w-5 h-5 rounded-md bg-accent-soft text-accent text-[10px] font-bold flex-shrink-0">
@@ -334,7 +336,7 @@ export default function EmailPage() {
                     <span>Click {pct(f.clickRate)}</span>
                     <span>{f.recipients.toLocaleString("bg-BG")} emails</span>
                   </div>
-                </div>
+                </Link>
               ))}
               {filteredFlows.length === 0 && (
                 <div className="text-center py-8 text-text-3 text-[13px]">Няма flow данни</div>
