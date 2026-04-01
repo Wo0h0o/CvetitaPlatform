@@ -266,7 +266,9 @@ async function streamClaudeResponse(
         const blockType = blockTypes[idx];
 
         if (blockType === "text" && delta.type === "text_delta") {
-          send({ t: "text", d: delta.text as string });
+          const text = delta.text as string;
+          blockAccumulator[idx] = (blockAccumulator[idx] || "") + text;
+          send({ t: "text", d: text });
         }
         if (blockType === "tool_use" && delta.type === "input_json_delta") {
           blockAccumulator[idx] = (blockAccumulator[idx] || "") + ((delta.partial_json as string) || "");
@@ -282,7 +284,7 @@ async function streamClaudeResponse(
         const blockType = blockTypes[idx];
         const accumulated = blockAccumulator[idx] || "";
 
-        if (blockType === "text") {
+        if (blockType === "text" && accumulated) {
           contentBlocks.push({ type: "text", text: accumulated });
         }
 
