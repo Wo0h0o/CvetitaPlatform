@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseDateParams } from "@/lib/api-utils";
+import { fetchAllProducts } from "@/lib/shopify";
 
 const STORE_URL = process.env.SHOPIFY_STORE_URL!;
 const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -55,7 +56,13 @@ async function fetchOrdersForRange(from: string, to: string): Promise<Order[]> {
   );
 }
 
-function analyzeOrders(orders: Order[]) {
+interface ProductCatalogItem {
+  title: string;
+  handle: string;
+  imageUrl: string | null;
+}
+
+function analyzeOrders(orders: Order[], catalog: Map<string, ProductCatalogItem> = new Map()) {
   const productMap = new Map<string, { quantity: number; revenue: number; orders: number }>();
   const combos = new Map<string, number>();
   const dailyRevenue = new Map<string, number>();
@@ -87,12 +94,17 @@ function analyzeOrders(orders: Order[]) {
   }
 
   const allProducts = Array.from(productMap.entries())
-    .map(([title, data]) => ({
-      title,
-      ...data,
-      revenue: Math.round(data.revenue * 100) / 100,
-      avgPrice: data.quantity > 0 ? Math.round((data.revenue / data.quantity) * 100) / 100 : 0,
-    }))
+    .map(([title, data]) => {
+      const catalogItem = catalog.get(title);
+      return {
+        title,
+        handle: catalogItem?.handle || null,
+        imageUrl: catalogItem?.imageUrl || null,
+        ...data,
+        revenue: Math.round(data.revenue * 100) / 100,
+        avgPrice: data.quantity > 0 ? Math.round((data.revenue / data.quantity) * 100) / 100 : 0,
+      };
+    })
     .sort((a, b) => b.revenue - a.revenue);
 
   const topCombos = Array.from(combos.entries())
@@ -129,12 +141,23 @@ export async function GET(req: NextRequest) {
   try {
     const dates = parseDateParams(req);
 
-    const [currentOrders, compOrders] = await Promise.all([
+    const [currentOrders, compOrders, shopifyProducts] = await Promise.all([
       fetchOrdersForRange(dates.from, dates.to),
       fetchOrdersForRange(dates.compFrom, dates.compTo),
+      fetchAllProducts(),
     ]);
 
-    const current = analyzeOrders(currentOrders);
+    // Build catalog map: title → { handle, imageUrl }
+    const catalog = new Map<string, ProductCatalogItem>();
+    for (const p of shopifyProducts) {
+      catalog.set(p.title, {
+        title: p.title,
+        handle: p.handle,
+        imageUrl: p.image?.src || null,
+      });
+    }
+
+    const current = analyzeOrders(currentOrders, catalog);
     const comparison = analyzeOrders(compOrders);
 
     // Calculate changes

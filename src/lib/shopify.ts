@@ -1,6 +1,7 @@
-const STORE_URL = process.env.SHOPIFY_STORE_URL!;
-const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN!;
 const API_VERSION = "2024-10";
+
+function getStoreUrl() { return process.env.SHOPIFY_STORE_URL || ""; }
+function getAccessToken() { return process.env.SHOPIFY_ACCESS_TOKEN || ""; }
 
 interface ShopifyOrder {
   id: number;
@@ -14,7 +15,7 @@ interface ShopifyOrder {
 async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrder[]> {
   const orders: ShopifyOrder[] = [];
   let url: string | null =
-    `https://${STORE_URL}/admin/api/${API_VERSION}/orders.json?` +
+    `https://${getStoreUrl()}/admin/api/${API_VERSION}/orders.json?` +
     new URLSearchParams({
       created_at_min: dateMin,
       created_at_max: dateMax,
@@ -25,7 +26,7 @@ async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrd
 
   while (url) {
     const res: Response = await fetch(url, {
-      headers: { "X-Shopify-Access-Token": ACCESS_TOKEN },
+      headers: { "X-Shopify-Access-Token": getAccessToken() },
     });
 
     if (!res.ok) {
@@ -87,6 +88,61 @@ export async function getShopifyKPIs() {
     orders: { value: todayCount, change: calcChange(todayCount, yesterdayCount) },
     aov: { value: Math.round(todayAov * 100) / 100, change: calcChange(todayAov, yesterdayAov) },
   };
+}
+
+// ---- Product fetching ----
+
+export interface ShopifyProduct {
+  id: number;
+  title: string;
+  handle: string;
+  body_html: string;
+  vendor: string;
+  product_type: string;
+  tags: string;
+  status: string;
+  created_at: string;
+  image: { src: string } | null;
+  images: { id: number; src: string; alt: string | null }[];
+  variants: {
+    id: number;
+    title: string;
+    price: string;
+    compare_at_price: string | null;
+    sku: string;
+    inventory_quantity: number;
+    option1: string | null;
+  }[];
+}
+
+export async function fetchAllProducts(): Promise<ShopifyProduct[]> {
+  const products: ShopifyProduct[] = [];
+  let url: string | null =
+    `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?limit=250&fields=id,title,handle,image,product_type,vendor,status`;
+
+  while (url) {
+    const res: Response = await fetch(url, {
+      headers: { "X-Shopify-Access-Token": getAccessToken() },
+    });
+    if (!res.ok) break;
+    const data = await res.json();
+    products.push(...(data.products || []));
+    const link: string | null = res.headers.get("Link");
+    const nextMatch = link?.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+
+  return products.filter((p) => p.status === "active");
+}
+
+export async function fetchProductByHandle(handle: string): Promise<ShopifyProduct | null> {
+  const res = await fetch(
+    `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?handle=${encodeURIComponent(handle)}`,
+    { headers: { "X-Shopify-Access-Token": getAccessToken() } }
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.products?.[0] || null;
 }
 
 export interface TopProduct {

@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useMemo } from "react";
@@ -9,6 +10,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SortButton, type SortDir } from "@/components/shared/SortButton";
+import Link from "next/link";
 import {
   ShoppingCart,
   Repeat,
@@ -23,6 +25,8 @@ type SortKey = "revenue" | "quantity" | "orders" | "avgPrice";
 
 interface Product {
   title: string;
+  handle: string | null;
+  imageUrl: string | null;
   quantity: number;
   revenue: number;
   orders: number;
@@ -197,19 +201,34 @@ export default function ProductsPage() {
                 </div>
 
                 {/* Rows */}
-                {filteredProducts.map((p, i) => (
-                  <div
-                    key={p.title}
-                    className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
-                  >
-                    <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
-                    <div className="col-span-4 text-[13px] font-medium text-text truncate">{p.title}</div>
-                    <div className="col-span-2 text-right text-[13px] text-text-2">{p.quantity}</div>
-                    <div className="col-span-2 text-right text-[14px] font-semibold text-text">{p.revenue.toFixed(2)}</div>
-                    <div className="col-span-1 text-right text-[13px] text-text-2">{p.orders}</div>
-                    <div className="col-span-2 text-right text-[12px] text-text-3">{p.avgPrice.toFixed(2)} EUR</div>
-                  </div>
-                ))}
+                {filteredProducts.map((p, i) => {
+                  const row = (
+                    <div
+                      className={`grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors ${p.handle ? "cursor-pointer" : ""}`}
+                    >
+                      <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
+                      <div className="col-span-4 flex items-center gap-2.5 min-w-0">
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-surface-2" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-surface-2 flex-shrink-0" />
+                        )}
+                        <span className="text-[13px] font-medium text-text truncate">{p.title}</span>
+                      </div>
+                      <div className="col-span-2 text-right text-[13px] text-text-2">{p.quantity}</div>
+                      <div className="col-span-2 text-right text-[14px] font-semibold text-text">{p.revenue.toFixed(2)}</div>
+                      <div className="col-span-1 text-right text-[13px] text-text-2">{p.orders}</div>
+                      <div className="col-span-2 text-right text-[12px] text-text-3">{p.avgPrice.toFixed(2)} EUR</div>
+                    </div>
+                  );
+                  return p.handle ? (
+                    <Link key={p.title} href={`/products/${p.handle}`} className="block">
+                      {row}
+                    </Link>
+                  ) : (
+                    <div key={p.title}>{row}</div>
+                  );
+                })}
 
                 {!showAll && totalCount > 15 && (
                   <button
