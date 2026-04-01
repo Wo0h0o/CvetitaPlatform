@@ -52,7 +52,7 @@ export function ChannelBreakdown() {
   const totalSessions = channels.reduce((s, c) => s + c.sessions, 0) || 1;
 
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader
         action={
           <span className="text-[12px] text-text-3">
@@ -62,7 +62,7 @@ export function ChannelBreakdown() {
       >
         Канали
       </CardHeader>
-      <CardBody>
+      <CardBody className="flex-1 flex flex-col justify-center">
         <div className="space-y-3">
           {channels.map((ch) => {
             const pct = (ch.sessions / totalSessions) * 100;

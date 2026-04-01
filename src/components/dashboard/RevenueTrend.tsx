@@ -32,7 +32,7 @@ export function RevenueTrend() {
   const maxRevenue = series.length > 0 ? Math.max(...series.map((d) => d.revenue)) : 0;
 
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader
         action={
           <div className="flex items-center gap-1.5">
@@ -45,10 +45,10 @@ export function RevenueTrend() {
       >
         Revenue (30 дни)
       </CardHeader>
-      <CardBody>
+      <CardBody className="flex-1 flex flex-col">
         {series.length > 1 ? (
-          <>
-            <div className="flex items-end gap-[2px] h-24">
+          <div className="flex-1 flex flex-col">
+            <div className="flex items-end gap-[2px] flex-1 min-h-[120px]">
               {series.map((d) => {
                 const pct = maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0;
                 return (
@@ -68,7 +68,7 @@ export function RevenueTrend() {
               <span>{series[0]?.date}</span>
               <span>{series[series.length - 1]?.date}</span>
             </div>
-          </>
+          </div>
         ) : (
           <div className="text-center py-8 text-text-3 text-[13px]">Няма данни</div>
         )}
