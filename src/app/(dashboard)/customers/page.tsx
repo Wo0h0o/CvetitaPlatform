@@ -50,7 +50,7 @@ function retentionColor(pct: number): string {
 export default function CustomersPage() {
   const [preset, setPreset] = useState<Preset>("90d");
 
-  const { data, isLoading } = useSWR<CustomersData>(
+  const { data, isLoading, error: swrError } = useSWR<CustomersData>(
     `/api/dashboard/customers?preset=${preset}`,
     fetcher,
     { revalidateOnFocus: false }
@@ -64,6 +64,21 @@ export default function CustomersPage() {
           {[1, 2, 3, 4, 5, 6].map((i) => <KpiSkeleton key={i} />)}
         </div>
         <Card><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
+      </>
+    );
+  }
+
+  if (swrError || data?.error) {
+    return (
+      <>
+        <PageHeader title="Клиенти" />
+        <Card><CardBody>
+          <div className="text-center py-12">
+            <Users size={32} className="text-text-3 mx-auto mb-3" />
+            <p className="text-[14px] text-text mb-1">Грешка при зареждане</p>
+            <p className="text-[13px] text-text-3">Проверете Shopify API конфигурацията.</p>
+          </div>
+        </CardBody></Card>
       </>
     );
   }

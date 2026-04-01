@@ -204,7 +204,10 @@ export async function fetchOrdersWithCustomers(dateMin: string, dateMax: string)
     const res: Response = await fetch(url, {
       headers: { "X-Shopify-Access-Token": getAccessToken() },
     });
-    if (!res.ok) break;
+    if (!res.ok) {
+      console.error("Shopify customers API error:", res.status, await res.text());
+      break;
+    }
     const data = await res.json();
     orders.push(...(data.orders || []));
     const link = res.headers.get("Link");

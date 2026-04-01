@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchOrdersWithCustomers } from "@/lib/shopify";
 import type { CustomerOrder } from "@/lib/shopify";
 
+export const maxDuration = 30;
+
 function daysAgoStr(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
