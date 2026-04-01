@@ -62,21 +62,13 @@ export default function EmailPage() {
             </div>
             <h2 className="text-[18px] font-semibold text-text mb-2">Klaviyo не е свързан</h2>
             <p className="text-[14px] text-text-2 max-w-md mx-auto mb-6">
-              Добави Klaviyo credentials в Vercel Environment Variables.
+              Добави Klaviyo Private API Key в Vercel Environment Variables.
             </p>
             <div className="bg-surface-2 rounded-xl p-4 max-w-sm mx-auto text-left">
               <ol className="text-[12px] text-text-2 space-y-1.5">
                 <li className="flex items-start gap-2">
                   <ArrowRight size={12} className="mt-0.5 flex-shrink-0 text-accent" />
-                  KLAVIYO_CLIENT_ID
-                </li>
-                <li className="flex items-start gap-2">
-                  <ArrowRight size={12} className="mt-0.5 flex-shrink-0 text-accent" />
-                  KLAVIYO_CLIENT_SECRET
-                </li>
-                <li className="flex items-start gap-2">
-                  <ArrowRight size={12} className="mt-0.5 flex-shrink-0 text-accent" />
-                  KLAVIYO_REFRESH_TOKEN
+                  KLAVIYO_API_KEY (Private API Key от Klaviyo Settings)
                 </li>
               </ol>
             </div>
