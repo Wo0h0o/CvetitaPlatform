@@ -217,7 +217,7 @@ export async function GET(request: Request) {
       return {
         ...ad,
         status: creative?.effective_status || "UNKNOWN",
-        thumbnail: creative?.creative?.thumbnail_url || creative?.creative?.image_url || null,
+        thumbnail: creative?.creative?.image_url || creative?.creative?.thumbnail_url || null,
         creativeTitle: creative?.creative?.title || null,
         creativeBody: creative?.creative?.body || null,
       };
