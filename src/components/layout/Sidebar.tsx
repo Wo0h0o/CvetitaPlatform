@@ -127,7 +127,7 @@ export function Sidebar({
               <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const isActive = item.children
-                    ? pathname.startsWith(item.href)
+                    ? pathname.startsWith(item.href) || item.children.some((c) => pathname === c.href)
                     : pathname === item.href;
                   const showChildren = item.children && isActive && !collapsed;
                   return (
