@@ -12,6 +12,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_ads_overview: "Реклами (Meta)",
   get_ads_detail: "Детайлни реклами",
   get_adsets: "Ad Sets (Meta)",
+  get_customers: "Клиенти (Shopify)",
 };
 
 const CUSTOM_TOOLS = [
@@ -81,6 +82,17 @@ const CUSTOM_TOOLS = [
       required: [] as string[],
     },
   },
+  {
+    name: "get_customers",
+    description: "Получава данни за клиентите — общ брой, нови vs връщащи се, repeat purchase rate, среден брой поръчки на клиент, средно време до 2-ра поръчка, приход на клиент, cohort retention таблица по седмици. Ключов инструмент за LTV анализ.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        period: { type: "string", enum: ["30d", "60d", "90d", "all"], description: "Период. По подразбиране 90d." },
+      },
+      required: [] as string[],
+    },
+  },
 ];
 
 const WEB_SEARCH_TOOL = {
@@ -111,6 +123,7 @@ const SYSTEM_PROMPT = `Ти си Команден Чат — централен 
 • get_ads_overview — рекламен обзор, кампании, фуния (Meta Ads)
 • get_ads_detail — детайлни реклами със scores
 • get_adsets — Ad Sets с бюджет, аудитория, статус (Campaign → Ad Set → Ad)
+• get_customers — клиенти, cohort retention, repeat rate, LTV сигнали
 • web_search — реално търсене в интернет
 
 == ПРАВИЛА ==
@@ -168,6 +181,11 @@ async function executeTool(
       case "get_adsets": {
         const period = input.period || "7d";
         const data = await fetch(`${baseUrl}/api/dashboard/ads/adsets?preset=${period}`).then((r) => r.json());
+        return JSON.stringify(data);
+      }
+      case "get_customers": {
+        const period = input.period || "90d";
+        const data = await fetch(`${baseUrl}/api/dashboard/customers?preset=${period}`).then((r) => r.json());
         return JSON.stringify(data);
       }
       default:

@@ -13,6 +13,7 @@ import {
   Mail,
   Megaphone,
   Sunrise,
+  Users,
 } from "lucide-react";
 
 interface NavChild {
@@ -45,6 +46,7 @@ const navSections: NavSection[] = [
     label: "Отчети",
     items: [
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
+      { href: "/customers", icon: Users, label: "Клиенти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
       { href: "/email", icon: Mail, label: "Имейли" },
       {

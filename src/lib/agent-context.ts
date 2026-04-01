@@ -50,6 +50,14 @@ interface BusinessContext {
       purchases: number;
     };
   } | null;
+  customers: {
+    totalCustomers: number;
+    newCustomers: number;
+    returningCustomers: number;
+    repeatPurchaseRate: number;
+    avgTimeTo2ndPurchase: number | null;
+    revenuePerCustomer: number;
+  } | null;
 }
 
 export async function fetchBusinessContext(
@@ -61,6 +69,7 @@ export async function fetchBusinessContext(
     fetch(`${baseUrl}/api/dashboard/email?preset=30d`).then((r) => r.json()),
     fetch(`${baseUrl}/api/dashboard/traffic`).then((r) => r.json()),
     fetch(`${baseUrl}/api/dashboard/ads?preset=7d`).then((r) => r.json()),
+    fetch(`${baseUrl}/api/dashboard/customers?preset=90d`).then((r) => r.json()),
   ]);
 
   const kpis = results[0].status === "fulfilled" ? results[0].value : null;
@@ -68,6 +77,7 @@ export async function fetchBusinessContext(
   const email = results[2].status === "fulfilled" ? results[2].value : null;
   const traffic = results[3].status === "fulfilled" ? results[3].value : null;
   const ads = results[4].status === "fulfilled" ? results[4].value : null;
+  const custData = results[5].status === "fulfilled" ? results[5].value : null;
 
   return {
     shopify: kpis
@@ -155,6 +165,17 @@ export async function fetchBusinessContext(
             initiateCheckout: ads.overview?.initiateCheckout ?? 0,
             purchases: ads.overview?.purchases ?? 0,
           },
+        }
+      : null,
+
+    customers: custData && !custData.error && custData.summary
+      ? {
+          totalCustomers: custData.summary.totalCustomers ?? 0,
+          newCustomers: custData.summary.newCustomers ?? 0,
+          returningCustomers: custData.summary.returningCustomers ?? 0,
+          repeatPurchaseRate: custData.summary.repeatPurchaseRate ?? 0,
+          avgTimeTo2ndPurchase: custData.summary.avgTimeTo2ndPurchase ?? null,
+          revenuePerCustomer: custData.summary.revenuePerCustomer ?? 0,
         }
       : null,
   };
@@ -258,7 +279,20 @@ export function formatContextForPrompt(ctx: BusinessContext): string {
     lines.push("");
   }
 
-  if (!ctx.shopify && !ctx.ga4 && !ctx.klaviyo && !ctx.meta) {
+  // ---- Customers ----
+  if (ctx.customers) {
+    const c = ctx.customers;
+    lines.push("КЛИЕНТИ (последните 90 дни):");
+    lines.push(`  Общо: ${fmtInt(c.totalCustomers)} (нови: ${fmtInt(c.newCustomers)}, връщащи се: ${fmtInt(c.returningCustomers)})`);
+    lines.push(`  Repeat purchase rate: ${c.repeatPurchaseRate}%`);
+    if (c.avgTimeTo2ndPurchase !== null) {
+      lines.push(`  Средно време до 2-ра поръчка: ${c.avgTimeTo2ndPurchase} дни`);
+    }
+    lines.push(`  Приход на клиент: ${fmtNum(c.revenuePerCustomer)} EUR`);
+    lines.push("");
+  }
+
+  if (!ctx.shopify && !ctx.ga4 && !ctx.klaviyo && !ctx.meta && !ctx.customers) {
     lines.push("(Бизнес данните не са достъпни в момента)");
   }
 

@@ -171,3 +171,51 @@ export async function getTopProducts(): Promise<TopProduct[]> {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5);
 }
+
+// ---- Customer-level order fetching (for cohort/LTV analysis) ----
+
+export interface CustomerOrder {
+  id: number;
+  total_price: string;
+  financial_status: string;
+  cancelled_at: string | null;
+  created_at: string;
+  customer: {
+    id: number;
+    orders_count: number;
+    created_at: string;
+    total_spent: string;
+  } | null;
+}
+
+export async function fetchOrdersWithCustomers(dateMin: string, dateMax: string): Promise<CustomerOrder[]> {
+  const orders: CustomerOrder[] = [];
+  let url: string | null =
+    `https://${getStoreUrl()}/admin/api/${API_VERSION}/orders.json?` +
+    new URLSearchParams({
+      created_at_min: dateMin,
+      created_at_max: dateMax,
+      status: "any",
+      limit: "250",
+      fields: "id,total_price,financial_status,cancelled_at,created_at,customer",
+    }).toString();
+
+  while (url) {
+    const res: Response = await fetch(url, {
+      headers: { "X-Shopify-Access-Token": getAccessToken() },
+    });
+    if (!res.ok) break;
+    const data = await res.json();
+    orders.push(...(data.orders || []));
+    const link = res.headers.get("Link");
+    const nextMatch = link?.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+
+  return orders.filter(
+    (o) =>
+      ["paid", "pending", "partially_paid", "authorized"].includes(o.financial_status) &&
+      !o.cancelled_at &&
+      o.customer?.id
+  );
+}
