@@ -247,7 +247,7 @@ export async function getMetaAdInsights(datePreset: string = "last_7d"): Promise
 
 // ---- Ad creatives (batch) ----
 
-export interface MetaAdCreative {
+interface RawCreativeData {
   id: string;
   name?: string;
   effective_status?: string;
@@ -256,32 +256,142 @@ export interface MetaAdCreative {
     image_url?: string;
     body?: string;
     title?: string;
+    video_id?: string;
+    object_story_spec?: {
+      video_data?: {
+        video_id?: string;
+        image_url?: string;
+      };
+    };
+    asset_feed_spec?: {
+      images?: { hash: string }[];
+    };
   };
 }
 
-export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, MetaAdCreative>> {
-  const map = new Map<string, MetaAdCreative>();
+export interface ResolvedCreative {
+  id: string;
+  name?: string;
+  effective_status?: string;
+  imageUrl: string | null;
+  videoUrl: string | null;
+  videoId: string | null;
+  body: string | null;
+  title: string | null;
+  isVideo: boolean;
+}
+
+export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, ResolvedCreative>> {
+  const map = new Map<string, ResolvedCreative>();
   if (!adIds.length) return map;
 
-  // Meta batch endpoint supports up to 50 IDs per request
+  // Step 1: Batch fetch ad creative metadata
+  const rawMap = new Map<string, RawCreativeData>();
   const chunks: string[][] = [];
-  for (let i = 0; i < adIds.length; i += 50) {
-    chunks.push(adIds.slice(i, i + 50));
-  }
+  for (let i = 0; i < adIds.length; i += 50) chunks.push(adIds.slice(i, i + 50));
 
   for (const chunk of chunks) {
     const token = await getToken();
     const url = new URL(`${BASE}/`);
     url.searchParams.set("ids", chunk.join(","));
-    url.searchParams.set("fields", "id,name,effective_status,creative{thumbnail_url,image_url,body,title}");
+    url.searchParams.set("fields", "id,name,effective_status,creative{thumbnail_url,image_url,body,title,video_id,object_story_spec,asset_feed_spec}");
     url.searchParams.set("access_token", token);
-
     const res = await fetch(url.toString());
     if (!res.ok) continue;
-    const data: Record<string, MetaAdCreative> = await res.json();
-    for (const [id, creative] of Object.entries(data)) {
-      map.set(id, creative);
+    const data: Record<string, RawCreativeData> = await res.json();
+    for (const [id, raw] of Object.entries(data)) rawMap.set(id, raw);
+  }
+
+  // Step 2: Collect video IDs and image hashes that need resolution
+  const videoIds = new Set<string>();
+  const imageHashes = new Set<string>();
+
+  for (const raw of rawMap.values()) {
+    const c = raw.creative;
+    if (!c) continue;
+    const vid = c.object_story_spec?.video_data?.video_id || c.video_id;
+    if (vid) videoIds.add(vid);
+    if (!c.image_url && c.asset_feed_spec?.images?.length) {
+      imageHashes.add(c.asset_feed_spec.images[0].hash);
     }
+  }
+
+  // Step 3: Batch fetch video source URLs
+  const videoSources = new Map<string, { source: string; picture: string }>();
+  if (videoIds.size > 0) {
+    const vidChunks: string[][] = [];
+    const vidArr = [...videoIds];
+    for (let i = 0; i < vidArr.length; i += 50) vidChunks.push(vidArr.slice(i, i + 50));
+
+    for (const chunk of vidChunks) {
+      const token = await getToken();
+      const url = new URL(`${BASE}/`);
+      url.searchParams.set("ids", chunk.join(","));
+      url.searchParams.set("fields", "source,picture");
+      url.searchParams.set("access_token", token);
+      const res = await fetch(url.toString());
+      if (!res.ok) continue;
+      const data: Record<string, { source?: string; picture?: string }> = await res.json();
+      for (const [vid, info] of Object.entries(data)) {
+        if (info.source || info.picture) {
+          videoSources.set(vid, { source: info.source || "", picture: info.picture || "" });
+        }
+      }
+    }
+  }
+
+  // Step 4: Batch fetch image URLs by hash
+  const hashUrls = new Map<string, string>();
+  if (imageHashes.size > 0) {
+    const token = await getToken();
+    const hashArr = [...imageHashes];
+    const url = new URL(`${BASE}/${getAccountId()}/adimages`);
+    url.searchParams.set("hashes", JSON.stringify(hashArr));
+    url.searchParams.set("fields", "url,hash");
+    url.searchParams.set("access_token", token);
+    const res = await fetch(url.toString());
+    if (res.ok) {
+      const data: { data?: { hash: string; url: string }[] } = await res.json();
+      for (const img of data.data || []) hashUrls.set(img.hash, img.url);
+    }
+  }
+
+  // Step 5: Resolve best image/video for each ad
+  for (const [adId, raw] of rawMap) {
+    const c = raw.creative;
+    const vid = c?.object_story_spec?.video_data?.video_id || c?.video_id || null;
+    const isVideo = !!vid;
+
+    // Best image: image_url > video cover > hash lookup > video picture > thumbnail
+    let imageUrl: string | null = c?.image_url || null;
+    if (!imageUrl && c?.object_story_spec?.video_data?.image_url) {
+      imageUrl = c.object_story_spec.video_data.image_url;
+    }
+    if (!imageUrl && c?.asset_feed_spec?.images?.length) {
+      imageUrl = hashUrls.get(c.asset_feed_spec.images[0].hash) || null;
+    }
+    if (!imageUrl && vid && videoSources.has(vid)) {
+      imageUrl = videoSources.get(vid)!.picture;
+    }
+    if (!imageUrl) imageUrl = c?.thumbnail_url || null;
+
+    // Video source URL
+    let videoUrl: string | null = null;
+    if (vid && videoSources.has(vid)) {
+      videoUrl = videoSources.get(vid)!.source || null;
+    }
+
+    map.set(adId, {
+      id: raw.id,
+      name: raw.name,
+      effective_status: raw.effective_status,
+      imageUrl,
+      videoUrl,
+      videoId: vid,
+      body: c?.body || null,
+      title: c?.title || null,
+      isVideo,
+    });
   }
 
   return map;

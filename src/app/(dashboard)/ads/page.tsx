@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import useSWR, { mutate } from "swr";
+import Masonry from "react-masonry-css";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
@@ -12,6 +13,7 @@ import {
   Megaphone, Euro, ShoppingCart, MousePointerClick,
   Target, TrendingUp, ArrowUpDown, ChevronDown, ChevronUp,
   CreditCard, Pause, Play, X, Image as ImageIcon, Search,
+  Film,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -27,7 +29,8 @@ interface AdsOverview {
 
 interface AdItem {
   id: string; name: string; campaignName: string; campaignId: string; adsetName: string;
-  status: string; thumbnail: string | null; creativeTitle: string | null; creativeBody: string | null;
+  status: string; thumbnail: string | null; videoUrl: string | null; isVideo: boolean;
+  creativeTitle: string | null; creativeBody: string | null;
   spend: number; revenue: number; roas: number; purchases: number; cpa: number;
   impressions: number; clicks: number; cpc: number; cpm: number; ctr: number;
   cvr: number; frequency: number; reach: number; addToCart: number;
@@ -257,30 +260,35 @@ export default function AdsPage() {
 
       {/* Ad Cards */}
       {adsLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Masonry breakpointCols={{ default: 3, 1024: 2, 640: 1 }} className="flex gap-4 -ml-4" columnClassName="pl-4 space-y-4">
           {[1, 2, 3, 4, 5, 6].map((i) => <AdCardSkeleton key={i} />)}
-        </div>
+        </Masonry>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((ad) => (
-              <AdCard
-                key={ad.id}
-                ad={ad}
-                isSelected={selectedId === ad.id}
-                isConfirming={confirmingId === ad.id}
-                onSelect={() => setSelectedId(selectedId === ad.id ? null : ad.id)}
-                onConfirmStart={() => setConfirmingId(ad.id)}
-                onConfirmCancel={() => setConfirmingId(null)}
-                onToggleStatus={(status) => handleToggleStatus(ad.id, status)}
-              />
-            ))}
-            {filtered.length === 0 && (
-              <div className="col-span-full text-center py-12 text-[13px] text-text-3">
-                Няма реклами за избрания период
-              </div>
-            )}
-          </div>
+          {filtered.length > 0 ? (
+            <Masonry
+              breakpointCols={{ default: 3, 1024: 2, 640: 1 }}
+              className="flex gap-4 -ml-4"
+              columnClassName="pl-4 space-y-4"
+            >
+              {filtered.map((ad) => (
+                <AdCard
+                  key={ad.id}
+                  ad={ad}
+                  isSelected={selectedId === ad.id}
+                  isConfirming={confirmingId === ad.id}
+                  onSelect={() => setSelectedId(selectedId === ad.id ? null : ad.id)}
+                  onConfirmStart={() => setConfirmingId(ad.id)}
+                  onConfirmCancel={() => setConfirmingId(null)}
+                  onToggleStatus={(status) => handleToggleStatus(ad.id, status)}
+                />
+              ))}
+            </Masonry>
+          ) : (
+            <div className="text-center py-12 text-[13px] text-text-3">
+              Няма реклами за избрания период
+            </div>
+          )}
 
           {selectedAd && (
             <div className="mt-4">
@@ -313,15 +321,20 @@ function AdCard({ ad, isSelected, isConfirming, onSelect, onConfirmStart, onConf
     <Card hover className={isSelected ? "ring-2 ring-accent" : ""}>
       <div className="relative cursor-pointer" onClick={onSelect}>
         {ad.thumbnail ? (
-          <img src={ad.thumbnail} alt="" className="w-full aspect-video object-cover rounded-t-xl bg-surface-2" />
+          <img src={ad.thumbnail} alt="" className="w-full object-contain rounded-t-xl bg-surface-2 max-h-[300px]" />
         ) : (
-          <div className="w-full aspect-video rounded-t-xl bg-surface-2 flex items-center justify-center">
+          <div className="w-full h-[160px] rounded-t-xl bg-surface-2 flex items-center justify-center">
             <ImageIcon size={32} className="text-text-3" />
           </div>
         )}
         <div className={`absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shadow-lg ${scoreStyle.colorClass} ${ad.confidence < 0.5 ? "border-2 border-dashed border-white/50" : ""}`}>
           {ad.score}
         </div>
+        {ad.isVideo && (
+          <div className="absolute top-3 left-3 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center">
+            <Film size={14} className="text-white" />
+          </div>
+        )}
       </div>
       <div className="p-4">
         <div className="cursor-pointer" onClick={onSelect}>
@@ -408,7 +421,17 @@ function AdDetailPanel({ ad, averages, onClose, onToggleStatus }: {
           </div>
           <div>
             <h4 className="text-[13px] font-semibold text-text mb-3">Creative</h4>
-            {ad.thumbnail && <img src={ad.thumbnail} alt="" className="w-full rounded-lg mb-3 bg-surface-2" />}
+            {ad.videoUrl ? (
+              <video
+                src={ad.videoUrl}
+                controls
+                poster={ad.thumbnail || undefined}
+                className="w-full rounded-lg mb-3 bg-black max-h-[400px]"
+                preload="metadata"
+              />
+            ) : ad.thumbnail ? (
+              <img src={ad.thumbnail} alt="" className="w-full rounded-lg mb-3 bg-surface-2" />
+            ) : null}
             {ad.creativeTitle && (
               <div className="mb-2">
                 <span className="text-[11px] text-text-3 uppercase tracking-wider">Заглавие</span>
