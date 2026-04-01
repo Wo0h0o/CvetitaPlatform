@@ -48,7 +48,7 @@ export function RevenueTrend() {
       <CardBody className="flex-1 flex flex-col">
         {series.length > 1 ? (
           <div className="flex-1 flex flex-col">
-            <div className="flex items-end gap-[2px] flex-1 min-h-[120px]">
+            <div className="flex items-end gap-[2px] h-32">
               {series.map((d) => {
                 const pct = maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0;
                 return (

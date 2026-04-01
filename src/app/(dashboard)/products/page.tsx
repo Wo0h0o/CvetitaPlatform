@@ -132,7 +132,7 @@ export default function ProductsPage() {
         <Card className="mb-4">
           <CardHeader>Дневен приход</CardHeader>
           <CardBody>
-            <div className="flex items-end gap-[2px] min-h-[120px]">
+            <div className="flex items-end gap-[2px] h-32">
               {data.timeSeries.map((d) => {
                 const pct = maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0;
                 return (
