@@ -11,6 +11,7 @@ import {
   Megaphone,
   ShoppingBag,
   ArrowUpRight,
+  MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -32,13 +33,13 @@ const agents: {
   bg: string;
 }[] = [
   {
-    icon: BarChart3,
-    name: "AI Пазарен Анализ",
-    description: "6 типа анализи с Claude — конкуренти, пазари, реклама, възможности",
+    icon: MessageSquare,
+    name: "Команден Чат",
+    description: "Единен AI чат с достъп до Shopify, Meta Ads, GA4, Klaviyo и Web Search",
     status: "active",
     href: "/analysis",
-    color: "text-accent",
-    bg: "bg-accent-soft",
+    color: "text-purple-500",
+    bg: "bg-purple-500/10",
   },
   {
     icon: ShoppingBag,

@@ -1,159 +1,356 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardBody } from "@/components/shared/Card";
-import { Button } from "@/components/shared/Button";
-import { PageHeader } from "@/components/shared/PageHeader";
-import { Search, Loader2, Copy, Check } from "lucide-react";
+import { useState, useRef, useEffect, ReactNode } from "react";
+import { Send, MessageSquare, Loader2, ExternalLink, ChevronDown, ChevronUp, Globe, ShoppingBag, BarChart3, Mail, Megaphone, Package } from "lucide-react";
+import { Card } from "@/components/shared/Card";
 
-const analysisTypes = [
-  { id: "morning", label: "Сутрешен доклад" },
-  { id: "bg", label: "България" },
-  { id: "eu", label: "Европа" },
-  { id: "competitors", label: "Конкуренти" },
-  { id: "opportunities", label: "Възможности" },
-  { id: "ads", label: "Реклама" },
-] as const;
+// --- Types ---
+interface UserMessage { role: "user"; content: string }
+interface AssistantMessage { role: "assistant"; content: string; sources?: { title: string; url: string }[]; searches?: string[]; tools?: { name: string; label: string }[] }
+interface StatusMessage { role: "status"; msg: string }
+type Message = UserMessage | AssistantMessage | StatusMessage;
 
-const countries = [
-  "България",
-  "Румъния",
-  "Германия",
-  "Гърция",
-  "Полша",
-  "Цяла Европа",
+// --- Tool icons ---
+const TOOL_ICONS: Record<string, typeof ShoppingBag> = {
+  get_sales: ShoppingBag,
+  get_product_analytics: Package,
+  get_traffic: BarChart3,
+  get_email: Mail,
+  get_ads_overview: Megaphone,
+  get_ads_detail: Megaphone,
+};
+
+// --- Suggested questions ---
+const SUGGESTIONS = [
+  "Как вървят продажбите днес?",
+  "Анализирай рекламните ни кампании",
+  "Кои са топ продуктите за последния месец?",
+  "Откъде идва трафикът ни?",
+  "Как се представят имейл кампаниите?",
+  "Какви са тенденциите при добавките в ЕС?",
 ];
 
-export default function AnalysisPage() {
-  const [activeType, setActiveType] = useState("morning");
-  const [country, setCountry] = useState("България");
-  const [result, setResult] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+// --- Simple markdown renderer ---
+function renderInline(text: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return parts.map((p, i) => {
+    if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    if (p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
+    return <span key={i}>{p}</span>;
+  });
+}
 
-  const runAnalysis = async () => {
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  return (
+    <div className="space-y-0.5 text-[14px] leading-relaxed text-text">
+      {lines.map((line, i) => {
+        if (line.startsWith("## ▶") || line.startsWith("## →"))
+          return <h2 key={i} className="font-bold text-[15px] text-purple-500 mt-5 mb-2 flex items-center gap-2">{line.replace(/^## /, "")}</h2>;
+        if (line.startsWith("## "))
+          return <h2 key={i} className="font-bold text-[15px] text-text mt-5 mb-1.5 border-b border-border pb-1">{line.slice(3)}</h2>;
+        if (line.startsWith("### "))
+          return <h3 key={i} className="font-semibold text-[14px] text-text mt-3 mb-1">{line.slice(4)}</h3>;
+        if (line.startsWith("• ") || line.startsWith("- "))
+          return <div key={i} className="flex gap-2 py-0.5 pl-2"><span className="text-purple-500 mt-1 flex-shrink-0 text-[10px]">●</span><span>{renderInline(line.slice(2))}</span></div>;
+        if (line.match(/^\d+\.\s/)) {
+          const [num, ...rest] = line.split(/\.\s(.+)/);
+          return <div key={i} className="flex gap-2 py-0.5 pl-2"><span className="text-purple-500 font-bold flex-shrink-0 text-[12px] mt-0.5">{num}.</span><span>{renderInline(rest[0] ?? "")}</span></div>;
+        }
+        if (line === "" || line === "---") return <div key={i} className="h-2" />;
+        return <p key={i} className="py-0.5">{renderInline(line)}</p>;
+      })}
+    </div>
+  );
+}
+
+// --- Source cards ---
+function SourceCard({ sources }: { sources: { title: string; url: string }[] }) {
+  const [open, setOpen] = useState(false);
+  if (sources.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-[11px] text-text-3 hover:text-purple-500 transition-colors cursor-pointer">
+        <Globe size={11} />{sources.length} извор{sources.length > 1 ? "а" : ""}{open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {sources.map((s, i) => (
+            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 p-2 rounded-lg bg-surface-2 hover:bg-border/30 transition-colors group">
+              <ExternalLink size={11} className="text-text-3 mt-0.5 flex-shrink-0 group-hover:text-purple-500" />
+              <span className="text-[11px] text-text-2 group-hover:text-purple-500 line-clamp-1 leading-tight">{s.title || s.url}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Tool chips ---
+function ToolChips({ tools }: { tools: { name: string; label: string }[] }) {
+  if (tools.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-3">
+      {tools.map((t, i) => {
+        const Icon = TOOL_ICONS[t.name] || Globe;
+        return (
+          <div key={i} className="flex items-center gap-1.5 text-[11px] text-text-3 bg-purple-500/10 px-2.5 py-1 rounded-lg">
+            <Icon size={10} className="text-purple-500" />
+            <span>{t.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Main page ---
+export default function CommandChatPage() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, searchQuery]);
+
+  const send = async (text: string) => {
+    if (!text.trim() || loading) return;
+    setInput("");
     setLoading(true);
-    setResult("");
+    setSearchQuery(null);
+
+    const userMsg: UserMessage = { role: "user", content: text.trim() };
+    const conversationHistory = [
+      ...messages.filter((m): m is UserMessage | AssistantMessage => m.role === "user" || m.role === "assistant"),
+      userMsg,
+    ];
+    setMessages((prev) => [...prev, userMsg]);
+
+    const assistantPlaceholder: AssistantMessage = { role: "assistant", content: "", sources: [], searches: [], tools: [] };
+    setMessages((prev) => [...prev, assistantPlaceholder]);
 
     try {
-      const res = await fetch("/api/analysis", {
+      const res = await fetch("/api/agents/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: activeType, country }),
+        body: JSON.stringify({ messages: conversationHistory.map((m) => ({ role: m.role, content: m.content })) }),
       });
+      if (!res.ok) throw new Error("Agent error");
 
-      if (!res.ok) throw new Error("Analysis failed");
-
-      const reader = res.body?.getReader();
+      const reader = res.body!.getReader();
       const decoder = new TextDecoder();
+      let buffer = "";
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          setResult((prev) => prev + decoder.decode(value));
+      const updateLast = (updater: (m: AssistantMessage) => AssistantMessage) => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last.role === "assistant") next[next.length - 1] = updater(last as AssistantMessage);
+          return next;
+        });
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.t === "status") {
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => m.role !== "status");
+                const last = filtered[filtered.length - 1];
+                if (last?.role === "assistant" && last.content === "") {
+                  const withoutLast = filtered.slice(0, -1);
+                  return [...withoutLast, { role: "status", msg: evt.msg }, last];
+                }
+                return filtered;
+              });
+            }
+            if (evt.t === "tool") {
+              updateLast((m) => ({ ...m, tools: [...(m.tools ?? []), { name: evt.name, label: evt.label }] }));
+            }
+            if (evt.t === "search") {
+              setSearchQuery(evt.q);
+              updateLast((m) => ({ ...m, searches: [...(m.searches ?? []), evt.q] }));
+            }
+            if (evt.t === "sources") {
+              setSearchQuery(null);
+              updateLast((m) => ({ ...m, sources: [...(m.sources ?? []), ...evt.results] }));
+            }
+            if (evt.t === "text") updateLast((m) => ({ ...m, content: m.content + evt.d }));
+            if (evt.t === "done") {
+              setSearchQuery(null);
+              setMessages((prev) => prev.filter((m) => m.role !== "status"));
+            }
+            if (evt.t === "error") updateLast((m) => ({ ...m, content: `\u26a0\ufe0f ${evt.msg}` }));
+          } catch { /* skip */ }
         }
       }
     } catch {
-      setResult("Грешка при анализа. Проверете API ключа.");
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role === "assistant") (last as AssistantMessage).content = "\u26a0\ufe0f Грешка при свързване с агента. Опитайте отново.";
+        return next;
+      });
     }
 
     setLoading(false);
+    setSearchQuery(null);
+    inputRef.current?.focus();
   };
 
-  const copyResult = () => {
-    navigator.clipboard.writeText(result);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); }
   };
+
+  const isEmpty = messages.length === 0;
 
   return (
-    <>
-      <PageHeader title="AI Анализ" />
-
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        {analysisTypes.map((type) => (
-          <button
-            key={type.id}
-            onClick={() => setActiveType(type.id)}
-            className={`
-              px-4 py-2 rounded-full text-[13px] font-medium transition-all duration-150 cursor-pointer
-              ${
-                activeType === type.id
-                  ? "bg-accent text-white shadow-sm"
-                  : "bg-surface text-text-2 hover:text-text border border-border hover:border-border-strong"
-              }
-            `}
-          >
-            {type.label}
-          </button>
-        ))}
-
-        <select
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
-          className="ml-2 px-3 py-2 rounded-lg text-[13px] bg-surface border border-border text-text outline-none focus:border-accent transition-colors cursor-pointer"
-        >
-          {countries.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-
-        <Button
-          onClick={runAnalysis}
-          disabled={loading}
-          className="ml-auto w-full md:w-auto"
-        >
-          {loading ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Search size={16} />
-          )}
-          {loading ? "Анализира..." : "Анализирай"}
-        </Button>
+    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-48px)] max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-9 h-9 rounded-xl bg-purple-500 flex items-center justify-center flex-shrink-0">
+          <MessageSquare size={16} className="text-white" />
+        </div>
+        <div>
+          <h1 className="text-[16px] font-semibold text-text">Команден Чат</h1>
+          <p className="text-[12px] text-text-3">Shopify · Meta Ads · GA4 · Klaviyo · Web Search · Claude Opus</p>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/10">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+          <span className="text-[11px] font-medium text-purple-500">Активен</span>
+        </div>
       </div>
 
-      {/* Result */}
-      {(result || loading) && (
-        <Card>
-          <CardBody>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[15px] font-semibold text-text">
-                {analysisTypes.find((t) => t.id === activeType)?.label}
-              </h3>
-              {result && (
-                <button
-                  onClick={copyResult}
-                  className="flex items-center gap-1.5 text-[12px] text-accent hover:text-accent-hover font-medium cursor-pointer"
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? "Копирано" : "Копирай"}
-                </button>
-              )}
+      {/* Chat area */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center h-full pb-8">
+            <div className="w-16 h-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-5">
+              <MessageSquare size={28} className="text-purple-500" />
             </div>
-            {loading && !result && (
-              <div className="flex items-center gap-3 py-8 justify-center text-text-3">
-                <Loader2 size={20} className="animate-spin" />
-                <span className="text-[14px]">Анализирам пазара...</span>
+            <h2 className="text-[20px] font-semibold text-text mb-2">Питай каквото искаш</h2>
+            <p className="text-[13px] text-text-3 text-center mb-8 max-w-md">
+              Имам достъп до всичките ви данни — продажби, реклами, трафик, имейли.
+              Сам решавам какви данни да заредя за всеки въпрос.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} onClick={() => send(s)} className="text-left px-4 py-3 rounded-xl bg-surface border border-border hover:border-purple-500/40 hover:bg-purple-500/5 transition-all text-[13px] text-text-2 hover:text-text cursor-pointer">
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4 pb-4">
+            {messages.map((msg, i) => {
+              if (msg.role === "status") {
+                return (
+                  <div key={i} className="flex items-center gap-2 px-2 text-text-3">
+                    <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                    <span className="text-[12px]">{msg.msg}</span>
+                  </div>
+                );
+              }
+              if (msg.role === "user") {
+                return (
+                  <div key={i} className="flex justify-end">
+                    <div className="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-tr-sm bg-purple-500 text-white text-[14px] leading-relaxed">{msg.content}</div>
+                  </div>
+                );
+              }
+              const am = msg as AssistantMessage;
+              const isStreaming = loading && i === messages.length - 1;
+              return (
+                <div key={i} className="flex gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <MessageSquare size={13} className="text-purple-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {/* Tool chips */}
+                    <ToolChips tools={am.tools ?? []} />
+
+                    {/* Search indicators */}
+                    {am.searches && am.searches.length > 0 && (
+                      <div className="mb-3 space-y-1">
+                        {am.searches.map((q, si) => (
+                          <div key={si} className="flex items-center gap-2 text-[11px] text-text-3 bg-surface-2 px-3 py-1.5 rounded-lg w-fit">
+                            <Globe size={10} /><span>Търсих: <em className="text-text-2">{q}</em></span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {am.content ? (
+                      <Card>
+                        <div className="p-4">
+                          <MarkdownText text={am.content} />
+                          {isStreaming && <span className="inline-block w-1 h-4 bg-purple-500 animate-pulse ml-0.5 rounded-sm" />}
+                          <SourceCard sources={am.sources ?? []} />
+                        </div>
+                      </Card>
+                    ) : isStreaming ? (
+                      <div className="flex items-center gap-2 text-text-3 py-2">
+                        <Loader2 size={14} className="animate-spin" /><span className="text-[13px]">Мисля...</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+            {searchQuery && (
+              <div className="flex items-center gap-2 px-2">
+                <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                  <Globe size={13} className="text-purple-500 animate-pulse" />
+                </div>
+                <div className="flex items-center gap-2 text-[12px] text-text-3 bg-surface-2 px-3 py-2 rounded-lg">
+                  <Loader2 size={11} className="animate-spin" />Търся: <em className="text-text-2 ml-1">{searchQuery}</em>
+                </div>
               </div>
             )}
-            <div className="text-[14px] leading-relaxed text-text whitespace-pre-wrap">
-              {result}
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {!result && !loading && (
-        <div className="text-center py-20">
-          <div className="text-text-3 text-[14px]">
-            Избери тип анализ и натисни &quot;Анализирай&quot;
+            <div ref={bottomRef} />
           </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="mt-3">
+        <div className="flex gap-2 items-end bg-surface border border-border rounded-2xl p-2 focus-within:border-purple-500/50 transition-colors shadow-sm">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Питай за продажби, реклами, трафик, имейли..."
+            rows={1}
+            disabled={loading}
+            className="flex-1 bg-transparent text-[14px] text-text placeholder-text-3 outline-none resize-none py-1.5 px-2 max-h-32 min-h-[36px]"
+            style={{ fieldSizing: "content" } as React.CSSProperties}
+          />
+          <button
+            onClick={() => send(input)}
+            disabled={!input.trim() || loading}
+            className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer ${
+              input.trim() && !loading ? "bg-purple-500 hover:bg-purple-600 text-white shadow-sm" : "bg-surface-2 text-text-3 cursor-not-allowed"
+            }`}
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+          </button>
         </div>
-      )}
-    </>
+        <p className="text-[11px] text-text-3 text-center mt-2">Enter за изпращане · Shift+Enter за нов ред · Claude Opus + Tool Use</p>
+      </div>
+    </div>
   );
 }

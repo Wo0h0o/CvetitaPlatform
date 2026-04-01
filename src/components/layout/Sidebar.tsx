@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   LayoutDashboard,
-  Search,
+  MessageSquare,
   Sparkles,
   Settings,
   PanelLeftClose,
@@ -39,7 +39,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
       { href: "/morning-report", icon: Sunrise, label: "Сутрешен Доклад" },
-      { href: "/analysis", icon: Search, label: "AI Анализ" },
+      { href: "/analysis", icon: MessageSquare, label: "Команден Чат" },
     ],
   },
   {
