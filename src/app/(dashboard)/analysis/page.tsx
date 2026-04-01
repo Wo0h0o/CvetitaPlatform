@@ -112,15 +112,35 @@ export default function CommandChatPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const userScrolledUp = useRef(false);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, searchQuery]);
+  // Auto-scroll only if user is near bottom
+  useEffect(() => {
+    if (!userScrolledUp.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, searchQuery]);
+
+  // Detect if user scrolled up
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      userScrolledUp.current = distanceFromBottom > 150;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
     setInput("");
     setLoading(true);
     setSearchQuery(null);
+    userScrolledUp.current = false;
 
     const userMsg: UserMessage = { role: "user", content: text.trim() };
     const conversationHistory = [
@@ -234,7 +254,7 @@ export default function CommandChatPage() {
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div ref={scrollAreaRef} className="flex-1 overflow-y-auto min-h-0">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full pb-8">
             <div className="w-16 h-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-5">
