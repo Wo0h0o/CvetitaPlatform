@@ -456,23 +456,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
         {/* Content */}
         <div className="p-5 space-y-5">
           {/* Creative */}
-          {ad.videoUrl ? (
-            <video
-              src={ad.videoUrl}
-              controls
-              autoPlay
-              poster={ad.thumbnail || undefined}
-              className="w-full rounded-xl bg-black aspect-video object-contain"
-              onError={(e) => { (e.target as HTMLVideoElement).style.display = "none"; }}
-            />
-          ) : ad.thumbnail ? (
-            <img
-              src={ad.thumbnail}
-              alt=""
-              className="w-full rounded-xl bg-surface-2 max-h-[400px] object-contain"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-          ) : null}
+          <ModalCreative ad={ad} />
 
           {/* Score + Key Metrics */}
           <div className="flex gap-4">
@@ -593,6 +577,59 @@ function ScoreBar({ label, value, avg, current, unit, inverted }: { label: strin
       )}
     </div>
   );
+}
+
+function ModalCreative({ ad }: { ad: AdItem }) {
+  const [videoFailed, setVideoFailed] = useState(false);
+
+  // Case 1: Video with working URL
+  if (ad.isVideo && ad.videoUrl && !videoFailed) {
+    return (
+      <video
+        src={ad.videoUrl}
+        controls
+        autoPlay
+        poster={ad.thumbnail || undefined}
+        className="w-full rounded-xl bg-black aspect-video object-contain"
+        onError={() => setVideoFailed(true)}
+      />
+    );
+  }
+
+  // Case 2: Video without URL or failed URL — show thumbnail with play overlay linking to Meta
+  if (ad.isVideo) {
+    return (
+      <div className="relative">
+        {ad.thumbnail && (
+          <img src={ad.thumbnail} alt="" className="w-full rounded-xl bg-surface-2 max-h-[400px] object-contain" />
+        )}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+              <Play size={24} className="text-white ml-1" fill="white" />
+            </div>
+            <span className="text-[11px] text-white bg-black/60 px-3 py-1 rounded-full">
+              Видеото не може да се зареди
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Case 3: Static image
+  if (ad.thumbnail) {
+    return (
+      <img
+        src={ad.thumbnail}
+        alt=""
+        className="w-full rounded-xl bg-surface-2 max-h-[400px] object-contain"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      />
+    );
+  }
+
+  return null;
 }
 
 function AdCardSkeleton() {
