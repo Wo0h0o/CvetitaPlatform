@@ -34,8 +34,11 @@ interface AdItem {
   spend: number; revenue: number; roas: number; purchases: number; cpa: number;
   impressions: number; clicks: number; cpc: number; cpm: number; ctr: number;
   cvr: number; frequency: number; reach: number; addToCart: number;
-  score: number; scoreBreakdown: { roas: number; cpa: number; ctr: number; cvr: number; fatigue: number };
+  score: number; scoringStatus: "scored" | "gathering_data";
+  scoreBreakdown: { hook: number; engage: number; convert: number; freshness: number };
+  diagnostics: { hook: number; engage: number | null; convert: number | null; freshness: number };
   confidence: number;
+  scoreMeta?: { shrunkRoas: number | null; dataGate: string; conversions: number; isVideo: boolean };
 }
 
 interface AdsIndividualData {
@@ -326,7 +329,6 @@ export default function AdsPage() {
           {selectedAd && (
             <AdModal
               ad={selectedAd}
-              averages={adsData?.accountAverages}
               onClose={closeModal}
               onToggleStatus={(status) => handleToggleStatus(selectedAd.id, status)}
             />
@@ -383,9 +385,15 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
             )}
           </div>
         )}
-        <div className={`absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shadow-lg ${scoreStyle.colorClass} ${ad.confidence < 0.5 ? "border-2 border-dashed border-white/50" : ""}`}>
-          {ad.score}
-        </div>
+        {ad.scoringStatus === "gathering_data" ? (
+          <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-surface-2/90 backdrop-blur-sm text-[10px] font-medium text-text-3 shadow-lg border border-border">
+            Данни...
+          </div>
+        ) : (
+          <div className={`absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold shadow-lg ${scoreStyle.colorClass} ${ad.confidence < 0.5 ? "border-2 border-dashed border-white/50" : ""}`}>
+            {ad.score}
+          </div>
+        )}
       </div>
       <div className="p-4">
         <div className="cursor-pointer" onClick={onSelect}>
@@ -393,7 +401,10 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
           <div className="text-[11px] text-text-3 truncate mb-1.5">{ad.campaignName}</div>
           <div className="flex items-center gap-2 mb-3">
             <Badge variant={st.variant}>{st.label}</Badge>
-            <Badge variant={scoreStyle.variant}>{scoreStyle.label}</Badge>
+            {ad.scoringStatus === "gathering_data"
+              ? <Badge variant="neutral">Данни...</Badge>
+              : <Badge variant={scoreStyle.variant}>{scoreStyle.label}</Badge>
+            }
           </div>
         </div>
         <div className="grid grid-cols-3 gap-x-3 gap-y-2 mb-3">
@@ -422,8 +433,8 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
 
 // ---- Detail Panel ----
 
-function AdModal({ ad, averages, onClose, onToggleStatus }: {
-  ad: AdItem; averages: AdsIndividualData["accountAverages"] | undefined;
+function AdModal({ ad, onClose, onToggleStatus }: {
+  ad: AdItem;
   onClose: () => void; onToggleStatus: (status: "ACTIVE" | "PAUSED") => void;
 }) {
   const isActive = ad.status === "ACTIVE";
@@ -459,30 +470,37 @@ function AdModal({ ad, averages, onClose, onToggleStatus }: {
 
           {/* Score + Key Metrics */}
           <div className="flex gap-4">
-            <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${scoreStyle.colorClass}`}>
-              <div className="text-[22px] font-bold leading-none">{ad.score}</div>
-              <div className="text-[9px] font-medium opacity-80 mt-0.5">{scoreStyle.label}</div>
-            </div>
+            {ad.scoringStatus === "gathering_data" ? (
+              <div className="w-16 h-16 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 bg-surface-2 border-2 border-dashed border-border">
+                <div className="text-[11px] font-medium text-text-3 text-center leading-tight">Данни...</div>
+              </div>
+            ) : (
+              <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${scoreStyle.colorClass}`}>
+                <div className="text-[22px] font-bold leading-none">{ad.score}</div>
+                <div className="text-[9px] font-medium opacity-80 mt-0.5">{scoreStyle.label}</div>
+              </div>
+            )}
             <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
               <StatRow label="Spend" value={`€${fmt(ad.spend)}`} />
               <StatRow label="Revenue" value={`€${fmt(ad.revenue)}`} />
               <StatRow label="ROAS" value={ad.roas > 0 ? `${fmt(ad.roas)}x` : "—"} />
+              {ad.scoreMeta?.shrunkRoas != null && <StatRow label="Adj. ROAS" value={`${fmt(ad.scoreMeta.shrunkRoas)}x`} />}
               <StatRow label="Покупки" value={fmtInt(ad.purchases)} />
               <StatRow label="CPA" value={ad.cpa > 0 ? `€${fmt(ad.cpa)}` : "—"} />
               <StatRow label="CTR" value={`${fmt(ad.ctr)}%`} />
               <StatRow label="Frequency" value={fmt(ad.frequency)} />
+              <StatRow label="Confidence" value={`${Math.round(ad.confidence * 100)}%`} />
             </div>
           </div>
 
-          {/* Score Breakdown */}
+          {/* Diagnostic Scores */}
           <div>
-            <h4 className="text-[12px] font-medium text-text-3 uppercase tracking-wider mb-2">Score Breakdown</h4>
+            <h4 className="text-[12px] font-medium text-text-3 uppercase tracking-wider mb-2">Диагностика</h4>
             <div className="space-y-2">
-              <ScoreBar label="ROAS (35%)" value={b.roas} avg={averages?.roas} current={ad.roas} unit="x" />
-              <ScoreBar label="CPA (25%)" value={b.cpa} avg={averages?.cpa} current={ad.cpa} unit="€" inverted />
-              <ScoreBar label="CTR (15%)" value={b.ctr} avg={averages?.ctr} current={ad.ctr} unit="%" />
-              <ScoreBar label="CVR (15%)" value={b.cvr} avg={averages?.cvr} current={ad.cvr} unit="%" />
-              <ScoreBar label="Fatigue (10%)" value={b.fatigue} current={ad.frequency} unit="freq" />
+              <ScoreBar label="Hook (15%)" value={b.hook} current={ad.ctr} unit="% CTR" />
+              <ScoreBar label="Фуния (15%)" value={b.engage} current={ad.addToCart} unit=" ATC" />
+              <ScoreBar label="Конверсия (45%)" value={b.convert} current={ad.scoreMeta?.shrunkRoas ?? ad.roas} unit="x ROAS" />
+              <ScoreBar label="Свежест (25%)" value={b.freshness} current={ad.frequency} unit=" freq" />
             </div>
           </div>
 

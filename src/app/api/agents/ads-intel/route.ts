@@ -22,7 +22,7 @@ interface AdItem {
   name: string; campaignName: string; status: string; isVideo: boolean;
   spend: number; revenue: number; roas: number; purchases: number; cpa: number;
   ctr: number; cvr: number; frequency: number; score: number;
-  scoreBreakdown: { roas: number; cpa: number; ctr: number; cvr: number; fatigue: number };
+  scoreBreakdown: { hook: number; engage: number; convert: number; freshness: number };
 }
 
 interface AccountAverages {
@@ -78,7 +78,7 @@ function buildAdsContext(
       const type = a.isVideo ? "Video" : "Image";
       lines.push(`  Score ${a.score} [${a.status}] [${type}] "${a.name}" (${a.campaignName})`);
       lines.push(`    Spend: ${fmt(a.spend)} EUR, Revenue: ${fmt(a.revenue)} EUR, ROAS: ${fmt(a.roas)}x, CTR: ${fmt(a.ctr)}%, CPA: ${fmt(a.cpa)} EUR, Freq: ${fmt(a.frequency)}`);
-      lines.push(`    Score breakdown: ROAS=${a.scoreBreakdown.roas}, CPA=${a.scoreBreakdown.cpa}, CTR=${a.scoreBreakdown.ctr}, CVR=${a.scoreBreakdown.cvr}, Fatigue=${a.scoreBreakdown.fatigue}`);
+      lines.push(`    Diagnostics: Hook=${a.scoreBreakdown.hook}, Engage=${a.scoreBreakdown.engage}, Convert=${a.scoreBreakdown.convert}, Freshness=${a.scoreBreakdown.freshness}`);
     });
     lines.push("");
   }
@@ -89,7 +89,7 @@ function buildAdsContext(
       const type = a.isVideo ? "Video" : "Image";
       lines.push(`  Score ${a.score} [${a.status}] [${type}] "${a.name}" (${a.campaignName})`);
       lines.push(`    Spend: ${fmt(a.spend)} EUR, Revenue: ${fmt(a.revenue)} EUR, ROAS: ${fmt(a.roas)}x, CTR: ${fmt(a.ctr)}%, CPA: ${fmt(a.cpa)} EUR, Freq: ${fmt(a.frequency)}`);
-      lines.push(`    Score breakdown: ROAS=${a.scoreBreakdown.roas}, CPA=${a.scoreBreakdown.cpa}, CTR=${a.scoreBreakdown.ctr}, CVR=${a.scoreBreakdown.cvr}, Fatigue=${a.scoreBreakdown.fatigue}`);
+      lines.push(`    Diagnostics: Hook=${a.scoreBreakdown.hook}, Engage=${a.scoreBreakdown.engage}, Convert=${a.scoreBreakdown.convert}, Freshness=${a.scoreBreakdown.freshness}`);
     });
     lines.push("");
   }
@@ -131,14 +131,22 @@ ${adsContext}
 
 ${businessContext}
 
-== SCORING СИСТЕМА ==
-Всяка реклама получава score от 0-100 базиран на:
-• ROAS (35%) — return on ad spend спрямо средното за акаунта
-• CPA (25%) — cost per acquisition (по-ниско = по-добре)
-• CTR (15%) — click-through rate
-• CVR (15%) — conversion rate
-• Fatigue (10%) — честота на показване (frequency > 3.5 = лошо)
-Score под 40 = слаба реклама. Score над 70 = силна реклама.
+== SCORING СИСТЕМА v2 (Bayesian) ==
+Всяка реклама получава 4 ДИАГНОСТИЧНИ ОЦЕНКИ + 1 ОБЩА:
+
+ДИАГНОСТИКИ (казват КЪДЕ е проблемът):
+• Hook (15%) — грабва ли вниманието? CTR нормализиран по тип (video vs static имат различни benchmark-ове)
+• Engage/Фуния (15%) — LP→ATC→Checkout→Purchase drop-off rates. Показва къде се губят хората
+• Convert/Конверсия (45%) — приход с Bayesian shrinkage (ROAS се дърпа към средното при малко данни) + CPA ефективност
+• Freshness/Свежест (25%) — impression-based decay по формулата на Meta (N+1)^(-0.43) + frequency penalty
+
+ОБЩА ОЦЕНКА: weighted composite × confidence (пълен confidence чак при 30 конверсии)
+
+DATA GATES: Реклами с <5 конверсии, <2000 impressions или <€20 spend получават статус "Gathering Data" вместо score.
+
+BAYESIAN SHRINKAGE: Реклама с 2 конверсии и ROAS 8x → Adjusted ROAS ~2.5x (дърпа се към средното). Реклама с 100 конверсии и ROAS 3x → Adjusted ROAS ~2.95x (запазва си стойността).
+
+Score под 40 = слаба. Score над 70 = силна. null = недостатъчно данни.
 
 == ТВОЯТА МИСИЯ ==
 Анализираш рекламните данни и даваш конкретни, приложими препоръки за оптимизация.
