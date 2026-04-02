@@ -631,9 +631,9 @@ export default function AdCreatorPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-48px)]">
+    <div className="flex flex-col pb-24">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-2 flex-shrink-0">
+      <div className="flex items-center gap-3 mb-2">
         <div className="w-9 h-9 rounded-xl bg-purple flex items-center justify-center flex-shrink-0">
           <PenTool size={16} className="text-white" />
         </div>
@@ -650,12 +650,10 @@ export default function AdCreatorPage() {
       </div>
 
       {/* Progress bar */}
-      <div className="flex-shrink-0">
-        <ProgressBar current={step} onNavigate={navigateTo} />
-      </div>
+      <ProgressBar current={step} onNavigate={navigateTo} />
 
       {/* Step content */}
-      <div className="flex-1 overflow-y-auto min-h-0 pb-20">
+      <div>
         {step === "product" && <ProductStep selected={selectedProduct} onSelect={setSelectedProduct} />}
         {step === "settings" && (
           <SettingsStep avatar={avatar} setAvatar={setAvatar} format={format} setFormat={setFormat}
