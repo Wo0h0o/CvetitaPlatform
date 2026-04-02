@@ -7,6 +7,7 @@ import { type DatePreset, formatBgDate } from "@/lib/dates";
 
 const presets: { id: DatePreset; label: string }[] = [
   { id: "today", label: "Днес" },
+  { id: "yesterday", label: "Вчера" },
   { id: "7d", label: "7д" },
   { id: "30d", label: "30д" },
   { id: "90d", label: "90д" },

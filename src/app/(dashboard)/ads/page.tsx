@@ -72,7 +72,7 @@ type SortKey = "score" | "spend" | "roas" | "ctr" | "purchases";
 type FilterKey = "all" | "ACTIVE" | "PAUSED";
 
 const PRESET_MAP: Record<string, string> = {
-  today: "today", "7d": "7d", "30d": "30d", "90d": "30d",
+  today: "today", yesterday: "yesterday", "7d": "7d", "30d": "30d", "90d": "30d",
 };
 
 // ---- Helpers ----

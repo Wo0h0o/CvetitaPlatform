@@ -32,7 +32,7 @@ interface CustomersData {
 }
 
 const PRESET_MAP: Record<string, string> = {
-  today: "7d", "7d": "7d", "30d": "30d", "90d": "90d",
+  today: "7d", yesterday: "7d", "7d": "7d", "30d": "30d", "90d": "90d",
 };
 
 function fmt(n: number): string {

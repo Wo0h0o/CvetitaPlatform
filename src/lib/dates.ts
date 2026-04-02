@@ -1,4 +1,4 @@
-export type DatePreset = "today" | "7d" | "30d" | "90d" | "custom";
+export type DatePreset = "today" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 
 export interface DateRange {
   from: string; // YYYY-MM-DD
@@ -31,6 +31,11 @@ export function getDateRange(preset: DatePreset, customFrom?: string, customTo?:
       from = today;
       to = today;
       label = "Днес";
+      break;
+    case "yesterday":
+      from = daysAgo(1);
+      to = daysAgo(1);
+      label = "Вчера";
       break;
     case "7d":
       from = daysAgo(6);
