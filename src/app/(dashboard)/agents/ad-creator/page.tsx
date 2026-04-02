@@ -520,8 +520,8 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
 }
 
 // --- Step 5: Visuals ---
-function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
-  variants: Variant[]; selectedVariants: Set<number>; format: string; productImageUrl: string | null;
+function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType }: {
+  variants: Variant[]; selectedVariants: Set<number>; format: string; productImageUrl: string | null; creativeType: string;
 }) {
   const selected = useMemo(() => variants.filter((_, i) => selectedVariants.has(i)), [variants, selectedVariants]);
   const [images, setImages] = useState<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>([]);
@@ -536,7 +536,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
         const res = await fetch("/api/agents/ad-creator/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl }),
+          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -546,7 +546,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
       }
     }
     setGenerating(false);
-  }, [selected, format, productImageUrl]);
+  }, [selected, format, productImageUrl, creativeType]);
 
   useEffect(() => {
     if (selected.length > 0 && images.length === 0) generateAll();
@@ -701,7 +701,7 @@ export default function AdCreatorPage() {
         )}
         {step === "visuals" && (
           <VisualsStep variants={variants} selectedVariants={selectedVariants} format={format}
-            productImageUrl={selectedProduct?.image || null}
+            productImageUrl={selectedProduct?.image || null} creativeType={creativeType}
           />
         )}
       </div>
