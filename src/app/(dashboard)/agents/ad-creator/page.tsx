@@ -104,7 +104,7 @@ function PillGroup<T extends string>({ options, value, onChange, label }: {
 }) {
   return (
     <div>
-      <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">{label}</div>
+      <div className="text-[13px] font-semibold text-text mb-2">{label}</div>
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt) => (
           <button key={opt.id} onClick={() => onChange(opt.id)}
@@ -205,7 +205,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
       <div className="space-y-5">
         {/* Avatar cards — vertical card style, single row */}
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Аватар — за кого пишем?</div>
+          <div className="text-[13px] font-semibold text-text mb-2">Аватар — за кого пишем?</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {AVATARS.map((a) => (
               <button key={a.id} onClick={() => setAvatar(a.id)}
@@ -226,7 +226,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
 
         {/* Audience temperature */}
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Аудитория — къде са във фунията?</div>
+          <div className="text-[13px] font-semibold text-text mb-2">Аудитория — къде са във фунията?</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {AUDIENCES.map((a) => (
               <button key={a.id} onClick={() => setAudience(a.id)}
@@ -245,7 +245,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
         <PillGroup options={ANGLES} value={angle} onChange={setAngle} label="Емоционален ъгъл" />
 
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Интензивност: {intensity}/5 — {INTENSITY_LABELS[intensity - 1]}</div>
+          <div className="text-[13px] font-semibold text-text mb-2">Интензивност: {intensity}/5 — {INTENSITY_LABELS[intensity - 1]}</div>
           <div className="flex gap-1.5">
             {[1, 2, 3, 4, 5].map((level) => (
               <button key={level} onClick={() => setIntensity(level)} className={`flex-1 h-3 rounded-full transition-all cursor-pointer ${level <= intensity ? "bg-purple" : "bg-surface-2"}`} />
@@ -254,7 +254,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
         </div>
 
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Допълнителни инструкции (незадължително)</div>
+          <div className="text-[13px] font-semibold text-text mb-2">Допълнителни инструкции <span className="font-normal text-text-3">(незадължително)</span></div>
           <textarea value={additionalInput} onChange={(e) => setAdditionalInput(e.target.value)}
             placeholder="Напр. фокусирай се върху съставката ашваганда, спомени промоция 2+1..."
             rows={3}
