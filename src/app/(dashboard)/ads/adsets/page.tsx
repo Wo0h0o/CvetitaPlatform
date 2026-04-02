@@ -41,7 +41,7 @@ const STATUS_MAP: Record<string, { label: string; variant: "green" | "red" | "or
 };
 
 const PRESET_MAP: Record<string, string> = {
-  today: "today", yesterday: "yesterday", "7d": "7d", "30d": "30d", "90d": "30d",
+  today: "today", yesterday: "yesterday", "7d": "7d", "30d": "30d", "90d": "90d",
 };
 
 type SortKey = "spend" | "revenue" | "roas" | "purchases" | "cpa" | "ctr" | "frequency";

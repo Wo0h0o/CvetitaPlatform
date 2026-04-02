@@ -7,6 +7,7 @@ const PRESET_MAP: Record<string, string> = {
   "7d": "last_7d",
   "14d": "last_14d",
   "30d": "last_30d",
+  "90d": "last_90d",
   this_month: "this_month",
   last_month: "last_month",
 };
