@@ -20,7 +20,7 @@ function daysAgo(days: number): string {
 }
 
 export function getDateRange(preset: DatePreset, customFrom?: string, customTo?: string): DateRange {
-  const today = formatDate(new Date());
+  const today = formatDateUTC(new Date());
 
   let from: string;
   let to: string;
