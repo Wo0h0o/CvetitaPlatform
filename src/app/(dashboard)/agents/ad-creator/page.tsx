@@ -270,19 +270,44 @@ function CreativeTypeStep({ selected, onSelect }: { selected: string; onSelect: 
   );
 }
 
+// --- Variant parser ---
+interface Variant {
+  name: string; hook: string; body: string; headline: string;
+  cta: string; visualDirection: string; imagePrompt: string;
+}
+
+function parseVariants(content: string): Variant[] {
+  const variants: Variant[] = [];
+  const sections = content.split(/^## Вариант /m).slice(1);
+  for (const section of sections) {
+    const nameMatch = section.match(/^([A-DА-Д][^:\n]*)/);
+    const name = nameMatch ? nameMatch[1].replace(/[:#]/g, "").trim() : "Вариант";
+    const extract = (label: string): string => {
+      const regex = new RegExp(`\\*\\*${label}[^*]*\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n\\*\\*|\\n---|$)`, "i");
+      const match = section.match(regex);
+      return match ? match[1].trim().replace(/\n+/g, " ") : "";
+    };
+    variants.push({ name, hook: extract("Hook"), body: extract("Основен текст"), headline: extract("Headline"), cta: extract("CTA"), visualDirection: extract("Визуална насока"), imagePrompt: extract("Image Prompt") });
+  }
+  return variants;
+}
+
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, approach, angle, intensity, creativeType, generatedContent, setGeneratedContent, additionalInput, setAdditionalInput }: {
+function GenerateStep({ product, avatar, format, approach, angle, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, setAdditionalInput }: {
   product: SlimProduct; avatar: string; format: string; approach: string;
   angle: string; intensity: number; creativeType: string;
   generatedContent: string; setGeneratedContent: (v: string) => void;
+  variants: Variant[]; setVariants: (v: Variant[]) => void;
+  selectedVariants: Set<number>; setSelectedVariants: (v: Set<number>) => void;
   additionalInput: string; setAdditionalInput: (v: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
 
   const generate = useCallback(async () => {
     setLoading(true);
     setGeneratedContent("");
+    setVariants([]);
+    setSelectedVariants(new Set());
 
     const settingsContext = [
       `[Настройки: Аватар: ${AVATARS.find((a) => a.id === avatar)?.label}`,
@@ -332,22 +357,32 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
           } catch { /* skip */ }
         }
       }
+      const parsed = parseVariants(accumulated);
+      setVariants(parsed);
+      if (parsed.length > 0) setSelectedVariants(new Set(parsed.map((_, i) => i)));
     } catch {
       setGeneratedContent("\u26a0\ufe0f Грешка при генериране. Опитай отново.");
     }
     setLoading(false);
-  }, [product, avatar, format, approach, angle, intensity, creativeType, additionalInput, setGeneratedContent]);
+  }, [product, avatar, format, approach, angle, intensity, creativeType, additionalInput, setGeneratedContent, setVariants, setSelectedVariants]);
 
   useEffect(() => {
     if (!generatedContent && !loading) generate();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleVariant = (idx: number) => {
+    const next = new Set(selectedVariants);
+    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    setSelectedVariants(next);
+  };
+  const labels = ["A", "B", "C", "D"];
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-[18px] font-semibold text-text mb-1">Рекламно копи</h2>
-          <p className="text-[13px] text-text-3">4 варианта — избери любимите и продължи към визуали</p>
+          <p className="text-[13px] text-text-3">{variants.length > 0 ? `${variants.length} варианта — избери кои да генерираш визуали` : "Генерирам варианти..."}</p>
         </div>
         <button onClick={generate} disabled={loading}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-2 hover:bg-border/40 text-[12px] font-medium text-text-2 cursor-pointer transition-all min-h-[40px]"
@@ -355,8 +390,6 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />{loading ? "Генерирам..." : "Регенерирай"}
         </button>
       </div>
-
-      {/* Additional input */}
       <div className="mb-4">
         <input type="text" value={additionalInput} onChange={(e) => setAdditionalInput(e.target.value)}
           placeholder="Допълнителни инструкции (незадължително)..."
@@ -364,51 +397,75 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
         />
       </div>
 
-      {/* Generated content */}
-      <div ref={contentRef} className="bg-surface rounded-xl border border-border p-5 min-h-[200px]">
-        {loading && !generatedContent ? (
-          <div className="flex items-center gap-3 text-text-3 py-8 justify-center">
-            <Loader2 size={18} className="animate-spin" /><span className="text-[14px]">Създавам 4 варианта...</span>
-          </div>
-        ) : generatedContent ? (
-          <div>
-            <Markdown text={generatedContent} />
-            {loading && <span className="inline-block w-1 h-4 bg-purple animate-pulse ml-0.5 rounded-sm" />}
-          </div>
-        ) : null}
-      </div>
+      {loading && variants.length === 0 ? (
+        <div className="flex items-center gap-3 text-text-3 py-12 justify-center">
+          <Loader2 size={18} className="animate-spin" /><span className="text-[14px]">Създавам 4 варианта...</span>
+        </div>
+      ) : variants.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {variants.map((v, i) => {
+            const sel = selectedVariants.has(i);
+            return (
+              <button key={i} onClick={() => toggleVariant(i)}
+                className={`text-left bg-surface rounded-xl overflow-hidden transition-all cursor-pointer border-2 ${sel ? "border-purple ring-2 ring-purple/20" : "border-border hover:border-purple/30"}`}
+              >
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-bold ${sel ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>{labels[i] || i + 1}</span>
+                      <span className="text-[13px] font-semibold text-text">{v.name}</span>
+                    </div>
+                    {sel && <Check size={16} className="text-purple" />}
+                  </div>
+                  {v.hook && (
+                    <div className="mb-2">
+                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Hook</div>
+                      <p className="text-[12px] text-text leading-snug bg-purple-soft rounded-lg px-3 py-2">{v.hook}</p>
+                    </div>
+                  )}
+                  {v.headline && (
+                    <div className="mb-2">
+                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Headline</div>
+                      <p className="text-[13px] font-semibold text-text">{v.headline}</p>
+                    </div>
+                  )}
+                  {v.body && (
+                    <div className="mb-2">
+                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Текст</div>
+                      <p className="text-[11px] text-text-2 leading-relaxed line-clamp-4">{v.body}</p>
+                    </div>
+                  )}
+                  {v.cta && <span className="inline-block mt-1 px-3 py-1 rounded-full bg-surface-2 text-[11px] font-medium text-text-2">{v.cta}</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : generatedContent ? (
+        <div className="bg-surface rounded-xl border border-border p-5"><Markdown text={generatedContent} /></div>
+      ) : null}
     </div>
   );
 }
 
 // --- Step 5: Visuals ---
-function VisualsStep({ generatedContent, format }: { generatedContent: string; format: string }) {
-  const [images, setImages] = useState<{ prompt: string; image: string | null; loading: boolean; error: string | null }[]>([]);
+function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
+  variants: Variant[]; selectedVariants: Set<number>; format: string; productImageUrl: string | null;
+}) {
+  const selected = useMemo(() => variants.filter((_, i) => selectedVariants.has(i)), [variants, selectedVariants]);
+  const [images, setImages] = useState<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>([]);
   const [generating, setGenerating] = useState(false);
 
-  // Extract image prompts from generated content
-  const imagePrompts = useMemo(() => {
-    const prompts: string[] = [];
-    const regex = /\*\*Image Prompt \(EN\):\*\*\s*\n([^\n*]+(?:\n[^\n*#]+)*)/gi;
-    let match;
-    while ((match = regex.exec(generatedContent)) !== null) {
-      const prompt = match[1].trim();
-      if (prompt.length > 10) prompts.push(prompt);
-    }
-    return prompts;
-  }, [generatedContent]);
-
   const generateAll = useCallback(async () => {
-    if (imagePrompts.length === 0) return;
+    if (selected.length === 0) return;
     setGenerating(true);
-    setImages(imagePrompts.map((p) => ({ prompt: p, image: null, loading: true, error: null })));
-
-    for (let i = 0; i < imagePrompts.length; i++) {
+    setImages(selected.map((v) => ({ variant: v, image: null, loading: true, error: null })));
+    for (let i = 0; i < selected.length; i++) {
       try {
         const res = await fetch("/api/agents/ad-creator/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: imagePrompts[i], format }),
+          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -418,16 +475,16 @@ function VisualsStep({ generatedContent, format }: { generatedContent: string; f
       }
     }
     setGenerating(false);
-  }, [imagePrompts, format]);
+  }, [selected, format, productImageUrl]);
 
   useEffect(() => {
-    if (imagePrompts.length > 0 && images.length === 0) generateAll();
-  }, [imagePrompts]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (selected.length > 0 && images.length === 0) generateAll();
+  }, [selected.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const downloadImage = (base64: string, index: number) => {
+  const downloadImage = (base64: string, name: string) => {
     const link = document.createElement("a");
     link.href = `data:image/png;base64,${base64}`;
-    link.download = `cvetita-creative-${index + 1}.png`;
+    link.download = `cvetita-${name.replace(/\s+/g, "-").toLowerCase()}.png`;
     link.click();
   };
 
@@ -436,7 +493,7 @@ function VisualsStep({ generatedContent, format }: { generatedContent: string; f
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-[18px] font-semibold text-text mb-1">Визуали</h2>
-          <p className="text-[13px] text-text-3">{imagePrompts.length} креатива от Gemini AI</p>
+          <p className="text-[13px] text-text-3">{selected.length} креатива от Gemini AI{productImageUrl ? " с продуктова снимка" : ""}</p>
         </div>
         <button onClick={generateAll} disabled={generating}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-2 hover:bg-border/40 text-[12px] font-medium text-text-2 cursor-pointer transition-all min-h-[40px]"
@@ -445,11 +502,11 @@ function VisualsStep({ generatedContent, format }: { generatedContent: string; f
         </button>
       </div>
 
-      {imagePrompts.length === 0 ? (
+      {selected.length === 0 ? (
         <div className="text-center py-12 text-text-3">
           <Camera size={32} className="mx-auto mb-3 opacity-50" />
-          <p className="text-[14px]">Не са открити Image Prompt-ове в копито.</p>
-          <p className="text-[12px] mt-1">Върни се на стъпка 4 и регенерирай копито.</p>
+          <p className="text-[14px]">Не са избрани варианти.</p>
+          <p className="text-[12px] mt-1">Върни се на стъпка 4 и избери поне един.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -459,25 +516,28 @@ function VisualsStep({ generatedContent, format }: { generatedContent: string; f
                 <div className="aspect-square flex items-center justify-center bg-surface-2">
                   <div className="text-center">
                     <Loader2 size={24} className="animate-spin mx-auto mb-2 text-purple" />
-                    <p className="text-[12px] text-text-3">Генерирам вариант {i + 1}...</p>
+                    <p className="text-[12px] text-text-3">Генерирам: {img.variant.name}...</p>
                   </div>
                 </div>
               ) : img.error ? (
-                <div className="aspect-square flex items-center justify-center bg-surface-2">
-                  <p className="text-[12px] text-red px-4 text-center">{img.error}</p>
+                <div className="aspect-square flex items-center justify-center bg-surface-2 p-4">
+                  <p className="text-[12px] text-red text-center">{img.error}</p>
                 </div>
               ) : img.image ? (
-                <img src={`data:image/png;base64,${img.image}`} alt={`Вариант ${i + 1}`} className="w-full aspect-square object-contain bg-white" />
+                <img src={`data:image/png;base64,${img.image}`} alt={img.variant.name} className="w-full aspect-square object-contain bg-white" />
               ) : null}
-              <div className="p-3 flex items-center justify-between">
-                <span className="text-[12px] font-medium text-text">Вариант {i + 1}</span>
-                {img.image && (
-                  <button onClick={() => downloadImage(img.image!, i)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple text-white text-[11px] font-medium cursor-pointer hover:bg-purple/90 transition-all"
-                  >
-                    <Download size={12} />Изтегли
-                  </button>
-                )}
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[13px] font-semibold text-text">{img.variant.name}</span>
+                  {img.image && (
+                    <button onClick={() => downloadImage(img.image!, img.variant.name)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple text-white text-[11px] font-medium cursor-pointer hover:bg-purple/90 transition-all"
+                    >
+                      <Download size={12} />Изтегли
+                    </button>
+                  )}
+                </div>
+                {img.variant.hook && <p className="text-[11px] text-text-2 line-clamp-2">{img.variant.hook}</p>}
               </div>
             </div>
           ))}
@@ -499,12 +559,14 @@ export default function AdCreatorPage() {
   const [creativeType, setCreativeType] = useState(CREATIVE_TYPES[0].id);
   const [generatedContent, setGeneratedContent] = useState("");
   const [additionalInput, setAdditionalInput] = useState("");
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [selectedVariants, setSelectedVariants] = useState<Set<number>>(new Set());
 
   const canNext: Record<Step, boolean> = {
     product: !!selectedProduct,
     settings: true,
     "creative-type": true,
-    generate: generatedContent.length > 50,
+    generate: variants.length > 0 && selectedVariants.size > 0,
     visuals: false,
   };
 
@@ -560,10 +622,16 @@ export default function AdCreatorPage() {
           <GenerateStep product={selectedProduct} avatar={avatar} format={format} approach={approach}
             angle={angle} intensity={intensity} creativeType={creativeType}
             generatedContent={generatedContent} setGeneratedContent={setGeneratedContent}
+            variants={variants} setVariants={setVariants}
+            selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants}
             additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
           />
         )}
-        {step === "visuals" && <VisualsStep generatedContent={generatedContent} format={format} />}
+        {step === "visuals" && (
+          <VisualsStep variants={variants} selectedVariants={selectedVariants} format={format}
+            productImageUrl={selectedProduct?.image || null}
+          />
+        )}
       </div>
 
       {/* Navigation buttons */}
