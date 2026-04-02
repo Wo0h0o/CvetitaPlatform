@@ -172,6 +172,52 @@ export async function getTopProducts(daysAgo: number = 0): Promise<TopProduct[]>
     .slice(0, 5);
 }
 
+// ---- Product catalog for AI agents (cached, full fields) ----
+
+let catalogCache: { products: ShopifyProduct[]; expiresAt: number } | null = null;
+
+export async function fetchProductCatalog(): Promise<ShopifyProduct[]> {
+  if (catalogCache && Date.now() < catalogCache.expiresAt) {
+    return catalogCache.products;
+  }
+
+  const products: ShopifyProduct[] = [];
+  let url: string | null =
+    `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?limit=250&fields=id,title,handle,body_html,vendor,product_type,tags,status,image,images,variants`;
+
+  while (url) {
+    const res: Response = await fetch(url, {
+      headers: { "X-Shopify-Access-Token": getAccessToken() },
+    });
+    if (!res.ok) break;
+    const data = await res.json();
+    products.push(...(data.products || []));
+    const link: string | null = res.headers.get("Link");
+    const nextMatch = link?.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+
+  const active = products.filter((p) => p.status === "active");
+  catalogCache = { products: active, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return active;
+}
+
+export function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function searchProducts(products: ShopifyProduct[], query: string): ShopifyProduct[] {
+  const q = query.toLowerCase();
+  const terms = q.split(/\s+/).filter(Boolean);
+
+  return products
+    .filter((p) => {
+      const searchable = `${p.title} ${p.product_type} ${p.tags} ${stripHtml(p.body_html || "")}`.toLowerCase();
+      return terms.every((term) => searchable.includes(term));
+    })
+    .slice(0, 10);
+}
+
 // ---- Customer-level order fetching (for cohort/LTV analysis) ----
 
 export interface CustomerOrder {

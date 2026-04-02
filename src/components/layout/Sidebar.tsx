@@ -58,6 +58,7 @@ const navSections: NavSection[] = [
           { href: "/ads/adsets", label: "Ad Sets" },
           { href: "/ads/campaigns", label: "Кампании" },
           { href: "/agents/ads-intel", label: "AI Стратег" },
+          { href: "/agents/ad-creator", label: "AI Творец" },
         ],
       },
     ],
