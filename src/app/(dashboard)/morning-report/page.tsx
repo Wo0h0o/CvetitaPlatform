@@ -91,7 +91,7 @@ export default function MorningReportPage() {
         </button>
       </PageHeader>
 
-      <p className="text-text-3 text-[13px] mb-4 capitalize">{today}</p>
+      <p className="text-text-2 text-[13px] mb-4 capitalize">{today}</p>
 
       <div className="max-w-4xl" ref={contentRef}>
         {/* Status indicator */}
@@ -121,7 +121,7 @@ export default function MorningReportPage() {
                 </div>
                 <div>
                   <h2 className="text-[15px] font-semibold text-text">AI Доклад</h2>
-                  <p className="text-[11px] text-text-3">Базиран на реални данни от Shopify, Meta Ads, GA4, Klaviyo</p>
+                  <p className="text-[12px] text-text-2">Базиран на реални данни от Shopify, Meta Ads, GA4, Klaviyo</p>
                 </div>
               </div>
               <Markdown text={content} />
@@ -135,7 +135,7 @@ export default function MorningReportPage() {
                 <Sunrise size={24} className="text-accent" />
               </div>
               <p className="text-[15px] font-medium text-text mb-2">Сутрешен Доклад</p>
-              <p className="text-[13px] text-text-3">Натиснете &quot;Генерирай нов&quot; за AI анализ на бизнеса.</p>
+              <p className="text-[13px] text-text-2">Натиснете &quot;Генерирай нов&quot; за AI анализ на бизнеса.</p>
             </div>
           </Card>
         ) : null}

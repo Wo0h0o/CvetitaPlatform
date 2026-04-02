@@ -79,7 +79,7 @@ export default function TrafficPage() {
               <p className="text-[15px] font-medium text-text mb-2">
                 {isNotConfigured ? "GA4 не е свързан" : "Грешка при зареждане на трафик данните"}
               </p>
-              <p className="text-[13px] text-text-3">
+              <p className="text-[13px] text-text-2">
                 {isNotConfigured
                   ? "Добави GA4_CLIENT_ID, GA4_CLIENT_SECRET и GA4_REFRESH_TOKEN в Vercel Environment Variables."
                   : "Опитай отново по-късно."}
@@ -123,7 +123,7 @@ export default function TrafficPage() {
                       <span className="text-[13px] font-medium text-text">{ch.channel}</span>
                       <span className="text-[13px] text-text-2">
                         {ch.sessions.toLocaleString("bg-BG")} сесии
-                        <span className="text-text-3 ml-2">({pct.toFixed(1)}%)</span>
+                        <span className="text-text-2 ml-2">({pct.toFixed(1)}%)</span>
                       </span>
                     </div>
                     <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
@@ -158,7 +158,7 @@ export default function TrafficPage() {
                         <span className="text-[13px] font-medium text-text capitalize">{d.device}</span>
                         <span className="text-[13px] font-semibold text-text">{pct.toFixed(0)}%</span>
                       </div>
-                      <div className="text-[11px] text-text-3">
+                      <div className="text-[12px] text-text-2">
                         {d.sessions.toLocaleString("bg-BG")} сесии / {d.users.toLocaleString("bg-BG")} потр.
                       </div>
                     </div>
@@ -191,7 +191,7 @@ export default function TrafficPage() {
         <CardBody>
           <div className="overflow-x-auto -mx-5 px-5">
             <div className="min-w-[600px]">
-              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[13px] font-semibold text-text">
                 <div className="col-span-1">#</div>
                 <div className="col-span-6">Страница</div>
                 <div className="col-span-2 text-right">Сесии</div>
@@ -231,7 +231,7 @@ function MiniKpi({
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
     </div>

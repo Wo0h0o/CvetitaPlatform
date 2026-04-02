@@ -221,7 +221,7 @@ export default function AdsPage() {
               <Megaphone size={24} className="text-blue" />
             </div>
             <p className="text-[15px] font-medium text-text mb-2">Meta Ads не е свързан</p>
-            <p className="text-[13px] text-text-3">
+            <p className="text-[13px] text-text-2">
               Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID в Vercel Environment Variables.
             </p>
           </div>
@@ -288,7 +288,7 @@ export default function AdsPage() {
               </button>
             ))}
           </div>
-          <span className="text-[12px] text-text-3">{filtered.length} реклами</span>
+          <span className="text-[12px] text-text-2">{filtered.length} реклами</span>
         </div>
       </div>
 
@@ -321,7 +321,7 @@ export default function AdsPage() {
               ))}
             </Masonry>
           ) : (
-            <div className="text-center py-12 text-[13px] text-text-3">
+            <div className="text-center py-12 text-[13px] text-text-2">
               Няма реклами за избрания период
             </div>
           )}
@@ -394,7 +394,7 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
           </div>
         )}
         {ad.scoringStatus === "gathering_data" ? (
-          <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-surface-2/90 backdrop-blur-sm text-[10px] font-medium text-text-3 shadow-lg border border-border">
+          <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-surface-2/90 backdrop-blur-sm text-[11px] font-medium text-text-2 shadow-lg border border-border">
             Данни...
           </div>
         ) : (
@@ -406,7 +406,7 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
       <div className="p-4">
         <div className="cursor-pointer" onClick={onSelect}>
           <div className="text-[13px] font-semibold text-text truncate mb-0.5">{ad.name}</div>
-          <div className="text-[11px] text-text-3 truncate mb-1.5">{ad.campaignName}</div>
+          <div className="text-[12px] text-text-2 truncate mb-1.5">{ad.campaignName}</div>
           <div className="flex items-center gap-2 mb-3">
             <Badge variant={st.variant}>{st.label}</Badge>
             {ad.scoringStatus === "gathering_data"
@@ -460,7 +460,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-border bg-surface/95 backdrop-blur-sm">
           <div className="min-w-0 flex-1 mr-3">
             <div className="text-[15px] font-semibold text-text truncate">{ad.name}</div>
-            <div className="text-[11px] text-text-3 truncate">{ad.campaignName}</div>
+            <div className="text-[12px] text-text-2 truncate">{ad.campaignName}</div>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-surface-2 transition-colors flex-shrink-0">
             <X size={18} className="text-text-3" />
@@ -476,7 +476,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
           <div className="flex gap-4">
             {ad.scoringStatus === "gathering_data" ? (
               <div className="w-16 h-16 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 bg-surface-2 border-2 border-dashed border-border">
-                <div className="text-[11px] font-medium text-text-3 text-center leading-tight">Данни...</div>
+                <div className="text-[12px] font-medium text-text-2 text-center leading-tight">Данни...</div>
               </div>
             ) : (
               <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 ${scoreStyle.colorClass}`}>
@@ -499,7 +499,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
 
           {/* Diagnostic Scores */}
           <div>
-            <h4 className="text-[12px] font-medium text-text-3 uppercase tracking-wider mb-2">Диагностика</h4>
+            <h4 className="text-[13px] font-semibold text-text mb-2">Диагностика</h4>
             <div className="space-y-2">
               <ScoreBar label="Hook (15%)" value={b.hook} current={ad.ctr} unit="% CTR" />
               <ScoreBar label="Фуния (15%)" value={b.engage} current={ad.addToCart} unit=" ATC" />
@@ -517,7 +517,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
           )}
 
           {/* Campaign info */}
-          <div className="text-[11px] text-text-3 space-y-0.5">
+          <div className="text-[12px] text-text-2 space-y-0.5">
             <div>Campaign: <span className="text-text-2">{ad.campaignName}</span></div>
             <div>Ad Set: <span className="text-text-2">{ad.adsetName}</span></div>
           </div>
@@ -546,7 +546,7 @@ function MiniKpi({ icon: Icon, label, value, highlight }: { icon: React.ElementT
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className={`text-[22px] font-bold tracking-tight ${highlight ? "text-accent" : "text-text"}`}>{value}</div>
     </div>
@@ -565,7 +565,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
 function MetricCell({ label, value, highlight, bad }: { label: string; value: string; highlight?: boolean; bad?: boolean }) {
   return (
     <div>
-      <div className="text-[10px] text-text-3 uppercase tracking-wider">{label}</div>
+      <div className="text-[11px] text-text-2">{label}</div>
       <div className={`text-[13px] font-semibold ${highlight ? "text-accent" : bad ? "text-red" : "text-text"}`}>{value}</div>
     </div>
   );
@@ -583,7 +583,7 @@ function ScoreBar({ label, value, avg, current, unit, inverted }: { label: strin
         <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${value}%` }} />
       </div>
       {current !== undefined && (
-        <div className="text-[10px] text-text-3 mt-0.5">
+        <div className="text-[11px] text-text-2 mt-0.5">
           {unit === "freq" ? `Freq: ${current.toFixed(1)}` :
            inverted ? `€${current.toFixed(2)} (avg: €${avg?.toFixed(2) || "—"})` :
            `${current.toFixed(2)}${unit} (avg: ${avg?.toFixed(2) || "—"}${unit})`}

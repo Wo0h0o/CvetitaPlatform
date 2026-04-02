@@ -181,7 +181,7 @@ export default function AdsIntelPage() {
         </div>
         <div>
           <h1 className="text-[16px] font-semibold text-text">Рекламен Стратег</h1>
-          <p className="text-[12px] text-text-3">Анализ на реклами · Performance scores · Claude Opus</p>
+          <p className="text-[12px] text-text-2">Анализ на реклами · Performance scores · Claude Opus</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-soft">
           <span className="w-1.5 h-1.5 rounded-full bg-orange animate-pulse" />
@@ -197,7 +197,7 @@ export default function AdsIntelPage() {
               <Megaphone size={28} className="text-orange" />
             </div>
             <h2 className="text-[20px] font-semibold text-text mb-2">Рекламен анализ с AI</h2>
-            <p className="text-[13px] text-text-3 text-center mb-8 max-w-sm">
+            <p className="text-[13px] text-text-2 text-center mb-8 max-w-sm">
               Имам достъп до всичките ви Meta Ads данни — кампании, реклами, scores, фуния.
               Питай ме за оптимизация, бюджет, creatives.
             </p>
@@ -238,8 +238,8 @@ export default function AdsIntelPage() {
                     {am.searches && am.searches.length > 0 && (
                       <div className="mb-3 space-y-1">
                         {am.searches.map((q, si) => (
-                          <div key={si} className="flex items-center gap-2 text-[11px] text-text-3 bg-surface-2 px-3 py-1.5 rounded-lg w-fit">
-                            <Globe size={10} /><span>Търсих: <em className="text-text-2">{q}</em></span>
+                          <div key={si} className="flex items-center gap-2 text-[12px] text-text-2 bg-surface-2 px-3 py-1.5 rounded-lg w-fit">
+                            <Globe size={10} /><span>Търсих: <em className="text-text">{q}</em></span>
                           </div>
                         ))}
                       </div>
@@ -266,8 +266,8 @@ export default function AdsIntelPage() {
                 <div className="w-7 h-7 rounded-lg bg-orange-soft flex items-center justify-center flex-shrink-0">
                   <Globe size={13} className="text-orange animate-pulse" />
                 </div>
-                <div className="flex items-center gap-2 text-[12px] text-text-3 bg-surface-2 px-3 py-2 rounded-lg">
-                  <Loader2 size={11} className="animate-spin" />Търся: <em className="text-text-2 ml-1">{searchQuery}</em>
+                <div className="flex items-center gap-2 text-[12px] text-text-2 bg-surface-2 px-3 py-2 rounded-lg">
+                  <Loader2 size={11} className="animate-spin" />Търся: <em className="text-text ml-1">{searchQuery}</em>
                 </div>
               </div>
             )}
@@ -300,7 +300,7 @@ export default function AdsIntelPage() {
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           </button>
         </div>
-        <p className="text-[11px] text-text-3 text-center mt-2">Enter за изпращане · Shift+Enter за нов ред · Claude Opus + Web Search</p>
+        <p className="text-[12px] text-text-2 text-center mt-2">Enter за изпращане · Shift+Enter за нов ред · Claude Opus + Web Search</p>
       </div>
     </div>
   );

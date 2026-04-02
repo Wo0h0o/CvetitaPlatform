@@ -42,7 +42,7 @@ export function ChannelBreakdown() {
       <Card>
         <CardHeader>Канали</CardHeader>
         <CardBody>
-          <div className="text-center py-8 text-text-3 text-[13px]">GA4 не е свързан</div>
+          <div className="text-center py-8 text-text-2 text-[13px]">GA4 не е свързан</div>
         </CardBody>
       </Card>
     );
@@ -55,7 +55,7 @@ export function ChannelBreakdown() {
     <Card className="flex flex-col">
       <CardHeader
         action={
-          <span className="text-[12px] text-text-3">
+          <span className="text-[12px] text-text-2">
             {totalSessions.toLocaleString("bg-BG")} сесии (30д)
           </span>
         }
@@ -75,7 +75,7 @@ export function ChannelBreakdown() {
                     <span className="text-[12px] text-text-2">
                       {ch.sessions.toLocaleString("bg-BG")}
                     </span>
-                    <span className="text-[11px] text-text-3 w-10 text-right">
+                    <span className="text-[12px] text-text-3 w-10 text-right">
                       {pct.toFixed(0)}%
                     </span>
                   </div>

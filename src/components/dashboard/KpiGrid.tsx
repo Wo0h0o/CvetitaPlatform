@@ -34,7 +34,7 @@ export function KpiGrid() {
   if (error) {
     return (
       <div className="bg-surface rounded-xl shadow-sm p-6 mb-6 text-center">
-        <p className="text-[13px] text-text-3">Грешка при зареждане на KPI данните</p>
+        <p className="text-[13px] text-text-2">Грешка при зареждане на KPI данните</p>
       </div>
     );
   }

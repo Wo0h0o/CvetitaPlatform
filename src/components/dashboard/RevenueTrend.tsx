@@ -64,13 +64,13 @@ export function RevenueTrend() {
                 );
               })}
             </div>
-            <div className="flex justify-between mt-2 text-[10px] text-text-3">
+            <div className="flex justify-between mt-2 text-[11px] text-text-2">
               <span>{series[0]?.date}</span>
               <span>{series[series.length - 1]?.date}</span>
             </div>
           </div>
         ) : (
-          <div className="text-center py-8 text-text-3 text-[13px]">Няма данни</div>
+          <div className="text-center py-8 text-text-2 text-[13px]">Няма данни</div>
         )}
       </CardBody>
     </Card>

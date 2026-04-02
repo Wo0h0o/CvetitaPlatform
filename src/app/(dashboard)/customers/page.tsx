@@ -80,7 +80,7 @@ export default function CustomersPage() {
           <div className="text-center py-12">
             <Users size={32} className="text-text-3 mx-auto mb-3" />
             <p className="text-[14px] text-text mb-1">Грешка при зареждане</p>
-            <p className="text-[13px] text-text-3">Проверете Shopify API конфигурацията.</p>
+            <p className="text-[13px] text-text-2">Проверете Shopify API конфигурацията.</p>
           </div>
         </CardBody></Card>
       </>
@@ -123,7 +123,7 @@ export default function CustomersPage() {
                 <div className="h-3 bg-surface-2 rounded-full overflow-hidden">
                   <div className="h-full bg-blue rounded-full transition-all" style={{ width: `${nvr?.newPct || 0}%` }} />
                 </div>
-                <div className="text-[11px] text-text-3 mt-0.5">€{fmt(nvr?.newRevenue || 0)}</div>
+                <div className="text-[12px] text-text-2 mt-0.5">€{fmt(nvr?.newRevenue || 0)}</div>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -133,7 +133,7 @@ export default function CustomersPage() {
                 <div className="h-3 bg-surface-2 rounded-full overflow-hidden">
                   <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${nvr?.returningPct || 0}%` }} />
                 </div>
-                <div className="text-[11px] text-text-3 mt-0.5">€{fmt(nvr?.returningRevenue || 0)}</div>
+                <div className="text-[12px] text-text-2 mt-0.5">€{fmt(nvr?.returningRevenue || 0)}</div>
               </div>
             </div>
           </CardBody>
@@ -147,7 +147,7 @@ export default function CustomersPage() {
               <div className="space-y-2">
                 {timing.map((t) => (
                   <div key={t.bucket} className="flex items-center gap-3">
-                    <span className="text-[12px] text-text-3 w-24 flex-shrink-0">{t.bucket}</span>
+                    <span className="text-[12px] text-text-2 w-24 flex-shrink-0">{t.bucket}</span>
                     <div className="flex-1 h-6 bg-surface-2 rounded overflow-hidden">
                       <div
                         className="h-full bg-accent rounded transition-all flex items-center px-2"
@@ -177,10 +177,10 @@ export default function CustomersPage() {
               <div className="min-w-[700px]">
                 {/* Header */}
                 <div className="flex gap-1 mb-2">
-                  <div className="w-24 flex-shrink-0 text-[11px] font-medium text-text-3 uppercase">Cohort</div>
-                  <div className="w-14 flex-shrink-0 text-[11px] font-medium text-text-3 uppercase text-center">Бр.</div>
+                  <div className="w-24 flex-shrink-0 text-[13px] font-semibold text-text">Cohort</div>
+                  <div className="w-14 flex-shrink-0 text-[13px] font-semibold text-text text-center">Бр.</div>
                   {[1, 2, 3, 4, 5, 6, 7, 8].map((w) => (
-                    <div key={w} className="w-14 flex-shrink-0 text-[11px] font-medium text-text-3 uppercase text-center">
+                    <div key={w} className="w-14 flex-shrink-0 text-[13px] font-semibold text-text text-center">
                       W{w}
                     </div>
                   ))}
@@ -207,7 +207,7 @@ export default function CustomersPage() {
                   </div>
                 ))}
 
-                <div className="mt-3 flex items-center gap-4 text-[11px] text-text-3">
+                <div className="mt-3 flex items-center gap-4 text-[12px] text-text-2">
                   <div className="flex items-center gap-1.5">
                     <div className="w-3 h-3 rounded bg-accent" />
                     <span>15%+</span>
@@ -249,7 +249,7 @@ function MiniKpi({ icon: Icon, label, value, highlight }: {
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className={`text-[22px] font-bold tracking-tight ${highlight ? "text-accent" : "text-text"}`}>{value}</div>
     </div>

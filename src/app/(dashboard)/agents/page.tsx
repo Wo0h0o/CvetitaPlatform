@@ -66,7 +66,7 @@ export default function AgentsPage() {
           </div>
           <div>
             <p className="text-[14px] text-text-2">AI агенти с пълен бизнес контекст, продуктов каталог и Cvetita Herbal бранд знание.</p>
-            <p className="text-[12px] text-text-3">Изберете агент за задачата, която искате да решите.</p>
+            <p className="text-[12px] text-text-2">Изберете агент за задачата, която искате да решите.</p>
           </div>
         </div>
       </div>
@@ -90,11 +90,11 @@ export default function AgentsPage() {
                     <h3 className="text-[15px] font-semibold text-text">{agent.name}</h3>
                   </div>
                   <p className="text-[12px] font-medium text-text-2 mb-2">{agent.subtitle}</p>
-                  <p className="text-[13px] text-text-3 leading-relaxed mb-3">{agent.description}</p>
-                  <p className="text-[11px] text-text-3 mb-3">{agent.audience}</p>
+                  <p className="text-[13px] text-text-2 leading-relaxed mb-3">{agent.description}</p>
+                  <p className="text-[12px] text-text-2 mb-3">{agent.audience}</p>
                   <div className="flex flex-wrap gap-1">
                     {agent.capabilities.map((cap) => (
-                      <span key={cap} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${colors.badge}`}>
+                      <span key={cap} className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${colors.badge}`}>
                         {cap}
                       </span>
                     ))}

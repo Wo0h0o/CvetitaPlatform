@@ -70,7 +70,7 @@ export function NewsFeed() {
                   <div className="text-[14px] font-medium text-text leading-snug">
                     {item.title}
                   </div>
-                  <div className="text-[12px] text-text-3 mt-0.5">
+                  <div className="text-[12px] text-text-2 mt-0.5">
                     {item.meta}
                   </div>
                 </div>
@@ -78,7 +78,7 @@ export function NewsFeed() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 text-text-3 text-[13px]">
+          <div className="text-center py-8 text-text-2 text-[13px]">
             Натисни &quot;Обнови&quot; за актуални новини
           </div>
         )}

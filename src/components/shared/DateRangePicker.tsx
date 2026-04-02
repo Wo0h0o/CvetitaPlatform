@@ -73,7 +73,7 @@ export function DateRangePicker() {
           <div className="absolute top-full right-0 mt-2 bg-surface rounded-xl shadow-lg border border-border p-4 z-50 min-w-[260px]">
             <div className="space-y-3">
               <div>
-                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-3 mb-1">
+                <label className="block text-[13px] font-semibold text-text mb-1">
                   От
                 </label>
                 <input
@@ -84,7 +84,7 @@ export function DateRangePicker() {
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-3 mb-1">
+                <label className="block text-[13px] font-semibold text-text mb-1">
                   До
                 </label>
                 <input

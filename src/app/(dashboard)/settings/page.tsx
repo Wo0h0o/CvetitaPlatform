@@ -80,7 +80,7 @@ function Field({
 
   return (
     <div>
-      <label className="block text-[11px] font-medium uppercase tracking-wider text-text-3 mb-1.5">
+      <label className="block text-[13px] font-semibold text-text mb-1.5">
         {label}
       </label>
       {type === "select" ? (

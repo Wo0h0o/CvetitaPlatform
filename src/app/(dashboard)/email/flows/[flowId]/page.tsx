@@ -146,7 +146,7 @@ export default function FlowDetailPage({
               <Clock size={14} />
               <span>{flow.delayCount} закъснения</span>
             </div>
-            <div className="ml-auto text-[11px] text-text-3">
+            <div className="ml-auto text-[12px] text-text-2">
               Обновен: {new Date(flow.updated).toLocaleDateString("bg-BG", { day: "numeric", month: "short", year: "numeric" })}
             </div>
           </div>
@@ -180,7 +180,7 @@ export default function FlowDetailPage({
       {/* Messages Performance */}
       <Card className="mb-6">
         <CardHeader
-          action={<span className="text-[12px] text-text-3">{messages.length} съобщения</span>}
+          action={<span className="text-[12px] text-text-2">{messages.length} съобщения</span>}
         >
           Имейли във Flow-a
         </CardHeader>
@@ -188,7 +188,7 @@ export default function FlowDetailPage({
           <div className="overflow-x-auto -mx-5 px-5">
             <div className="min-w-[600px]">
               {/* Header */}
-              <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border text-[13px] font-semibold text-text">
                 <div className="col-span-1">#</div>
                 <div className="col-span-3">Имейл</div>
                 <div className="col-span-2 text-right">Получатели</div>
@@ -209,7 +209,7 @@ export default function FlowDetailPage({
                     <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
                     <div className="col-span-3 min-w-0">
                       <div className="text-[13px] font-medium text-text truncate">{m.name}</div>
-                      <div className="flex gap-2 text-[11px] text-text-3 mt-0.5">
+                      <div className="flex gap-2 text-[12px] text-text-2 mt-0.5">
                         <span>Unsub: {pct(m.unsubscribeRate)}</span>
                         <span>Bounce: {pct(m.bounceRate)}</span>
                       </div>
@@ -228,7 +228,7 @@ export default function FlowDetailPage({
                         {m.revenue > 0 ? `${fmt(m.revenue)} EUR` : "—"}
                       </div>
                       {m.revenue > 0 && (
-                        <div className="text-[10px] text-text-3">
+                        <div className="text-[11px] text-text-2">
                           {fmt(m.revenuePerRecipient)} / получател
                         </div>
                       )}
@@ -259,7 +259,7 @@ function MiniKpi({
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
     </div>

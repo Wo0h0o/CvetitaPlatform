@@ -27,7 +27,7 @@ export function TopProducts() {
         {error ? (
           <div className="flex flex-col items-center justify-center py-8 text-text-3">
             <Package size={24} className="mb-2 opacity-50" />
-            <span className="text-[13px]">Грешка при зареждане</span>
+            <span className="text-[13px] text-text-2">Грешка при зареждане</span>
           </div>
         ) : isLoading ? (
           <div className="space-y-3">
@@ -49,7 +49,7 @@ export function TopProducts() {
                   <div className="text-[13px] font-medium text-text truncate">
                     {product.title}
                   </div>
-                  <div className="text-[11px] text-text-3">
+                  <div className="text-[12px] text-text-2">
                     {product.quantity} бр.
                   </div>
                 </div>
@@ -62,7 +62,7 @@ export function TopProducts() {
         ) : (
           <div className="flex flex-col items-center justify-center py-8 text-text-3">
             <Package size={24} className="mb-2 opacity-50" />
-            <span className="text-[13px]">Все още няма поръчки днес</span>
+            <span className="text-[13px] text-text-2">Все още няма поръчки днес</span>
           </div>
         )}
       </CardBody>

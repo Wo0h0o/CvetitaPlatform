@@ -64,7 +64,7 @@ function ToolChips({ tools }: { tools: { name: string; label: string }[] }) {
       {tools.map((t, i) => {
         const Icon = TOOL_ICONS[t.name] || Globe;
         return (
-          <div key={i} className="flex items-center gap-1.5 text-[11px] text-text-3 bg-purple-500/10 px-2.5 py-1 rounded-lg">
+          <div key={i} className="flex items-center gap-1.5 text-[12px] text-text-2 bg-purple-500/10 px-2.5 py-1 rounded-lg">
             <Icon size={10} className="text-purple-500" />
             <span>{t.label}</span>
           </div>
@@ -214,7 +214,7 @@ export default function CommandChatPage() {
         </div>
         <div>
           <h1 className="text-[16px] font-semibold text-text">Команден Чат</h1>
-          <p className="text-[12px] text-text-3">Shopify · Meta Ads · GA4 · Klaviyo · Web Search · Claude Opus</p>
+          <p className="text-[12px] text-text-2">Shopify · Meta Ads · GA4 · Klaviyo · Web Search · Claude Opus</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/10">
           <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
@@ -230,7 +230,7 @@ export default function CommandChatPage() {
               <MessageSquare size={28} className="text-purple-500" />
             </div>
             <h2 className="text-[20px] font-semibold text-text mb-2">Питай каквото искаш</h2>
-            <p className="text-[13px] text-text-3 text-center mb-8 max-w-md">
+            <p className="text-[13px] text-text-2 text-center mb-8 max-w-md">
               Имам достъп до всичките ви данни — продажби, реклами, трафик, имейли.
               Сам решавам какви данни да заредя за всеки въпрос.
             </p>
@@ -275,8 +275,8 @@ export default function CommandChatPage() {
                     {am.searches && am.searches.length > 0 && (
                       <div className="mb-3 space-y-1">
                         {am.searches.map((q, si) => (
-                          <div key={si} className="flex items-center gap-2 text-[11px] text-text-3 bg-surface-2 px-3 py-1.5 rounded-lg w-fit">
-                            <Globe size={10} /><span>Търсих: <em className="text-text-2">{q}</em></span>
+                          <div key={si} className="flex items-center gap-2 text-[12px] text-text-2 bg-surface-2 px-3 py-1.5 rounded-lg w-fit">
+                            <Globe size={10} /><span>Търсих: <em className="text-text">{q}</em></span>
                           </div>
                         ))}
                       </div>
@@ -304,8 +304,8 @@ export default function CommandChatPage() {
                 <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center flex-shrink-0">
                   <Globe size={13} className="text-purple-500 animate-pulse" />
                 </div>
-                <div className="flex items-center gap-2 text-[12px] text-text-3 bg-surface-2 px-3 py-2 rounded-lg">
-                  <Loader2 size={11} className="animate-spin" />Търся: <em className="text-text-2 ml-1">{searchQuery}</em>
+                <div className="flex items-center gap-2 text-[12px] text-text-2 bg-surface-2 px-3 py-2 rounded-lg">
+                  <Loader2 size={11} className="animate-spin" />Търся: <em className="text-text ml-1">{searchQuery}</em>
                 </div>
               </div>
             )}
@@ -338,7 +338,7 @@ export default function CommandChatPage() {
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           </button>
         </div>
-        <p className="text-[11px] text-text-3 text-center mt-2">Enter за изпращане · Shift+Enter за нов ред · Claude Opus + Tool Use</p>
+        <p className="text-[12px] text-text-2 text-center mt-2">Enter за изпращане · Shift+Enter за нов ред · Claude Opus + Tool Use</p>
       </div>
     </div>
   );

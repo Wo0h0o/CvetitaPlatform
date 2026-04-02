@@ -72,7 +72,7 @@ export function LoadingScreen({ progress }: { progress: number }) {
         <h1 className="text-[26px] font-bold tracking-tight text-text">
           Цветита <span className="text-accent">Хербал</span>
         </h1>
-        <p className="text-[13px] text-text-3 mt-1 tracking-wide">
+        <p className="text-[13px] text-text-2 mt-1 tracking-wide">
           КОМАНДЕН ЦЕНТЪР
         </p>
       </div>
@@ -88,7 +88,7 @@ export function LoadingScreen({ progress }: { progress: number }) {
       </div>
 
       {/* Status text */}
-      <p className="text-[12px] text-text-3 h-4">
+      <p className="text-[12px] text-text-2 h-4">
         {STEPS[stepIndex]}
         <span className="inline-block w-5 text-left">{dots}</span>
       </p>

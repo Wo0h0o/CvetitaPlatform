@@ -110,7 +110,7 @@ export default function ProductsPage() {
           <CardBody>
             <div className="text-center py-12">
               <Package size={24} className="mx-auto mb-2 text-text-3 opacity-50" />
-              <p className="text-[13px] text-text-3">Грешка при зареждане на продуктовите данни</p>
+              <p className="text-[13px] text-text-2">Грешка при зареждане на продуктовите данни</p>
             </div>
           </CardBody>
         </Card>
@@ -139,7 +139,7 @@ export default function ProductsPage() {
         <div className="bg-surface rounded-xl shadow-sm p-5">
           <div className="flex items-center gap-2 mb-2">
             <Package size={16} className="text-text-3" />
-            <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">Продукти</span>
+            <span className="text-[13px] font-semibold text-text">Продукти</span>
           </div>
           <div className="text-[22px] font-bold tracking-tight text-text">{s?.uniqueProducts || 0}</div>
         </div>
@@ -166,7 +166,7 @@ export default function ProductsPage() {
                 );
               })}
             </div>
-            <div className="flex justify-between mt-2 text-[10px] text-text-3">
+            <div className="flex justify-between mt-2 text-[11px] text-text-2">
               <span>{data.timeSeries[0]?.date}</span>
               <span>{data.timeSeries[data.timeSeries.length - 1]?.date}</span>
             </div>
@@ -179,7 +179,7 @@ export default function ProductsPage() {
         <Card className="lg:col-span-2">
           <CardHeader
             action={
-              <span className="text-[12px] text-text-3">{totalCount} продукта</span>
+              <span className="text-[12px] text-text-2">{totalCount} продукта</span>
             }
           >
             Всички продукти
@@ -202,8 +202,8 @@ export default function ProductsPage() {
               <div className="min-w-[600px]">
                 {/* Table header with sorting */}
                 <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
-                  <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3 flex items-center">#</div>
-                  <div className="col-span-4 text-[11px] font-medium uppercase tracking-wider text-text-3 flex items-center">Продукт</div>
+                  <div className="col-span-1 text-[13px] font-semibold text-text flex items-center">#</div>
+                  <div className="col-span-4 text-[13px] font-semibold text-text flex items-center">Продукт</div>
                   <div className="col-span-2 flex justify-end">
                     <SortButton label="Бройки" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
                   </div>
@@ -236,7 +236,7 @@ export default function ProductsPage() {
                       <div className="col-span-2 text-right text-[13px] text-text-2">{p.quantity}</div>
                       <div className="col-span-2 text-right text-[14px] font-semibold text-text">{p.revenue.toFixed(2)}</div>
                       <div className="col-span-1 text-right text-[13px] text-text-2">{p.orders}</div>
-                      <div className="col-span-2 text-right text-[12px] text-text-3">{p.avgPrice.toFixed(2)} EUR</div>
+                      <div className="col-span-2 text-right text-[12px] text-text-2">{p.avgPrice.toFixed(2)} EUR</div>
                     </div>
                   );
                   return p.handle ? (
@@ -273,7 +273,7 @@ export default function ProductsPage() {
         <Card>
           <CardHeader>Топ комбинации</CardHeader>
           <CardBody>
-            <p className="text-[12px] text-text-3 mb-4">Най-често купувани заедно</p>
+            <p className="text-[12px] text-text-2 mb-4">Най-често купувани заедно</p>
             {data?.topCombos?.map((c, i) => (
               <div key={c.combo} className="pb-3 mb-3 border-b border-border last:border-0 last:mb-0 last:pb-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -308,7 +308,7 @@ function KpiWithChange({
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className="text-[22px] font-bold tracking-tight text-text mb-1">{value}</div>
       {change !== undefined && <ChangeBadge value={change} />}

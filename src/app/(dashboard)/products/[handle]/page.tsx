@@ -149,7 +149,7 @@ export default function ProductDetailPage({
               {product.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {product.tags.slice(0, 8).map((tag) => (
-                    <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-2 text-[11px] text-text-3">
+                    <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-2 text-[12px] text-text-2">
                       <Tag size={10} />
                       {tag}
                     </span>
@@ -206,7 +206,7 @@ export default function ProductDetailPage({
                 );
               })}
             </div>
-            <div className="flex justify-between mt-2 text-[10px] text-text-3">
+            <div className="flex justify-between mt-2 text-[11px] text-text-2">
               <span>{sales.timeSeries[0]?.date}</span>
               <span>{sales.timeSeries[sales.timeSeries.length - 1]?.date}</span>
             </div>
@@ -222,7 +222,7 @@ export default function ProductDetailPage({
             <CardBody>
               <div className="overflow-x-auto -mx-5 px-5">
                 <div className="min-w-[400px]">
-                  <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
+                  <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border text-[13px] font-semibold text-text">
                     <div className="col-span-5">Вариант</div>
                     <div className="col-span-3 text-right">Цена</div>
                     <div className="col-span-2 text-right">SKU</div>
@@ -239,14 +239,14 @@ export default function ProductDetailPage({
                           </span>
                         )}
                       </div>
-                      <div className="col-span-2 text-right text-[12px] text-text-3">{v.sku || "—"}</div>
+                      <div className="col-span-2 text-right text-[12px] text-text-2">{v.sku || "—"}</div>
                       <div className="col-span-2 text-right">
                         {v.tracked ? (
                           <Badge variant={v.inventory > 0 ? "green" : "neutral"}>
                             {v.inventory > 0 ? v.inventory : "Out"}
                           </Badge>
                         ) : (
-                          <span className="text-[12px] text-text-3">Неограничено</span>
+                          <span className="text-[12px] text-text-2">Неограничено</span>
                         )}
                       </div>
                     </div>
@@ -289,17 +289,17 @@ export default function ProductDetailPage({
             <CardBody>
               <div className="space-y-3">
                 <div className="flex justify-between text-[13px]">
-                  <span className="text-text-3">Цена</span>
+                  <span className="text-text-2">Цена</span>
                   <span className="font-medium text-text">{parseFloat(product.variants[0].price).toFixed(2)} EUR</span>
                 </div>
                 {product.variants[0].sku && (
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-text-3">SKU</span>
+                    <span className="text-text-2">SKU</span>
                     <span className="font-medium text-text">{product.variants[0].sku}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-[13px]">
-                  <span className="text-text-3">Наличност</span>
+                  <span className="text-text-2">Наличност</span>
                   {product.variants[0].tracked ? (
                     <Badge variant={product.variants[0].inventory > 0 ? "green" : "neutral"}>
                       {product.variants[0].inventory > 0 ? `${product.variants[0].inventory} бр.` : "Изчерпан"}
@@ -309,7 +309,7 @@ export default function ProductDetailPage({
                   )}
                 </div>
                 <div className="flex justify-between text-[13px]">
-                  <span className="text-text-3">Добавен</span>
+                  <span className="text-text-2">Добавен</span>
                   <span className="text-text-2">
                     {new Date(product.createdAt).toLocaleDateString("bg-BG", { day: "numeric", month: "short", year: "numeric" })}
                   </span>
@@ -332,7 +332,7 @@ function MiniKpi({
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
     </div>

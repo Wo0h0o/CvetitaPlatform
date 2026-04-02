@@ -130,7 +130,7 @@ export default function AdSetsPage() {
               <Users size={24} className="text-blue" />
             </div>
             <p className="text-[15px] font-medium text-text mb-2">Meta Ads не е свързан</p>
-            <p className="text-[13px] text-text-3">Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID.</p>
+            <p className="text-[13px] text-text-2">Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID.</p>
           </div>
         </CardBody></Card>
       </>
@@ -205,7 +205,7 @@ export default function AdSetsPage() {
               </button>
             ))}
           </div>
-          <span className="text-[12px] text-text-3">{filtered.length} ad sets</span>
+          <span className="text-[12px] text-text-2">{filtered.length} ad sets</span>
         </div>
       </div>
 
@@ -214,7 +214,7 @@ export default function AdSetsPage() {
         <CardBody>
           <div className="overflow-x-auto -mx-5 px-5">
             <div className="min-w-[1100px]">
-              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[13px] font-semibold text-text">
                 <div className="col-span-3">Ad Set</div>
                 <div className="col-span-1 text-right">Budget</div>
                 <div className="col-span-1 text-right">Spend</div>
@@ -231,7 +231,7 @@ export default function AdSetsPage() {
                   <div key={adset.id} className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors">
                     <div className="col-span-3">
                       <div className="text-[13px] font-medium text-text truncate">{adset.name}</div>
-                      <div className="text-[11px] text-text-3 truncate">{adset.campaignName}</div>
+                      <div className="text-[12px] text-text-2 truncate">{adset.campaignName}</div>
                       <Badge variant={st.variant}>{st.label}</Badge>
                     </div>
                     <div className="col-span-1 text-right text-[12px] text-text-2">{adset.budget}</div>
@@ -250,7 +250,7 @@ export default function AdSetsPage() {
                 );
               })}
               {filtered.length === 0 && (
-                <div className="text-center py-8 text-[13px] text-text-3">Няма данни за избрания период</div>
+                <div className="text-center py-8 text-[13px] text-text-2">Няма данни за избрания период</div>
               )}
             </div>
           </div>
@@ -267,7 +267,7 @@ function MiniKpi({ icon: Icon, label, value, highlight }: {
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className={`text-[22px] font-bold tracking-tight ${highlight ? "text-accent" : "text-text"}`}>{value}</div>
     </div>

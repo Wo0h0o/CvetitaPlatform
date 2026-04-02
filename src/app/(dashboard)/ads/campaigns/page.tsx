@@ -112,7 +112,7 @@ export default function CampaignsPage() {
               <Megaphone size={24} className="text-blue" />
             </div>
             <p className="text-[15px] font-medium text-text mb-2">Meta Ads не е свързан</p>
-            <p className="text-[13px] text-text-3">Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID.</p>
+            <p className="text-[13px] text-text-2">Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID.</p>
           </div>
         </CardBody></Card>
       </>
@@ -169,7 +169,7 @@ export default function CampaignsPage() {
               <StatRow label="Cart → Purchase" value={`${fmt(ov?.addToCart ? (ov?.purchases || 0) / ov.addToCart * 100 : 0)}%`} />
               {ov?.period?.start && (
                 <div className="pt-3 border-t border-border">
-                  <p className="text-[11px] text-text-3">Период: {ov.period.start} — {ov.period.end}</p>
+                  <p className="text-[12px] text-text-2">Период: {ov.period.start} — {ov.period.end}</p>
                 </div>
               )}
             </div>
@@ -217,7 +217,7 @@ export default function CampaignsPage() {
               </button>
             ))}
           </div>
-          <span className="text-[12px] text-text-3">{campaigns.length} кампании</span>
+          <span className="text-[12px] text-text-2">{campaigns.length} кампании</span>
         </div>
       </div>
 
@@ -225,7 +225,7 @@ export default function CampaignsPage() {
         <CardBody>
           <div className="overflow-x-auto -mx-5 px-5">
             <div className="min-w-[1000px]">
-              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[11px] font-medium uppercase tracking-wider text-text-3">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[13px] font-semibold text-text">
                 <div className="col-span-3">Кампания</div>
                 <div className="col-span-1 text-right">Spend</div>
                 <div className="col-span-1 text-right">Revenue</div>
@@ -258,7 +258,7 @@ export default function CampaignsPage() {
                 );
               })}
               {campaigns.length === 0 && (
-                <div className="text-center py-8 text-[13px] text-text-3">Няма данни за избрания период</div>
+                <div className="text-center py-8 text-[13px] text-text-2">Няма данни за избрания период</div>
               )}
             </div>
           </div>
@@ -275,7 +275,7 @@ function MiniKpi({ icon: Icon, label, value, highlight }: {
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className={`text-[22px] font-bold tracking-tight ${highlight ? "text-accent" : "text-text"}`}>{value}</div>
     </div>
@@ -302,7 +302,7 @@ function FunnelArrow({ rate }: { rate: number }) {
   return (
     <div className="flex items-center justify-center gap-2 py-0.5">
       <ArrowRight size={14} className="text-text-3 rotate-90" />
-      <span className="text-[11px] font-medium text-text-3">{rate.toFixed(1)}%</span>
+      <span className="text-[12px] font-medium text-text-2">{rate.toFixed(1)}%</span>
     </div>
   );
 }

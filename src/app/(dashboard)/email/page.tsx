@@ -151,7 +151,7 @@ export default function EmailPage() {
           <CardBody>
             <div className="text-center py-12">
               <Mail size={24} className="mx-auto mb-2 text-text-3 opacity-50" />
-              <p className="text-[13px] text-text-3">Грешка при зареждане на имейл данните</p>
+              <p className="text-[13px] text-text-2">Грешка при зареждане на имейл данните</p>
             </div>
           </CardBody>
         </Card>
@@ -220,7 +220,7 @@ export default function EmailPage() {
         {/* Campaigns */}
         <Card className="lg:col-span-2">
           <CardHeader
-            action={<span className="text-[12px] text-text-3">{totalCampaigns} кампании</span>}
+            action={<span className="text-[12px] text-text-2">{totalCampaigns} кампании</span>}
           >
             Кампании
           </CardHeader>
@@ -250,7 +250,7 @@ export default function EmailPage() {
               <div className="min-w-[500px]">
                 {/* Header with sort buttons */}
                 <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
-                  <div className="col-span-5 text-[11px] font-medium uppercase tracking-wider text-text-3 flex items-center">
+                  <div className="col-span-5 text-[13px] font-semibold text-text flex items-center">
                     Кампания
                   </div>
                   <div className="col-span-2 flex justify-end">
@@ -262,7 +262,7 @@ export default function EmailPage() {
                   <div className="col-span-2 flex justify-end">
                     <SortButton label="Click" sortKey="clickRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
                   </div>
-                  <div className="col-span-1 text-[11px] font-medium uppercase tracking-wider text-text-3 text-right flex items-center justify-end">
+                  <div className="col-span-1 text-[13px] font-semibold text-text text-right flex items-center justify-end">
                     Статус
                   </div>
                 </div>
@@ -275,7 +275,7 @@ export default function EmailPage() {
                     <div className="col-span-5 min-w-0">
                       <div className="text-[13px] font-medium text-text truncate">{c.name}</div>
                       {c.sendTime && (
-                        <div className="text-[11px] text-text-3">
+                        <div className="text-[12px] text-text-2">
                           {new Date(c.sendTime).toLocaleDateString("bg-BG", { day: "numeric", month: "short" })}
                           {" | "}
                           {c.recipients.toLocaleString("bg-BG")} получатели
@@ -349,7 +349,7 @@ export default function EmailPage() {
                       {fmt(f.revenue)} EUR
                     </span>
                   </div>
-                  <div className="flex gap-3 ml-7 text-[11px] text-text-3">
+                  <div className="flex gap-3 ml-7 text-[12px] text-text-2">
                     <span>Open {pct(f.openRate)}</span>
                     <span>Click {pct(f.clickRate)}</span>
                     <span>{f.recipients.toLocaleString("bg-BG")} emails</span>
@@ -376,10 +376,10 @@ function MiniKpi({
     <div className="bg-surface rounded-xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={16} className="text-text-3" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-3">{label}</span>
+        <span className="text-[13px] font-semibold text-text">{label}</span>
       </div>
       <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
-      {sub && <div className="text-[11px] text-text-3 mt-1">{sub}</div>}
+      {sub && <div className="text-[12px] text-text-2 mt-1">{sub}</div>}
     </div>
   );
 }
