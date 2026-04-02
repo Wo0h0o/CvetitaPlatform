@@ -484,6 +484,88 @@ async function streamClaudeResponse(
   return { contentBlocks, stopReason };
 }
 
+// ---- Bulgarian Editor (Step 2) ----
+
+const EDITOR_PROMPT = `Ти си РЕДАКТОР на български рекламен текст. Получаваш копи от копирайтър и го шлифоваш САМО езиково.
+
+КАКВО ПРАВИШ:
+• Поправяш членуване: пълен член (-ът/-ят) за подлог, кратък (-а/-я) за допълнение
+• Поправяш клитики: никога в началото на изречение, правилен ред
+• Поправяш глаголен вид: свършен за еднократни, несвършен за повтарящи се
+• Махаш излишни лични местоимения (аз, ние, той) — спрежението ги прави ясни
+• Махаш filler думи: "наистина", "всъщност", "определено", "освен това", "в допълнение"
+• Махаш калки от английски: "Това е какво ние правим" → "Ето какво правим"
+• Слагаш запетая пред "че" и "който/която/което"
+• Махаш запетая пред "и" в просто изречение
+• Използваш български кавички: „ " а не " "
+• Тире с интервали: " — "
+• Разбиваш прекалено дълги изречения
+• Оптимизираш словоред: ключовата полза в края на изречението (фокусна позиция)
+• Заменяш чуждици с български еквиваленти, когато съществуват
+• Заменяш passive voice с active: "Продуктът е създаден от" → "Създадохме"
+• Заменяш менторски тон: "Трябва да знаеш" → "Оказва се, че"
+• Заменяш команди с покани: "Купи сега!" → "Опитай и ти"
+
+КАКВО НЕ ПРАВИШ:
+• НЕ променяш messaging-а, идеите, структурата, форматирането
+• НЕ добавяш нови параграфи или секции
+• НЕ променяш markdown форматирането (##, •, **bold**)
+• НЕ променяш числа, цени, имена на продукти
+• НЕ добавяш emoji, които ги няма в оригинала
+• НЕ правиш текста по-дълъг
+
+Върни САМО редактирания текст, без коментари, без обяснения. Запази цялата структура и форматиране.`;
+
+async function runEditor(apiKey: string, generatedText: string, send: (data: object) => void): Promise<void> {
+  send({ t: "rewrite" });
+  send({ t: "status", msg: "Шлифовам българския..." });
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 8192,
+      stream: true,
+      system: EDITOR_PROMPT,
+      messages: [{ role: "user", content: generatedText }],
+    }),
+  });
+
+  if (!res.ok) {
+    // Editor failed — keep original text, don't crash
+    console.error("Editor API error:", res.status);
+    return;
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === "content_block_delta" && evt.delta?.text) {
+          send({ t: "text", d: evt.delta.text });
+        }
+      } catch { /* skip */ }
+    }
+  }
+}
+
 // ---- Main route ----
 
 export async function POST(req: NextRequest) {
@@ -521,9 +603,15 @@ export async function POST(req: NextRequest) {
         }));
 
         const MAX_TOOL_ROUNDS = 5;
+        let generatedText = "";
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const result = await streamClaudeResponse(apiKey, systemPrompt, messages, send);
+
+          // Accumulate generated text from this round
+          for (const block of result.contentBlocks) {
+            if (block.type === "text") generatedText += block.text;
+          }
 
           if (result.stopReason === "end_turn" || result.stopReason !== "tool_use") break;
 
@@ -545,6 +633,12 @@ export async function POST(req: NextRequest) {
 
           messages.push({ role: "assistant", content: result.contentBlocks });
           messages.push({ role: "user", content: toolResults });
+          generatedText = ""; // Reset — we want only the final round's text
+        }
+
+        // Step 2: Editor pass — polish Bulgarian grammar
+        if (generatedText.length > 50) {
+          await runEditor(apiKey, generatedText, send);
         }
 
         send({ t: "done" });
