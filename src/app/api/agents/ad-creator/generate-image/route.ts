@@ -37,7 +37,20 @@ Your job: take a rough creative direction (often in Bulgarian) and transform it 
 10. NEVER include text, typography, headlines, or words IN the image — the image is purely visual
 11. Include negative prompt elements: "no text, no watermarks, no logos, no typography"
 12. Keep it under 300 words — dense and specific, no fluff
-13. If a reference product image will be provided, describe how it should be incorporated
+
+## CRITICAL: Reference Product Image Handling
+When a reference product image is provided, this is the MOST IMPORTANT part of your prompt:
+- The reference image shows the EXACT product that MUST appear in the final image
+- Your prompt MUST start with: "Photorealistic product photography. The product from the reference image must be reproduced with PIXEL-PERFECT accuracy — same bottle shape, same label design, same colors, same proportions, same cap/lid."
+- Then describe the SCENE/ENVIRONMENT around the product (lighting, surface, background, props)
+- NEVER describe the product itself — only say "the exact product from the reference image"
+- NEVER say "similar bottle" or "dark glass bottle" — always "the IDENTICAL product from the reference"
+- Emphasize: "Do NOT redesign, reinterpret, or reimagine the product packaging. Copy it exactly as shown."
+- Add: "The label text, logo placement, color scheme, and bottle shape must be an exact match to the reference."
+
+When NO reference image is provided:
+- Describe a generic premium dark glass supplement bottle with forest green and gold label
+- Focus on the scene/environment
 
 ## Brand Context: Cvetita Herbal
 - Bulgarian premium supplement brand
@@ -64,7 +77,7 @@ async function artDirectorRefine(
     `## Technical specs:`,
     `- Ad format: ${format}`,
     `- Aspect ratio: ${aspectRatio} (${dimensions})`,
-    `- Reference product image provided: ${hasReferenceImage ? "YES — incorporate the exact product bottle/packaging from reference" : "NO — describe a generic premium dark glass supplement bottle"}`,
+    `- Reference product image provided: ${hasReferenceImage ? "YES — the model will receive the exact product photo. Your prompt must instruct pixel-perfect reproduction of that product. Describe ONLY the scene/environment, NOT the product itself." : "NO — describe a generic premium dark glass supplement bottle with forest green and gold label"}`,
     `\nTransform this into a production-ready image generation prompt.`,
   ].join("\n");
 
@@ -136,7 +149,11 @@ export async function POST(req: NextRequest) {
     if (productImageUrl) {
       const refImage = await fetchImageAsBase64(productImageUrl);
       if (refImage) {
-        const finalPrompt = `Using the product bottle/packaging shown in the reference image as the hero product: ${refinedPrompt}. Keep the EXACT product packaging, label, and branding from the reference image. Do not invent new packaging.`;
+        const finalPrompt = `CRITICAL INSTRUCTION: The reference image shows the EXACT product that must appear in this image. You MUST reproduce this product with pixel-perfect accuracy — identical bottle shape, identical label, identical colors, identical cap, identical proportions. Do NOT redesign or reinterpret the packaging in any way. The product must look like a photograph of the real object, not a recreation.
+
+Scene description: ${refinedPrompt}
+
+REMINDER: The product from the reference image must be copied exactly. Same label text placement, same logo, same color scheme, same bottle shape. Any deviation from the reference product is a failure.`;
         result = await generateImageWithReference(finalPrompt, refImage.data, refImage.mimeType, aspectRatio);
       } else {
         result = await generateImage(refinedPrompt, aspectRatio);
