@@ -195,7 +195,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
       <h2 className="text-[18px] font-semibold text-text mb-1">Настрой кампанията</h2>
       <p className="text-[13px] text-text-3 mb-5">За кого е рекламата и в какъв формат?</p>
 
-      <div className="space-y-5 max-w-2xl">
+      <div className="space-y-5">
         {/* Avatar cards */}
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Аватар — за кого пишем?</div>
@@ -255,7 +255,7 @@ function CreativeTypeStep({ selected, onSelect }: { selected: string; onSelect: 
       <h2 className="text-[18px] font-semibold text-text mb-1">Тип креатив</h2>
       <p className="text-[13px] text-text-3 mb-5">Какъв визуален стил искаш?</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {CREATIVE_TYPES.map((ct) => {
           const Icon = ct.icon;
           const isSelected = selected === ct.id;
@@ -637,7 +637,7 @@ export default function AdCreatorPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-48px)] max-w-4xl mx-auto w-full">
+    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-48px)]">
       {/* Header */}
       <div className="flex items-center gap-3 mb-2 flex-shrink-0">
         <div className="w-9 h-9 rounded-xl bg-purple flex items-center justify-center flex-shrink-0">
