@@ -56,6 +56,7 @@ When NO reference image is provided:
 ### "Научен / Инфо"
 - Infographic-style design with the product as the centerpiece
 - MUST include text elements: key facts, dosage numbers, ingredient names, benefit bullet points
+- ALL text in the image MUST be in BULGARIAN language (Cyrillic script). Never English.
 - Use clean typography: Montserrat or similar sans-serif, white or dark text on colored blocks
 - Layout: product in center or side, surrounded by info cards/badges/callout boxes with real data
 - Include visual elements: molecular structures, ingredient icons, check marks, numbered lists
@@ -69,6 +70,7 @@ When NO reference image is provided:
 ### "Lifestyle + текст"
 - Same scene as Lifestyle BUT with text overlay integrated into the image
 - Include the headline/hook text directly on the image in bold Montserrat font
+- ALL text in the image MUST be in BULGARIAN language (Cyrillic script). Never English.
 - Position text in the top or bottom third with semi-transparent background bar
 - Text should be large, readable, and contrast well with the background
 - The text content will be provided in the creative direction
