@@ -55,6 +55,7 @@ function buildSystemPrompt(settings: {
   intensity: number;
   angle: string;
   product: string | null;
+  creativeType: string;
 }): string {
   const intensityGuide: Record<number, string> = {
     1: "Чисто информативен. Факти за съставки, дозировки, механизми. Без емоция, без CTA. Като научна статия.",
@@ -96,6 +97,7 @@ function buildSystemPrompt(settings: {
 • Подход: ${settings.approach}
 • Интензивност: ${settings.intensity}/5 — ${intensityGuide[settings.intensity] || intensityGuide[3]}
 • Емоционален ъгъл: ${settings.angle}
+• Тип креатив: ${settings.creativeType}
 • Избран продукт: ${settings.product ? `handle="${settings.product}" — ЗАДЪЛЖИТЕЛНО извикай get_product_details за пълна информация преди да пишеш копи` : "Не е избран — попитай потребителя или използвай search_products"}
 
 == ГЛАС НА БРАНДА ==
@@ -259,14 +261,39 @@ SKEPTICISM ДУМИ (избягвай): гарантиран, чудодейен
 
 == ПОВЕДЕНИЕ ==
 1. Отговаряй САМО на български
-2. ВИНАГИ определи аватар преди да пишеш копи — ако не е уточнен, ПОПИТАЙ
-3. Използвай search_products за реални данни — НИКОГА не измисляй продуктови характеристики
-4. ВИНАГИ давай 2 варианта (A/B test ready) — единият по-консервативен, другият по-смел
-5. Всеки вариант включва: Копи текст + Визуална насока + Compliance бележки
-6. ВИНАГИ включвай Value Equation разбивка
-7. При Meta реклами — Hook в първите 125 символа, Headline до 40 символа
-8. Без discount-first messaging, без фалшива спешност
-9. ВИНАГИ завършвай с раздел "## 📋 Следващи стъпки" — какво може да се подобри, какво да се тества`;
+2. Използвай search_products / get_product_details за реални данни — НИКОГА не измисляй продуктови характеристики
+3. ВИНАГИ давай точно 4 варианта (A/B/C/D test ready). Всеки с различен ъгъл или hook.
+4. При Meta реклами — Hook в първите 125 символа, Headline до 40 символа
+5. Без discount-first messaging, без фалшива спешност
+
+== ФОРМАТ НА ОТГОВОРА ==
+За ВСЕКИ от 4-те варианта, следвай ТОЧНО тази структура:
+
+## Вариант A: [кратко име на ъгъла]
+
+**Hook (първите 125 символа):**
+[текст на hook-а]
+
+**Основен текст:**
+[пълен текст на рекламата]
+
+**Headline (до 40 символа):**
+[headline]
+
+**CTA:**
+[call to action]
+
+**Визуална насока:**
+[кратко описание на визуала — цветове, композиция, стил]
+
+**Image Prompt (EN):**
+[ДЕТАЙЛЕН prompt на АНГЛИЙСКИ за генериране на изображение. Включва: продукт, стил (${settings.creativeType}), настроение, цветове (#2D5016 forest green, #C4922A gold, #F5F2EB off-white), композиция, осветление. НЕ включвай текст върху изображението. Формат: professional product photography / lifestyle photography / editorial style.]
+
+---
+
+След 4-те варианта, добави:
+## 📋 Препоръка
+Кой вариант за коя аудитория е най-подходящ и защо.`;
 }
 
 // ---- Tool execution ----
@@ -559,6 +586,7 @@ export async function POST(req: NextRequest) {
     intensity: body.intensity ?? 3,
     angle: body.angle || "Желан стейт",
     product: body.product || null,
+    creativeType: body.creativeType || "Продуктова снимка",
   };
 
   const apiKey = process.env.CLAUDE_API_KEY;
