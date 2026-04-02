@@ -156,7 +156,7 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
       {!data ? (
         <div className="flex items-center justify-center py-12 text-text-3"><Loader2 size={20} className="animate-spin mr-2" />Зареждам каталога...</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {filtered.map((p) => (
             <button key={p.handle} onClick={() => onSelect(p)}
               className={`group bg-surface rounded-xl overflow-hidden text-left transition-all cursor-pointer border-2 ${
