@@ -55,13 +55,14 @@ When NO reference image is provided:
 
 ### "Научен / Инфо"
 - Infographic-style design with the product as the centerpiece
-- MUST include text elements: key facts, dosage numbers, ingredient names, benefit bullet points
+- Include EXACTLY 3 short text labels (max 3-4 words each) as benefit badges around the product
 - ALL text in the image MUST be in BULGARIAN language (Cyrillic script). Never English.
-- Use clean typography: Montserrat or similar sans-serif, white or dark text on colored blocks
-- Layout: product in center or side, surrounded by info cards/badges/callout boxes with real data
-- Include visual elements: molecular structures, ingredient icons, check marks, numbered lists
+- LESS IS MORE: lots of white space, only 3 benefit badges, one headline. No walls of text.
+- Use clean typography: Montserrat bold, white text on forest green rounded badges
+- Layout: product hero center (60% of frame), 3 small badges positioned around it
+- Visual accents: subtle ingredient elements (leaves, powder), molecular icons as decoration only
 - Colors: forest green, white, gold accents — clean scientific feel
-- Think: Instagram infographic post, NOT a photo
+- Think: premium Apple-style product page, NOT a cluttered flyer
 
 ### "Lifestyle"
 - Product in real-world context (kitchen, gym, nature, morning routine)
