@@ -400,8 +400,13 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
     setLoading(false);
   }, [product, avatar, format, approach, angle, audience, intensity, creativeType, additionalInput, setGeneratedContent, setVariants, setSelectedVariants]);
 
+  // Auto-generate only on first visit (no content yet), not when navigating back
+  const hasGenerated = useRef(false);
   useEffect(() => {
-    if (!generatedContent && !loading) generate();
+    if (!generatedContent && !loading && !hasGenerated.current) {
+      hasGenerated.current = true;
+      generate();
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleVariant = (idx: number) => {
@@ -548,8 +553,13 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
     setGenerating(false);
   }, [selected, format, productImageUrl, creativeType]);
 
+  // Auto-generate only on first visit, not when navigating back from other steps
+  const hasGeneratedImages = useRef(false);
   useEffect(() => {
-    if (selected.length > 0 && images.length === 0) generateAll();
+    if (selected.length > 0 && images.length === 0 && !hasGeneratedImages.current) {
+      hasGeneratedImages.current = true;
+      generateAll();
+    }
   }, [selected.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const downloadImage = (base64: string, name: string) => {
