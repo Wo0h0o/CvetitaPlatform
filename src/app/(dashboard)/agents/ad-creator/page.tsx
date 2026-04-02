@@ -346,7 +346,10 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
           creativeType,
         }),
       });
-      if (!res.ok) throw new Error("API error");
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        throw new Error(`API ${res.status}: ${errText}`);
+      }
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();

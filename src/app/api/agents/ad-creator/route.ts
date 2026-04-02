@@ -577,7 +577,13 @@ async function runEditor(apiKey: string, generatedText: string, send: (data: obj
 // ---- Main route ----
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
   const clientMessages: { role: string; content: string }[] = body.messages || [];
   const settings = {
     avatar: body.avatar || "Не е избран — попитай потребителя",
@@ -591,7 +597,7 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    return new Response("CLAUDE_API_KEY not configured", { status: 500 });
+    return Response.json({ error: "CLAUDE_API_KEY not configured" }, { status: 500 });
   }
 
   const systemPrompt = buildSystemPrompt(settings);
