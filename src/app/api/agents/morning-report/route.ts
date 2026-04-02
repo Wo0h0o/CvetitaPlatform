@@ -4,7 +4,7 @@ import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-contex
 export const maxDuration = 30;
 
 function buildPrompt(businessContext: string): string {
-  const today = new Date().toLocaleDateString("bg-BG", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const today = new Date().toLocaleDateString("bg-BG", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Sofia" });
 
   return `Ти си старши бизнес анализатор на Цветита Хербал — водеща българска марка за хранителни добавки с 15 години история, собствено производство и над 1 милион клиенти.
 

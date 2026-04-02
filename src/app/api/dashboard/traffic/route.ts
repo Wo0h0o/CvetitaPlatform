@@ -62,7 +62,7 @@ async function runReport(
 
 function daysAgoStr(days: number): string {
   const d = new Date();
-  d.setDate(d.getDate() - days);
+  d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().split("T")[0];
 }
 

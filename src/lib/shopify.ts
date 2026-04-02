@@ -51,15 +51,15 @@ async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrd
 
 function startOfDay(daysAgo: number = 0): string {
   const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  d.setUTCHours(0, 0, 0, 0);
   return d.toISOString();
 }
 
 function endOfDay(daysAgo: number = 0): string {
   const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  d.setHours(23, 59, 59, 999);
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  d.setUTCHours(23, 59, 59, 999);
   return d.toISOString();
 }
 

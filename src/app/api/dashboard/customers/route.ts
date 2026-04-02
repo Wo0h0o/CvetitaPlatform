@@ -6,34 +6,34 @@ export const maxDuration = 30;
 
 function daysAgoStr(days: number): string {
   const d = new Date();
-  d.setDate(d.getDate() - days);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - days);
+  d.setUTCHours(0, 0, 0, 0);
   return d.toISOString();
 }
 
 function endOfToday(): string {
   const d = new Date();
-  d.setHours(23, 59, 59, 999);
+  d.setUTCHours(23, 59, 59, 999);
   return d.toISOString();
 }
 
 // Week key: "2025-W12" format
 function weekKey(dateStr: string): string {
   const d = new Date(dateStr);
-  const jan1 = new Date(d.getFullYear(), 0, 1);
+  const jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const dayOfYear = Math.floor((d.getTime() - jan1.getTime()) / 86400000) + 1;
-  const weekNum = Math.ceil((dayOfYear + jan1.getDay()) / 7);
-  return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+  const weekNum = Math.ceil((dayOfYear + jan1.getUTCDay()) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
 // Week label for display: "24 Feb"
 function weekLabel(dateStr: string): string {
   const d = new Date(dateStr);
-  // Find Monday of that week
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(d.getFullYear(), d.getMonth(), diff);
-  return monday.toLocaleDateString("bg-BG", { day: "numeric", month: "short" });
+  // Find Monday of that week (UTC)
+  const day = d.getUTCDay();
+  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diff));
+  return monday.toLocaleDateString("bg-BG", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
 function weeksBetween(dateA: string, dateB: string): number {

@@ -9,14 +9,14 @@ export interface DateRange {
   label: string;
 }
 
-function formatDate(d: Date): string {
+function formatDateUTC(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
 function daysAgo(days: number): string {
   const d = new Date();
-  d.setDate(d.getDate() - days);
-  return formatDate(d);
+  d.setUTCDate(d.getUTCDate() - days);
+  return formatDateUTC(d);
 }
 
 export function getDateRange(preset: DatePreset, customFrom?: string, customTo?: string): DateRange {
@@ -64,21 +64,21 @@ export function getDateRange(preset: DatePreset, customFrom?: string, customTo?:
   }
 
   // Comparison: previous period of equal length
-  const fromDate = new Date(from);
-  const toDate = new Date(to);
+  const fromDate = new Date(from + "T00:00:00Z");
+  const toDate = new Date(to + "T00:00:00Z");
   const diffMs = toDate.getTime() - fromDate.getTime();
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
   const compToDate = new Date(fromDate);
-  compToDate.setDate(compToDate.getDate() - 1);
+  compToDate.setUTCDate(compToDate.getUTCDate() - 1);
   const compFromDate = new Date(compToDate);
-  compFromDate.setDate(compFromDate.getDate() - diffDays);
+  compFromDate.setUTCDate(compFromDate.getUTCDate() - diffDays);
 
   return {
     from,
     to,
-    compFrom: formatDate(compFromDate),
-    compTo: formatDate(compToDate),
+    compFrom: formatDateUTC(compFromDate),
+    compTo: formatDateUTC(compToDate),
     preset,
     label,
   };
