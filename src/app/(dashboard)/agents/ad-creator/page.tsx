@@ -84,7 +84,7 @@ function ProgressBar({ current, onNavigate }: { current: Step; onNavigate: (s: S
               className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-medium transition-all min-h-[40px] ${
                 isActive ? "bg-purple text-white shadow-sm" :
                 isCompleted ? "bg-purple-soft text-purple cursor-pointer hover:bg-purple/20" :
-                "bg-surface-2 text-text-3"
+                "bg-surface-2 text-text-2"
               }`}
             >
               {isCompleted ? <Check size={14} /> : <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[11px]">{s.num}</span>}
@@ -142,7 +142,7 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
   return (
     <div>
       <h2 className="text-[18px] font-semibold text-text mb-1">Избери продукт</h2>
-      <p className="text-[13px] text-text-3 mb-4">За кой продукт ще правим реклама?</p>
+      <p className="text-[13px] text-text-2 mb-4">За кой продукт ще правим реклама?</p>
 
       <div className="space-y-3 mb-4">
         <div className="relative">
@@ -152,15 +152,15 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
           />
         </div>
         <div className="flex gap-1.5 overflow-x-auto pb-1">
-          <button onClick={() => setCategory("all")} className={`px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap cursor-pointer min-h-[34px] ${category === "all" ? "bg-purple text-white" : "bg-surface-2 text-text-3"}`}>Всички</button>
+          <button onClick={() => setCategory("all")} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap cursor-pointer min-h-[34px] ${category === "all" ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>Всички</button>
           {categories.map(([cat, count]) => (
-            <button key={cat} onClick={() => setCategory(cat)} className={`px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap cursor-pointer min-h-[34px] ${category === cat ? "bg-purple text-white" : "bg-surface-2 text-text-3"}`}>{cat} ({count})</button>
+            <button key={cat} onClick={() => setCategory(cat)} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium whitespace-nowrap cursor-pointer min-h-[34px] ${category === cat ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>{cat} ({count})</button>
           ))}
         </div>
       </div>
 
       {!data ? (
-        <div className="flex items-center justify-center py-12 text-text-3"><Loader2 size={20} className="animate-spin mr-2" />Зареждам каталога...</div>
+        <div className="flex items-center justify-center py-12 text-text-2"><Loader2 size={20} className="animate-spin mr-2" />Зареждам каталога...</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {filtered.map((p) => (
@@ -175,8 +175,8 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
                 <div className="w-full aspect-square bg-surface-2 flex items-center justify-center"><Package size={24} className="text-text-3" /></div>
               )}
               <div className="p-2.5">
-                <div className="text-[11px] font-medium text-text line-clamp-2 leading-tight mb-1">{p.title}</div>
-                <div className="text-[11px] font-semibold text-purple">{parseFloat(p.price).toFixed(2)} EUR</div>
+                <div className="text-[12px] font-medium text-text line-clamp-2 leading-tight mb-1">{p.title}</div>
+                <div className="text-[12px] font-semibold text-purple">{parseFloat(p.price).toFixed(2)} EUR</div>
               </div>
               {selected?.handle === p.handle && (
                 <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-purple flex items-center justify-center"><Check size={14} className="text-white" /></div>
@@ -200,7 +200,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
   return (
     <div>
       <h2 className="text-[18px] font-semibold text-text mb-1">Настрой кампанията</h2>
-      <p className="text-[13px] text-text-3 mb-5">За кого е рекламата и в какъв формат?</p>
+      <p className="text-[13px] text-text-2 mb-5">За кого е рекламата и в какъв формат?</p>
 
       <div className="space-y-5">
         {/* Avatar cards — vertical card style, single row */}
@@ -215,8 +215,8 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
               >
                 <span className="text-[28px] mb-2">{a.emoji}</span>
                 <span className={`text-[13px] font-semibold ${avatar === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
-                <span className="text-[10px] text-text-3 mb-1.5">{a.tag}</span>
-                <p className="text-[10px] text-text-3 leading-snug">{a.desc}</p>
+                <span className="text-[12px] text-text-2 mb-1.5">{a.tag}</span>
+                <p className="text-[11px] text-text-2 leading-snug">{a.desc}</p>
               </button>
             ))}
           </div>
@@ -235,7 +235,7 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
                 }`}
               >
                 <span className={`text-[13px] font-semibold block ${audience === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
-                <p className="text-[10px] text-text-3 leading-snug mt-1">{a.desc}</p>
+                <p className="text-[11px] text-text-2 leading-snug mt-1">{a.desc}</p>
               </button>
             ))}
           </div>
@@ -271,7 +271,7 @@ function CreativeTypeStep({ selected, onSelect }: { selected: string; onSelect: 
   return (
     <div>
       <h2 className="text-[18px] font-semibold text-text mb-1">Тип креатив</h2>
-      <p className="text-[13px] text-text-3 mb-5">Какъв визуален стил искаш?</p>
+      <p className="text-[13px] text-text-2 mb-5">Какъв визуален стил искаш?</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {CREATIVE_TYPES.map((ct) => {
@@ -288,7 +288,7 @@ function CreativeTypeStep({ selected, onSelect }: { selected: string; onSelect: 
               </div>
               <div>
                 <div className={`text-[14px] font-semibold ${isSelected ? "text-purple" : "text-text"}`}>{ct.label}</div>
-                <p className="text-[12px] text-text-3 mt-0.5">{ct.desc}</p>
+                <p className="text-[12px] text-text-2 mt-0.5">{ct.desc}</p>
               </div>
             </button>
           );
@@ -425,7 +425,7 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-[18px] font-semibold text-text mb-1">Рекламно копи</h2>
-          <p className="text-[13px] text-text-3">{variants.length > 0 ? `${variants.length} варианта — избери кои да генерираш визуали` : "Генерирам варианти..."}</p>
+          <p className="text-[13px] text-text-2">{variants.length > 0 ? `${variants.length} варианта — избери кои да генерираш визуали` : "Генерирам варианти..."}</p>
         </div>
         <button onClick={generate} disabled={loading}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-2 hover:bg-border/40 text-[12px] font-medium text-text-2 cursor-pointer transition-all min-h-[40px]"
@@ -435,7 +435,7 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
       </div>
 
       {loading && variants.length === 0 ? (
-        <div className="flex items-center gap-3 text-text-3 py-12 justify-center">
+        <div className="flex items-center gap-3 text-text-2 py-12 justify-center">
           <Loader2 size={18} className="animate-spin" /><span className="text-[14px]">Създавам 4 варианта...</span>
         </div>
       ) : variants.length > 0 ? (
@@ -472,13 +472,13 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
                   {/* Hook - always visible */}
                   {v.hook && (
                     <div className="mb-2">
-                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Hook</div>
+                      <div className="text-[11px] font-semibold text-text-2 mb-0.5">Hook</div>
                       <p className="text-[12px] text-text leading-snug bg-purple-soft rounded-lg px-3 py-2">{v.hook}</p>
                     </div>
                   )}
                   {v.headline && (
                     <div className="mb-2">
-                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Headline</div>
+                      <div className="text-[11px] font-semibold text-text-2 mb-0.5">Headline</div>
                       <p className="text-[13px] font-semibold text-text">{v.headline}</p>
                     </div>
                   )}
@@ -486,24 +486,24 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
                   {/* Body - collapsed by default, full on expand */}
                   {v.body && (
                     <div className="mb-2">
-                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Текст</div>
-                      <p className={`text-[11px] text-text-2 leading-relaxed ${expanded ? "" : "line-clamp-4"}`}>{v.body}</p>
+                      <div className="text-[11px] font-semibold text-text-2 mb-0.5">Текст</div>
+                      <p className={`text-[12px] text-text-2 leading-relaxed ${expanded ? "" : "line-clamp-4"}`}>{v.body}</p>
                     </div>
                   )}
 
                   {/* Visual direction - only when expanded */}
                   {expanded && v.visualDirection && (
                     <div className="mb-2">
-                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Визуална насока</div>
-                      <p className="text-[11px] text-text-2 leading-relaxed">{v.visualDirection}</p>
+                      <div className="text-[11px] font-semibold text-text-2 mb-0.5">Визуална насока</div>
+                      <p className="text-[12px] text-text-2 leading-relaxed">{v.visualDirection}</p>
                     </div>
                   )}
 
-                  {v.cta && <span className="inline-block mt-1 px-3 py-1 rounded-full bg-surface-2 text-[11px] font-medium text-text-2">{v.cta}</span>}
+                  {v.cta && <span className="inline-block mt-1 px-3 py-1.5 rounded-full bg-surface-2 text-[12px] font-medium text-text">{v.cta}</span>}
 
                   {/* Expand hint when collapsed */}
                   {!expanded && v.body && v.body.length > 200 && (
-                    <button onClick={() => setExpandedVariant(i)} className="mt-2 text-[11px] text-purple hover:underline cursor-pointer">
+                    <button onClick={() => setExpandedVariant(i)} className="mt-2 text-[12px] text-purple hover:underline cursor-pointer">
                       Покажи целия текст
                     </button>
                   )}
@@ -564,7 +564,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-[18px] font-semibold text-text mb-1">Визуали</h2>
-          <p className="text-[13px] text-text-3">{selected.length} креатива от Gemini AI{productImageUrl ? " с продуктова снимка" : ""}</p>
+          <p className="text-[13px] text-text-2">{selected.length} креатива от Gemini AI{productImageUrl ? " с продуктова снимка" : ""}</p>
         </div>
         <button onClick={generateAll} disabled={generating}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-2 hover:bg-border/40 text-[12px] font-medium text-text-2 cursor-pointer transition-all min-h-[40px]"
@@ -574,7 +574,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
       </div>
 
       {selected.length === 0 ? (
-        <div className="text-center py-12 text-text-3">
+        <div className="text-center py-12 text-text-2">
           <Camera size={32} className="mx-auto mb-3 opacity-50" />
           <p className="text-[14px]">Не са избрани варианти.</p>
           <p className="text-[12px] mt-1">Върни се на стъпка 4 и избери поне един.</p>
@@ -587,7 +587,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
                 <div className="aspect-square flex items-center justify-center bg-surface-2">
                   <div className="text-center">
                     <Loader2 size={24} className="animate-spin mx-auto mb-2 text-purple" />
-                    <p className="text-[12px] text-text-3">Генерирам: {img.variant.name}...</p>
+                    <p className="text-[13px] text-text-2">Генерирам: {img.variant.name}...</p>
                   </div>
                 </div>
               ) : img.error ? (
@@ -602,13 +602,13 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl }: {
                   <span className="text-[13px] font-semibold text-text">{img.variant.name}</span>
                   {img.image && (
                     <button onClick={() => downloadImage(img.image!, img.variant.name)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple text-white text-[11px] font-medium cursor-pointer hover:bg-purple/90 transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple text-white text-[12px] font-medium cursor-pointer hover:bg-purple/90 transition-all"
                     >
                       <Download size={12} />Изтегли
                     </button>
                   )}
                 </div>
-                {img.variant.hook && <p className="text-[11px] text-text-2 line-clamp-2">{img.variant.hook}</p>}
+                {img.variant.hook && <p className="text-[12px] text-text-2 line-clamp-2">{img.variant.hook}</p>}
               </div>
             </div>
           ))}
@@ -665,12 +665,12 @@ export default function AdCreatorPage() {
         </div>
         <div>
           <h1 className="text-[16px] font-semibold text-text">Рекламен Творец</h1>
-          <p className="text-[12px] text-text-3">Стъпка по стъпка до готов креатив</p>
+          <p className="text-[13px] text-text-2">Стъпка по стъпка до готов креатив</p>
         </div>
         {selectedProduct && step !== "product" && (
           <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-2">
             {selectedProduct.image && <img src={selectedProduct.image} alt="" className="w-6 h-6 rounded object-contain bg-white" />}
-            <span className="text-[11px] font-medium text-text-2 max-w-[120px] truncate">{selectedProduct.title}</span>
+            <span className="text-[12px] font-medium text-text max-w-[120px] truncate">{selectedProduct.title}</span>
           </div>
         )}
       </div>
@@ -725,7 +725,7 @@ export default function AdCreatorPage() {
             Напред<ChevronRight size={16} />
           </button>
         ) : (
-          <div className="text-[12px] text-text-3">Изтегли креативите или регенерирай</div>
+          <div className="text-[13px] text-text-2">Изтегли креативите или регенерирай</div>
         )}
       </div>
     </div>
