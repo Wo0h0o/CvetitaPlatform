@@ -28,11 +28,11 @@ interface SlimProduct {
 
 // --- Settings options ---
 const AVATARS = [
-  { id: "Стефан (Performance Seeker, М 28-40)", label: "Стефан", desc: "М 28-40" },
-  { id: "Мария (Health-Conscious Parent, Ж 30-50)", label: "Мария", desc: "Ж 30-50" },
-  { id: "Петър (Proactive Health Manager, М 35-55)", label: "Петър", desc: "М 35-55" },
-  { id: "Елена (Beauty & Wellness, Ж 25-45)", label: "Елена", desc: "Ж 25-45" },
-  { id: "Георги (Loyal Repeater, М 40-65)", label: "Георги", desc: "М 40-65" },
+  { id: "Стефан (Performance Seeker, М 28-40)", label: "Стефан", tag: "М 28-40", emoji: "💪", desc: "Трениращ, удря плато. Иска данни и наука за натурален тестостерон." },
+  { id: "Мария (Health-Conscious Parent, Ж 30-50)", label: "Мария", tag: "Ж 30-50", emoji: "👩‍👧", desc: "Защитава семейството. Проучва преди покупка, търси доверие." },
+  { id: "Петър (Proactive Health Manager, М 35-55)", label: "Петър", tag: "М 35-55", emoji: "🩺", desc: "Наскоро здравно-осъзнат. Скептичен, иска механизми и обяснения." },
+  { id: "Елена (Beauty & Wellness, Ж 25-45)", label: "Елена", tag: "Ж 25-45", emoji: "✨", desc: "Външен вид + вътрешно здраве. Instagram-influenced, чисти съставки." },
+  { id: "Георги (Loyal Repeater, М 40-65)", label: "Георги", tag: "М 40-65", emoji: "🔄", desc: "Лоялен клиент, купува месечно. Иска удобство и cross-sell." },
 ];
 const FORMATS = [
   { id: "Meta Feed Ad", label: "Meta Feed" },
@@ -277,7 +277,28 @@ function SidePanel({ avatar, setAvatar, format, setFormat, approach, setApproach
         )}
       </div>
 
-      <PillGroup options={AVATARS} value={avatar} onChange={setAvatar} label="Аватар" />
+      {/* Avatar cards */}
+      <div>
+        <div className="text-[10px] font-medium uppercase tracking-wider text-text-3 mb-1.5">Аватар</div>
+        <div className="space-y-1.5">
+          {AVATARS.map((a) => (
+            <button key={a.id} onClick={() => setAvatar(a.id)}
+              className={`w-full flex items-start gap-2.5 p-2.5 rounded-xl text-left transition-all cursor-pointer ${
+                avatar === a.id ? "bg-purple/10 ring-1 ring-purple/40" : "bg-surface-2 hover:bg-border/30"
+              }`}
+            >
+              <span className="text-[16px] leading-none mt-0.5">{a.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[12px] font-semibold ${avatar === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
+                  <span className="text-[10px] text-text-3">{a.tag}</span>
+                </div>
+                <p className="text-[10px] text-text-3 leading-snug mt-0.5">{a.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
       <PillGroup options={FORMATS} value={format} onChange={setFormat} label="Формат" />
       <PillGroup options={APPROACHES} value={approach} onChange={setApproach} label="Подход" />
       <PillGroup options={ANGLES} value={angle} onChange={setAngle} label="Емоционален ъгъл" />
