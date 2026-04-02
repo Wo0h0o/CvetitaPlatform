@@ -119,7 +119,7 @@ export default function EmailPage() {
   const filteredFlows = useMemo(() => {
     if (!data?.topFlows) return [];
     if (flowFilter === "active") {
-      return data.topFlows.filter((f) => f.status === "live");
+      return data.topFlows.filter((f) => f.status === "live" || f.status === "unknown");
     }
     return data.topFlows;
   }, [data?.topFlows, flowFilter]);

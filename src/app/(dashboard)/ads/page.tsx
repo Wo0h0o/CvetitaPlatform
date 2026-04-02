@@ -38,7 +38,7 @@ interface AdItem {
   scoreBreakdown: { hook: number; engage: number; convert: number; freshness: number };
   diagnostics: { hook: number; engage: number | null; convert: number | null; freshness: number };
   confidence: number;
-  scoreMeta?: { shrunkRoas: number | null; dataGate: string; conversions: number; isVideo: boolean };
+  scoreMeta: { shrunkRoas: number | null; dataGate: string; conversions: number; isVideo: boolean };
 }
 
 interface AdsIndividualData {

@@ -87,7 +87,7 @@ export async function GET(request: Request) {
   const preset = searchParams.get("preset") || "90d";
 
   const presetDays: Record<string, number> = {
-    "7d": 7, "30d": 30, "60d": 60, "90d": 90, "all": 180,
+    today: 1, yesterday: 2, "7d": 7, "30d": 30, "60d": 60, "90d": 90, "all": 180,
   };
   const days = presetDays[preset] || 90;
 
