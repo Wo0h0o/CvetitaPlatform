@@ -54,6 +54,7 @@ function buildSystemPrompt(settings: {
   approach: string;
   intensity: number;
   angle: string;
+  product: string | null;
 }): string {
   const intensityGuide: Record<number, string> = {
     1: "Чисто информативен. Факти за съставки, дозировки, механизми. Без емоция, без CTA. Като научна статия.",
@@ -95,6 +96,7 @@ function buildSystemPrompt(settings: {
 • Подход: ${settings.approach}
 • Интензивност: ${settings.intensity}/5 — ${intensityGuide[settings.intensity] || intensityGuide[3]}
 • Емоционален ъгъл: ${settings.angle}
+• Избран продукт: ${settings.product ? `handle="${settings.product}" — ЗАДЪЛЖИТЕЛНО извикай get_product_details за пълна информация преди да пишеш копи` : "Не е избран — попитай потребителя или използвай search_products"}
 
 == ГЛАС НА БРАНДА ==
 НИЕ СМЕ: Компетентни, образователни (без снизхождение), грижовни (без натиск), конкретни (числа, факти, механизми), полу-формални ("ти", не "Вие"), стойност на първо място.
@@ -403,6 +405,7 @@ export async function POST(req: NextRequest) {
     approach: body.approach || "Образователен",
     intensity: body.intensity ?? 3,
     angle: body.angle || "Желан стейт",
+    product: body.product || null,
   };
 
   const apiKey = process.env.CLAUDE_API_KEY;
