@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   LayoutDashboard,
-  MessageSquare,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -12,7 +11,6 @@ import {
   BarChart3,
   Mail,
   Megaphone,
-  Sunrise,
   Users,
   Bot,
 } from "lucide-react";
@@ -39,17 +37,7 @@ const navSections: NavSection[] = [
     label: "Основни",
     items: [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
-      { href: "/morning-report", icon: Sunrise, label: "Сутрешен Доклад" },
-      { href: "/analysis", icon: MessageSquare, label: "Команден Чат" },
-      {
-        href: "/agents",
-        icon: Bot,
-        label: "Агенти",
-        children: [
-          { href: "/agents/ads-intel", label: "AI Стратег" },
-          { href: "/agents/ad-creator", label: "AI Творец" },
-        ],
-      },
+      { href: "/agents", icon: Bot, label: "Агенти" },
     ],
   },
   {
