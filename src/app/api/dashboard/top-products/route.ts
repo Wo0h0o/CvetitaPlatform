@@ -11,6 +11,9 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error("Top products error:", error);
-    return NextResponse.json([]);
+    return NextResponse.json(
+      { error: "Top products fetch failed" },
+      { status: 500 }
+    );
   }
 }

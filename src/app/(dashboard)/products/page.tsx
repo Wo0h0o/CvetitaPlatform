@@ -50,7 +50,7 @@ interface ProductData {
 
 export default function ProductsPage() {
   const { queryString, label } = useDateRange();
-  const { data, isLoading } = useSWR<ProductData>(
+  const { data, isLoading, error: swrError } = useSWR<ProductData>(
     `/api/dashboard/products-analytics?${queryString}`,
     fetcher,
     { revalidateOnFocus: false }
@@ -96,6 +96,24 @@ export default function ProductsPage() {
           {[1, 2, 3, 4, 5].map((i) => <KpiSkeleton key={i} />)}
         </div>
         <Card><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
+      </>
+    );
+  }
+
+  if (swrError || !data?.summary) {
+    return (
+      <>
+        <PageHeader title="Продукти">
+          <DateRangePicker />
+        </PageHeader>
+        <Card>
+          <CardBody>
+            <div className="text-center py-12">
+              <Package size={24} className="mx-auto mb-2 text-text-3 opacity-50" />
+              <p className="text-[13px] text-text-3">Грешка при зареждане на продуктовите данни</p>
+            </div>
+          </CardBody>
+        </Card>
       </>
     );
   }

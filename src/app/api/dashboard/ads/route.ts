@@ -33,6 +33,6 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     console.error("Meta Ads API error:", error);
-    return NextResponse.json({ error: "Meta API fetch failed" });
+    return NextResponse.json({ error: "Meta API fetch failed" }, { status: 500 });
   }
 }

@@ -117,6 +117,6 @@ export async function GET() {
     );
   } catch (error) {
     console.error("Traffic API error:", error);
-    return NextResponse.json({ error: "GA4 fetch failed" });
+    return NextResponse.json({ error: "GA4 fetch failed" }, { status: 500 });
   }
 }

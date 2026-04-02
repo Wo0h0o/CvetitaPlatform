@@ -38,7 +38,7 @@ export default function TrafficPage() {
   const [pageSortKey, setPageSortKey] = useState<PageSortKey>("sessions");
   const [pageSortDir, setPageSortDir] = useState<"desc" | "asc">("desc");
 
-  const { data, isLoading } = useSWR<TrafficData>(
+  const { data, isLoading, error: swrError } = useSWR<TrafficData>(
     "/api/dashboard/traffic",
     fetcher,
     { revalidateOnFocus: false }
@@ -66,18 +66,28 @@ export default function TrafficPage() {
     );
   }
 
-  if (data?.error === "GA4 not configured") {
+  if (swrError || data?.error) {
+    const isNotConfigured = data?.error === "GA4 not configured";
     return (
-      <Card>
-        <CardBody>
-          <div className="text-center py-12">
-            <p className="text-[15px] font-medium text-text mb-2">GA4 не е свързан</p>
-            <p className="text-[13px] text-text-3">
-              Добави GA4_CLIENT_ID, GA4_CLIENT_SECRET и GA4_REFRESH_TOKEN в Vercel Environment Variables.
-            </p>
-          </div>
-        </CardBody>
-      </Card>
+      <>
+        <PageHeader title="Трафик & SEO">
+          <DateRangePicker />
+        </PageHeader>
+        <Card>
+          <CardBody>
+            <div className="text-center py-12">
+              <p className="text-[15px] font-medium text-text mb-2">
+                {isNotConfigured ? "GA4 не е свързан" : "Грешка при зареждане на трафик данните"}
+              </p>
+              <p className="text-[13px] text-text-3">
+                {isNotConfigured
+                  ? "Добави GA4_CLIENT_ID, GA4_CLIENT_SECRET и GA4_REFRESH_TOKEN в Vercel Environment Variables."
+                  : "Опитай отново по-късно."}
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      </>
     );
   }
 
@@ -136,7 +146,7 @@ export default function TrafficPage() {
             <div className="space-y-4">
               {data?.devices?.map((d) => {
                 const Icon = deviceIcons[d.device] || Monitor;
-                const devTotal = data.devices.reduce((s, x) => s + x.sessions, 0) || 1;
+                const devTotal = data?.devices?.reduce((s, x) => s + x.sessions, 0) || 1;
                 const pct = (d.sessions / devTotal) * 100;
                 return (
                   <div key={d.device} className="flex items-center gap-3">

@@ -182,6 +182,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error("Products analytics error:", error);
-    return NextResponse.json({ summary: null, allProducts: [], topCombos: [], timeSeries: [] });
+    return NextResponse.json({ error: "Products analytics fetch failed" }, { status: 500 });
   }
 }

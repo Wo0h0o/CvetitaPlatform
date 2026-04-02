@@ -15,7 +15,7 @@ interface KpiResponse {
 }
 
 export function KpiGrid() {
-  const { data, isLoading } = useSWR<KpiResponse>(
+  const { data, isLoading, error } = useSWR<KpiResponse>(
     "/api/dashboard/kpis",
     fetcher,
     { refreshInterval: 300_000, revalidateOnFocus: false }
@@ -27,6 +27,14 @@ export function KpiGrid() {
         {Array.from({ length: 5 }).map((_, i) => (
           <KpiSkeleton key={i} />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-surface rounded-xl shadow-sm p-6 mb-6 text-center">
+        <p className="text-[13px] text-text-3">Грешка при зареждане на KPI данните</p>
       </div>
     );
   }

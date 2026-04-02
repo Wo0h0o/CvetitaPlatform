@@ -18,12 +18,9 @@ export async function GET(req: NextRequest) {
     );
   } catch (error) {
     console.error("KPI fetch error:", error);
-    return NextResponse.json({
-      sales: { value: 0, change: 0 },
-      orders: { value: 0, change: 0 },
-      aov: { value: 0, change: 0 },
-      sessions: { value: 0, change: 0 },
-      conversionRate: { value: 0, change: 0 },
-    });
+    return NextResponse.json(
+      { error: "KPI fetch failed" },
+      { status: 500 }
+    );
   }
 }

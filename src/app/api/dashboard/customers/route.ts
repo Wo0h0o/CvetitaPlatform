@@ -236,6 +236,6 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     console.error("Customers API error:", error);
-    return NextResponse.json({ error: "Customer data fetch failed" });
+    return NextResponse.json({ error: "Customer data fetch failed" }, { status: 500 });
   }
 }

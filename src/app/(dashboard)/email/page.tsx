@@ -69,7 +69,7 @@ type FlowFilter = "active" | "all";
 
 export default function EmailPage() {
   const { queryString, label } = useDateRange();
-  const { data, isLoading } = useSWR<EmailData>(
+  const { data, isLoading, error: swrError } = useSWR<EmailData>(
     `/api/dashboard/email?${queryString}`,
     fetcher,
     { revalidateOnFocus: false }
@@ -137,6 +137,24 @@ export default function EmailPage() {
           <Card className="lg:col-span-2"><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
           <Card><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
         </div>
+      </>
+    );
+  }
+
+  if (swrError || (data?.error && data.error !== "Klaviyo not configured")) {
+    return (
+      <>
+        <PageHeader title="Имейл Маркетинг">
+          <DateRangePicker />
+        </PageHeader>
+        <Card>
+          <CardBody>
+            <div className="text-center py-12">
+              <Mail size={24} className="mx-auto mb-2 text-text-3 opacity-50" />
+              <p className="text-[13px] text-text-3">Грешка при зареждане на имейл данните</p>
+            </div>
+          </CardBody>
+        </Card>
       </>
     );
   }

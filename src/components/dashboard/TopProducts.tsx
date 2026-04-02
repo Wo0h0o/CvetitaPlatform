@@ -14,7 +14,7 @@ interface TopProduct {
 }
 
 export function TopProducts() {
-  const { data, isLoading } = useSWR<TopProduct[]>(
+  const { data, isLoading, error } = useSWR<TopProduct[]>(
     "/api/dashboard/top-products",
     fetcher,
     { refreshInterval: 300_000 }
@@ -24,7 +24,12 @@ export function TopProducts() {
     <Card>
       <CardHeader>Топ продукти днес</CardHeader>
       <CardBody>
-        {isLoading ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-8 text-text-3">
+            <Package size={24} className="mb-2 opacity-50" />
+            <span className="text-[13px]">Грешка при зареждане</span>
+          </div>
+        ) : isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-12 w-full" />

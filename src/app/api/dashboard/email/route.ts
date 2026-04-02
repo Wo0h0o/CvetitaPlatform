@@ -21,9 +21,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Email API error:", error);
-    return NextResponse.json({
-      error: "Klaviyo fetch failed",
-      detail: error instanceof Error ? error.message : "Unknown error",
-    });
+    return NextResponse.json(
+      { error: "Klaviyo fetch failed" },
+      { status: 500 }
+    );
   }
 }
