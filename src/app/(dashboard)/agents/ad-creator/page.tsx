@@ -6,7 +6,7 @@ import useSWR from "swr";
 import {
   PenTool, Loader2, Search, Package, ShoppingBag,
   ChevronRight, ChevronLeft, Check, Camera, FileText,
-  Sun, Layers, Download, RefreshCw,
+  Sun, Layers, Download, RefreshCw, Copy, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { Markdown } from "@/components/shared/Markdown";
@@ -184,10 +184,11 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
 }
 
 // --- Step 2: Settings ---
-function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, intensity, setIntensity }: {
+function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, intensity, setIntensity, additionalInput, setAdditionalInput }: {
   avatar: string; setAvatar: (v: string) => void; format: string; setFormat: (v: string) => void;
   approach: string; setApproach: (v: string) => void; angle: string; setAngle: (v: string) => void;
   intensity: number; setIntensity: (v: number) => void;
+  additionalInput: string; setAdditionalInput: (v: string) => void;
 }) {
   return (
     <div>
@@ -232,6 +233,15 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
               <button key={level} onClick={() => setIntensity(level)} className={`flex-1 h-3 rounded-full transition-all cursor-pointer ${level <= intensity ? "bg-purple" : "bg-surface-2"}`} />
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Допълнителни инструкции (незадължително)</div>
+          <textarea value={additionalInput} onChange={(e) => setAdditionalInput(e.target.value)}
+            placeholder="Напр. фокусирай се върху съставката ашваганда, спомени промоция 2+1..."
+            rows={3}
+            className="w-full px-4 py-2.5 rounded-xl bg-surface-2 border border-border text-[13px] text-text outline-none focus:border-purple resize-none"
+          />
         </div>
       </div>
     </div>
@@ -293,15 +303,17 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, approach, angle, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, setAdditionalInput }: {
+function GenerateStep({ product, avatar, format, approach, angle, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput }: {
   product: SlimProduct; avatar: string; format: string; approach: string;
   angle: string; intensity: number; creativeType: string;
   generatedContent: string; setGeneratedContent: (v: string) => void;
   variants: Variant[]; setVariants: (v: Variant[]) => void;
   selectedVariants: Set<number>; setSelectedVariants: (v: Set<number>) => void;
-  additionalInput: string; setAdditionalInput: (v: string) => void;
+  additionalInput: string;
 }) {
   const [loading, setLoading] = useState(false);
+  const [expandedVariant, setExpandedVariant] = useState<number | null>(null);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const generate = useCallback(async () => {
     setLoading(true);
@@ -375,7 +387,16 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
     if (next.has(idx)) next.delete(idx); else next.add(idx);
     setSelectedVariants(next);
   };
+
+  const copyVariant = (v: Variant, idx: number) => {
+    const text = [v.hook && `Hook: ${v.hook}`, v.headline && `Headline: ${v.headline}`, v.body, v.cta && `CTA: ${v.cta}`].filter(Boolean).join("\n\n");
+    navigator.clipboard.writeText(text);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 2000);
+  };
+
   const labels = ["A", "B", "C", "D"];
+  const isExpanded = (i: number) => expandedVariant === i;
 
   return (
     <div>
@@ -390,12 +411,6 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />{loading ? "Генерирам..." : "Регенерирай"}
         </button>
       </div>
-      <div className="mb-4">
-        <input type="text" value={additionalInput} onChange={(e) => setAdditionalInput(e.target.value)}
-          placeholder="Допълнителни инструкции (незадължително)..."
-          className="w-full px-4 py-2.5 rounded-xl bg-surface-2 border border-border text-[13px] text-text outline-none focus:border-purple"
-        />
-      </div>
 
       {loading && variants.length === 0 ? (
         <div className="flex items-center gap-3 text-text-3 py-12 justify-center">
@@ -405,18 +420,34 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {variants.map((v, i) => {
             const sel = selectedVariants.has(i);
+            const expanded = isExpanded(i);
             return (
-              <button key={i} onClick={() => toggleVariant(i)}
-                className={`text-left bg-surface rounded-xl overflow-hidden transition-all cursor-pointer border-2 ${sel ? "border-purple ring-2 ring-purple/20" : "border-border hover:border-purple/30"}`}
+              <div key={i}
+                className={`text-left bg-surface rounded-xl overflow-hidden transition-all border-2 ${sel ? "border-purple ring-2 ring-purple/20" : "border-border hover:border-purple/30"}`}
               >
                 <div className="p-4">
+                  {/* Header row: label + name + action buttons */}
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
+                    <button onClick={() => toggleVariant(i)} className="flex items-center gap-2 cursor-pointer">
                       <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-bold ${sel ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>{labels[i] || i + 1}</span>
                       <span className="text-[13px] font-semibold text-text">{v.name}</span>
+                      {sel && <Check size={14} className="text-purple" />}
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => copyVariant(v, i)} title="Копирай текста"
+                        className="p-2 rounded-lg hover:bg-surface-2 text-text-3 hover:text-purple cursor-pointer transition-all"
+                      >
+                        {copiedIdx === i ? <Check size={14} className="text-green" /> : <Copy size={14} />}
+                      </button>
+                      <button onClick={() => setExpandedVariant(expanded ? null : i)} title={expanded ? "Свий" : "Разгъни"}
+                        className="p-2 rounded-lg hover:bg-surface-2 text-text-3 hover:text-purple cursor-pointer transition-all"
+                      >
+                        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
                     </div>
-                    {sel && <Check size={16} className="text-purple" />}
                   </div>
+
+                  {/* Hook - always visible */}
                   {v.hook && (
                     <div className="mb-2">
                       <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Hook</div>
@@ -429,15 +460,33 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
                       <p className="text-[13px] font-semibold text-text">{v.headline}</p>
                     </div>
                   )}
+
+                  {/* Body - collapsed by default, full on expand */}
                   {v.body && (
                     <div className="mb-2">
                       <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Текст</div>
-                      <p className="text-[11px] text-text-2 leading-relaxed line-clamp-4">{v.body}</p>
+                      <p className={`text-[11px] text-text-2 leading-relaxed ${expanded ? "" : "line-clamp-4"}`}>{v.body}</p>
                     </div>
                   )}
+
+                  {/* Visual direction - only when expanded */}
+                  {expanded && v.visualDirection && (
+                    <div className="mb-2">
+                      <div className="text-[10px] uppercase tracking-wider text-text-3 mb-0.5">Визуална насока</div>
+                      <p className="text-[11px] text-text-2 leading-relaxed">{v.visualDirection}</p>
+                    </div>
+                  )}
+
                   {v.cta && <span className="inline-block mt-1 px-3 py-1 rounded-full bg-surface-2 text-[11px] font-medium text-text-2">{v.cta}</span>}
+
+                  {/* Expand hint when collapsed */}
+                  {!expanded && v.body && v.body.length > 200 && (
+                    <button onClick={() => setExpandedVariant(i)} className="mt-2 text-[11px] text-purple hover:underline cursor-pointer">
+                      Покажи целия текст
+                    </button>
+                  )}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -585,7 +634,7 @@ export default function AdCreatorPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-48px)]">
+    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-48px)] max-w-4xl mx-auto w-full">
       {/* Header */}
       <div className="flex items-center gap-3 mb-2 flex-shrink-0">
         <div className="w-9 h-9 rounded-xl bg-purple flex items-center justify-center flex-shrink-0">
@@ -615,6 +664,7 @@ export default function AdCreatorPage() {
           <SettingsStep avatar={avatar} setAvatar={setAvatar} format={format} setFormat={setFormat}
             approach={approach} setApproach={setApproach} angle={angle} setAngle={setAngle}
             intensity={intensity} setIntensity={setIntensity}
+            additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
           />
         )}
         {step === "creative-type" && <CreativeTypeStep selected={creativeType} onSelect={setCreativeType} />}
@@ -624,7 +674,7 @@ export default function AdCreatorPage() {
             generatedContent={generatedContent} setGeneratedContent={setGeneratedContent}
             variants={variants} setVariants={setVariants}
             selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants}
-            additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
+            additionalInput={additionalInput}
           />
         )}
         {step === "visuals" && (
