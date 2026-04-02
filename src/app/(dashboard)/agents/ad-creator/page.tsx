@@ -196,24 +196,20 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
       <p className="text-[13px] text-text-3 mb-5">За кого е рекламата и в какъв формат?</p>
 
       <div className="space-y-5">
-        {/* Avatar cards */}
+        {/* Avatar cards — vertical card style, single row */}
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Аватар — за кого пишем?</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {AVATARS.map((a) => (
               <button key={a.id} onClick={() => setAvatar(a.id)}
-                className={`flex items-start gap-2.5 p-3 rounded-xl text-left transition-all cursor-pointer ${
-                  avatar === a.id ? "bg-purple/10 ring-2 ring-purple/40" : "bg-surface-2 hover:bg-border/30"
+                className={`flex flex-col items-center text-center p-4 rounded-xl transition-all cursor-pointer border-2 ${
+                  avatar === a.id ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
                 }`}
               >
-                <span className="text-[18px] mt-0.5">{a.emoji}</span>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[13px] font-semibold ${avatar === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
-                    <span className="text-[10px] text-text-3">{a.tag}</span>
-                  </div>
-                  <p className="text-[11px] text-text-3 leading-snug mt-0.5">{a.desc}</p>
-                </div>
+                <span className="text-[28px] mb-2">{a.emoji}</span>
+                <span className={`text-[13px] font-semibold ${avatar === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
+                <span className="text-[10px] text-text-3 mb-1.5">{a.tag}</span>
+                <p className="text-[10px] text-text-3 leading-snug">{a.desc}</p>
               </button>
             ))}
           </div>
@@ -221,10 +217,8 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
 
         <PillGroup options={FORMATS} value={format} onChange={setFormat} label="Формат на рекламата" />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <PillGroup options={APPROACHES} value={approach} onChange={setApproach} label="Подход" />
-          <PillGroup options={ANGLES} value={angle} onChange={setAngle} label="Емоционален ъгъл" />
-        </div>
+        <PillGroup options={APPROACHES} value={approach} onChange={setApproach} label="Подход" />
+        <PillGroup options={ANGLES} value={angle} onChange={setAngle} label="Емоционален ъгъл" />
 
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Интензивност: {intensity}/5 — {INTENSITY_LABELS[intensity - 1]}</div>
