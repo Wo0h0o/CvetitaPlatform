@@ -329,12 +329,25 @@ export default function AdCreatorPage() {
     userScrolledUp.current = false;
 
     const userMsg: UserMessage = { role: "user", content: text.trim() };
-    const conversationHistory = [
-      ...messages.filter((m): m is UserMessage | AssistantMessage => m.role === "user" || m.role === "assistant"),
-      userMsg,
-    ];
     setMessages((prev) => [...prev, userMsg]);
     setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [], searches: [], tools: [] } as AssistantMessage]);
+
+    // Build context-enriched message for the API (user sees only their text)
+    const settingsContext = [
+      `[Избрани настройки от панела: Аватар: ${AVATARS.find((a) => a.id === avatar)?.label || avatar}`,
+      `Формат: ${FORMATS.find((f) => f.id === format)?.label || format}`,
+      `Подход: ${APPROACHES.find((a) => a.id === approach)?.label || approach}`,
+      `Ъгъл: ${ANGLES.find((a) => a.id === angle)?.label || angle}`,
+      `Интензивност: ${intensity}/5`,
+      selectedProduct ? `Продукт: ${selectedProduct.title} (handle: ${selectedProduct.handle})` : "Продукт: не е избран",
+      `]`,
+    ].join(", ");
+    const enrichedContent = `${settingsContext}\n\n${text.trim()}`;
+
+    const conversationHistory = [
+      ...messages.filter((m): m is UserMessage | AssistantMessage => m.role === "user" || m.role === "assistant"),
+      { role: "user" as const, content: enrichedContent },
+    ];
 
     try {
       const res = await fetch("/api/agents/ad-creator", {
