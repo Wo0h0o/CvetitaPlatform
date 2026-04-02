@@ -542,7 +542,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
         const res = await fetch("/api/agents/ad-creator/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType }),
+          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType, headline: selected[i].headline || selected[i].hook }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);

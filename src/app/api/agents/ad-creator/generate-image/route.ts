@@ -32,9 +32,8 @@ Your job: take a rough creative direction (often in Bulgarian) and transform it 
 5. Specify style: photographic vs illustrated, matte vs glossy, minimal vs rich
 6. Specify camera angle and framing: overhead, eye-level, 45°, close-up, wide
 7. Include texture and material descriptions for surfaces
-8. NEVER include text, typography, headlines, or words IN the image — purely visual
-9. Include: "no text, no watermarks, no logos, no typography, no words"
-10. Keep it under 200 words — dense and specific, no fluff
+8. Text rules DEPEND on creative type (see Creative Types below)
+9. Keep it under 200 words — dense and specific, no fluff
 
 ## CRITICAL: Reference Product Image
 When a reference image is provided:
@@ -48,11 +47,31 @@ When NO reference image is provided:
 - Say "a premium supplement product" — do NOT invent specific packaging details
 - Focus on the scene/environment
 
-## Creative Types
-- "Продуктова снимка" / Product shot: clean, minimal background, hero product centered, studio lighting
-- "Научен / Инфо": flat lay with scientific props (molecules diagram props, herbs, measuring tools), clean infographic feel
-- "Lifestyle": product in real-world context (kitchen, gym, nature, morning routine), with or without person
-- "Lifestyle + текст": same as Lifestyle but leave clear negative space (top or bottom third) for text overlay that will be added later
+## Creative Types — FOLLOW STRICTLY based on the selected type
+
+### "Продуктова снимка" / Product shot
+- Clean, minimal background, hero product centered, studio lighting
+- NO text, no typography, no words. Add: "no text, no watermarks, no typography"
+
+### "Научен / Инфо"
+- Infographic-style design with the product as the centerpiece
+- MUST include text elements: key facts, dosage numbers, ingredient names, benefit bullet points
+- Use clean typography: Montserrat or similar sans-serif, white or dark text on colored blocks
+- Layout: product in center or side, surrounded by info cards/badges/callout boxes with real data
+- Include visual elements: molecular structures, ingredient icons, check marks, numbered lists
+- Colors: forest green, white, gold accents — clean scientific feel
+- Think: Instagram infographic post, NOT a photo
+
+### "Lifestyle"
+- Product in real-world context (kitchen, gym, nature, morning routine)
+- NO text, no typography. Add: "no text, no watermarks, no typography"
+
+### "Lifestyle + текст"
+- Same scene as Lifestyle BUT with text overlay integrated into the image
+- Include the headline/hook text directly on the image in bold Montserrat font
+- Position text in the top or bottom third with semi-transparent background bar
+- Text should be large, readable, and contrast well with the background
+- The text content will be provided in the creative direction
 
 ## Brand Context: Cvetita Herbal
 - Bulgarian premium supplement brand
@@ -69,21 +88,24 @@ async function artDirectorRefine(
   format: string,
   aspectRatio: string,
   hasReferenceImage: boolean,
-  creativeType: string
+  creativeType: string,
+  headline?: string
 ): Promise<string> {
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) return rawPrompt; // graceful fallback
 
+  const needsText = creativeType === "Научен / Инфо" || creativeType === "Lifestyle + текст";
   const dimensions = FORMAT_DIMENSIONS[aspectRatio] || "1080x1080px";
   const userMessage = [
     `## Raw creative direction:\n${rawPrompt}`,
+    needsText && headline ? `## Text to include in image:\n${headline}` : "",
     `## Technical specs:`,
     `- Ad format: ${format}`,
     `- Aspect ratio: ${aspectRatio} (${dimensions})`,
-    `- Creative type: ${creativeType}`,
+    `- Creative type: ${creativeType} — FOLLOW the specific rules for this type`,
     `- Reference product image provided: ${hasReferenceImage ? "YES — describe ONLY the scene/environment. Do NOT describe the product packaging at all — the model receives the actual photo." : "NO — say 'a premium supplement product', do NOT invent packaging details"}`,
     `\nTransform this into a production-ready image generation prompt.`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -135,7 +157,7 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, format, productImageUrl, creativeType } = await req.json();
+    const { prompt, format, productImageUrl, creativeType, headline } = await req.json();
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -145,7 +167,7 @@ export async function POST(req: NextRequest) {
     const hasRef = !!productImageUrl;
 
     // Step 1: Art Director refines the prompt
-    const refinedPrompt = await artDirectorRefine(prompt, format, aspectRatio, hasRef, creativeType || "Lifestyle");
+    const refinedPrompt = await artDirectorRefine(prompt, format, aspectRatio, hasRef, creativeType || "Lifestyle", headline);
 
     // Step 2: Generate image with refined prompt
     let result;
