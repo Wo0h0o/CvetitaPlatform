@@ -14,6 +14,7 @@ import {
   Megaphone,
   Sunrise,
   Users,
+  Bot,
 } from "lucide-react";
 
 interface NavChild {
@@ -40,6 +41,15 @@ const navSections: NavSection[] = [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
       { href: "/morning-report", icon: Sunrise, label: "Сутрешен Доклад" },
       { href: "/analysis", icon: MessageSquare, label: "Команден Чат" },
+      {
+        href: "/agents",
+        icon: Bot,
+        label: "Агенти",
+        children: [
+          { href: "/agents/ads-intel", label: "AI Стратег" },
+          { href: "/agents/ad-creator", label: "AI Творец" },
+        ],
+      },
     ],
   },
   {
@@ -57,8 +67,6 @@ const navSections: NavSection[] = [
           { href: "/ads", label: "Реклами" },
           { href: "/ads/adsets", label: "Ad Sets" },
           { href: "/ads/campaigns", label: "Кампании" },
-          { href: "/agents/ads-intel", label: "AI Стратег" },
-          { href: "/agents/ad-creator", label: "AI Творец" },
         ],
       },
     ],
