@@ -54,6 +54,7 @@ function buildSystemPrompt(settings: {
   approach: string;
   intensity: number;
   angle: string;
+  audience: string;
   product: string | null;
   creativeType: string;
 }): string {
@@ -95,6 +96,7 @@ function buildSystemPrompt(settings: {
 • Аватар: ${settings.avatar}
 • Формат: ${settings.format}
 • Подход: ${settings.approach}
+• Аудитория: ${settings.audience}
 • Интензивност: ${settings.intensity}/5 — ${intensityGuide[settings.intensity] || intensityGuide[3]}
 • Емоционален ъгъл: ${settings.angle}
 • Тип креатив: ${settings.creativeType}
@@ -591,6 +593,7 @@ export async function POST(req: NextRequest) {
     approach: body.approach || "Образователен",
     intensity: body.intensity ?? 3,
     angle: body.angle || "Желан стейт",
+    audience: body.audience || "Студена (TOFU)",
     product: body.product || null,
     creativeType: body.creativeType || "Продуктова снимка",
   };

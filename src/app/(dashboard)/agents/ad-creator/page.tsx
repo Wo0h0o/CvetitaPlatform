@@ -61,6 +61,12 @@ const CREATIVE_TYPES = [
   { id: "Lifestyle", label: "Lifestyle", desc: "Продуктът в контекст — фитнес, кухня, природа", icon: Sun },
   { id: "Lifestyle + текст", label: "Lifestyle + оверлей", desc: "Lifestyle с headline текст върху снимката", icon: Layers },
 ];
+const AUDIENCES = [
+  { id: "Студена (TOFU) — не познават бранда, образователен подход", label: "Студена (TOFU)", desc: "Не познават бранда. Целта: внимание и любопитство." },
+  { id: "Топла (MOFU) — знаят за бранда, сравняват опции", label: "Топла (MOFU)", desc: "Знаят за бранда. Целта: доверие и диференциация." },
+  { id: "Гореща (BOFU) — готови за покупка, нуждаят се от последния тласък", label: "Гореща (BOFU)", desc: "Готови за покупка. Целта: оферта и действие." },
+  { id: "Ретаргетинг — вече са посещавали сайта или купували", label: "Ретаргетинг", desc: "Посещавали сайта / купували. Целта: връщане и cross-sell." },
+];
 const INTENSITY_LABELS = ["Информативен", "Образователен", "Авторитетен", "Убеждаващ", "Директен"];
 
 // --- Progress Bar ---
@@ -184,9 +190,10 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
 }
 
 // --- Step 2: Settings ---
-function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, intensity, setIntensity, additionalInput, setAdditionalInput }: {
+function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput }: {
   avatar: string; setAvatar: (v: string) => void; format: string; setFormat: (v: string) => void;
   approach: string; setApproach: (v: string) => void; angle: string; setAngle: (v: string) => void;
+  audience: string; setAudience: (v: string) => void;
   intensity: number; setIntensity: (v: number) => void;
   additionalInput: string; setAdditionalInput: (v: string) => void;
 }) {
@@ -216,6 +223,23 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
         </div>
 
         <PillGroup options={FORMATS} value={format} onChange={setFormat} label="Формат на рекламата" />
+
+        {/* Audience temperature */}
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-text-3 mb-2">Аудитория — къде са във фунията?</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {AUDIENCES.map((a) => (
+              <button key={a.id} onClick={() => setAudience(a.id)}
+                className={`p-3 rounded-xl text-left transition-all cursor-pointer border-2 ${
+                  audience === a.id ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
+                }`}
+              >
+                <span className={`text-[13px] font-semibold block ${audience === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
+                <p className="text-[10px] text-text-3 leading-snug mt-1">{a.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <PillGroup options={APPROACHES} value={approach} onChange={setApproach} label="Подход" />
         <PillGroup options={ANGLES} value={angle} onChange={setAngle} label="Емоционален ъгъл" />
@@ -297,9 +321,9 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, approach, angle, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput }: {
+function GenerateStep({ product, avatar, format, approach, angle, audience, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput }: {
   product: SlimProduct; avatar: string; format: string; approach: string;
-  angle: string; intensity: number; creativeType: string;
+  angle: string; audience: string; intensity: number; creativeType: string;
   generatedContent: string; setGeneratedContent: (v: string) => void;
   variants: Variant[]; setVariants: (v: Variant[]) => void;
   selectedVariants: Set<number>; setSelectedVariants: (v: Set<number>) => void;
@@ -318,6 +342,7 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
     const settingsContext = [
       `[Настройки: Аватар: ${AVATARS.find((a) => a.id === avatar)?.label}`,
       `Формат: ${FORMATS.find((f) => f.id === format)?.label}`,
+      `Аудитория: ${AUDIENCES.find((a) => a.id === audience)?.label}`,
       `Подход: ${APPROACHES.find((a) => a.id === approach)?.label}`,
       `Ъгъл: ${ANGLES.find((a) => a.id === angle)?.label}`,
       `Интензивност: ${intensity}/5`,
@@ -335,7 +360,7 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: [{ role: "user", content: userMessage }],
-          avatar, format, approach, intensity, angle,
+          avatar, format, approach, intensity, angle, audience,
           product: product.handle,
           creativeType,
         }),
@@ -373,7 +398,7 @@ function GenerateStep({ product, avatar, format, approach, angle, intensity, cre
       setGeneratedContent("\u26a0\ufe0f Грешка при генериране. Опитай отново.");
     }
     setLoading(false);
-  }, [product, avatar, format, approach, angle, intensity, creativeType, additionalInput, setGeneratedContent, setVariants, setSelectedVariants]);
+  }, [product, avatar, format, approach, angle, audience, intensity, creativeType, additionalInput, setGeneratedContent, setVariants, setSelectedVariants]);
 
   useEffect(() => {
     if (!generatedContent && !loading) generate();
@@ -602,6 +627,7 @@ export default function AdCreatorPage() {
   const [approach, setApproach] = useState(APPROACHES[0].id);
   const [intensity, setIntensity] = useState(3);
   const [angle, setAngle] = useState(ANGLES[0].id);
+  const [audience, setAudience] = useState(AUDIENCES[0].id);
   const [creativeType, setCreativeType] = useState(CREATIVE_TYPES[0].id);
   const [generatedContent, setGeneratedContent] = useState("");
   const [additionalInput, setAdditionalInput] = useState("");
@@ -658,6 +684,7 @@ export default function AdCreatorPage() {
         {step === "settings" && (
           <SettingsStep avatar={avatar} setAvatar={setAvatar} format={format} setFormat={setFormat}
             approach={approach} setApproach={setApproach} angle={angle} setAngle={setAngle}
+            audience={audience} setAudience={setAudience}
             intensity={intensity} setIntensity={setIntensity}
             additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
           />
@@ -665,7 +692,7 @@ export default function AdCreatorPage() {
         {step === "creative-type" && <CreativeTypeStep selected={creativeType} onSelect={setCreativeType} />}
         {step === "generate" && selectedProduct && (
           <GenerateStep product={selectedProduct} avatar={avatar} format={format} approach={approach}
-            angle={angle} intensity={intensity} creativeType={creativeType}
+            angle={angle} audience={audience} intensity={intensity} creativeType={creativeType}
             generatedContent={generatedContent} setGeneratedContent={setGeneratedContent}
             variants={variants} setVariants={setVariants}
             selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants}
