@@ -420,7 +420,7 @@ export default function AdCreatorPage() {
             if (evt.t === "search") { setSearchQuery(evt.q); updateLast((m) => ({ ...m, searches: [...(m.searches ?? []), evt.q] })); }
             if (evt.t === "sources") { setSearchQuery(null); updateLast((m) => ({ ...m, sources: [...(m.sources ?? []), ...evt.results] })); }
             if (evt.t === "text") updateLast((m) => ({ ...m, content: m.content + evt.d }));
-            if (evt.t === "rewrite") updateLast((m) => ({ ...m, content: "" }));
+            if (evt.t === "replace") updateLast((m) => ({ ...m, content: evt.content }));
             if (evt.t === "done") { setSearchQuery(null); setMessages((prev) => prev.filter((m) => m.role !== "status")); }
             if (evt.t === "error") updateLast((m) => ({ ...m, content: `⚠️ ${evt.msg}` }));
           } catch { /* skip */ }

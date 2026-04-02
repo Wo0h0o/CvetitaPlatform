@@ -517,7 +517,6 @@ const EDITOR_PROMPT = `Ти си РЕДАКТОР на български рек
 Върни САМО редактирания текст, без коментари, без обяснения. Запази цялата структура и форматиране.`;
 
 async function runEditor(apiKey: string, generatedText: string, send: (data: object) => void): Promise<void> {
-  send({ t: "rewrite" });
   send({ t: "status", msg: "Шлифовам българския..." });
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -530,39 +529,21 @@ async function runEditor(apiKey: string, generatedText: string, send: (data: obj
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 8192,
-      stream: true,
       system: EDITOR_PROMPT,
       messages: [{ role: "user", content: generatedText }],
     }),
   });
 
   if (!res.ok) {
-    // Editor failed — keep original text, don't crash
     console.error("Editor API error:", res.status);
     return;
   }
 
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const data = await res.json();
+  const editedText = data.content?.[0]?.text;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const evt = JSON.parse(line.slice(6));
-        if (evt.type === "content_block_delta" && evt.delta?.text) {
-          send({ t: "text", d: evt.delta.text });
-        }
-      } catch { /* skip */ }
-    }
+  if (editedText && editedText.length > 20) {
+    send({ t: "replace", content: editedText });
   }
 }
 
