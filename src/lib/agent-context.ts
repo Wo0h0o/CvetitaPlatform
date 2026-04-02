@@ -61,11 +61,13 @@ interface BusinessContext {
 }
 
 export async function fetchBusinessContext(
-  baseUrl: string
+  baseUrl: string,
+  options?: { shopifyDay?: "yesterday" }
 ): Promise<BusinessContext> {
+  const dayParam = options?.shopifyDay === "yesterday" ? "?day=yesterday" : "";
   const results = await Promise.allSettled([
-    fetch(`${baseUrl}/api/dashboard/kpis`).then((r) => r.json()),
-    fetch(`${baseUrl}/api/dashboard/top-products`).then((r) => r.json()),
+    fetch(`${baseUrl}/api/dashboard/kpis${dayParam}`).then((r) => r.json()),
+    fetch(`${baseUrl}/api/dashboard/top-products${dayParam}`).then((r) => r.json()),
     fetch(`${baseUrl}/api/dashboard/email?preset=30d`).then((r) => r.json()),
     fetch(`${baseUrl}/api/dashboard/traffic`).then((r) => r.json()),
     fetch(`${baseUrl}/api/dashboard/ads?preset=7d`).then((r) => r.json()),
@@ -193,17 +195,18 @@ function fmtPct(n: number): string {
   return (n * 100).toFixed(1) + "%";
 }
 
-export function formatContextForPrompt(ctx: BusinessContext): string {
+export function formatContextForPrompt(ctx: BusinessContext, options?: { shopifyLabel?: string }): string {
+  const shopifyLabel = options?.shopifyLabel || "продажби днес";
   const lines: string[] = ["=== АКТУАЛНИ БИЗНЕС ДАННИ ===", ""];
 
   // ---- Shopify ----
   if (ctx.shopify) {
-    lines.push("SHOPIFY (продажби днес):");
+    lines.push(`SHOPIFY (${shopifyLabel}):`);
     lines.push(`  Приходи: ${fmtNum(ctx.shopify.salesToday)} EUR`);
     lines.push(`  Поръчки: ${ctx.shopify.ordersToday}`);
     lines.push(`  Среден чек (AOV): ${fmtNum(ctx.shopify.aov)} EUR`);
     if (ctx.shopify.topProducts.length > 0) {
-      lines.push("  Топ продукти днес:");
+      lines.push(`  Топ продукти (${shopifyLabel}):`);
       ctx.shopify.topProducts.forEach((p) => {
         lines.push(`    - ${p.title}: ${p.quantity} бр. / ${fmtNum(p.revenue)} EUR`);
       });

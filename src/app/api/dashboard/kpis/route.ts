@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getShopifyKPIs } from "@/lib/shopify";
 import { getGA4KPIs } from "@/lib/ga4";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const day = req.nextUrl.searchParams.get("day");
+    const daysAgo = day === "yesterday" ? 1 : 0;
+
     const [shopify, ga4] = await Promise.all([
-      getShopifyKPIs(),
+      getShopifyKPIs(daysAgo),
       getGA4KPIs(),
     ]);
 

@@ -68,25 +68,25 @@ function calcChange(current: number, previous: number): number {
   return ((current - previous) / previous) * 100;
 }
 
-export async function getShopifyKPIs() {
-  const [todayOrders, yesterdayOrders] = await Promise.all([
-    fetchOrders(startOfDay(0), endOfDay(0)),
-    fetchOrders(startOfDay(1), endOfDay(1)),
+export async function getShopifyKPIs(daysAgo: number = 0) {
+  const [primaryOrders, comparisonOrders] = await Promise.all([
+    fetchOrders(startOfDay(daysAgo), endOfDay(daysAgo)),
+    fetchOrders(startOfDay(daysAgo + 1), endOfDay(daysAgo + 1)),
   ]);
 
-  const todaySales = todayOrders.reduce((sum, o) => sum + parseFloat(o.total_price), 0);
-  const yesterdaySales = yesterdayOrders.reduce((sum, o) => sum + parseFloat(o.total_price), 0);
+  const primarySales = primaryOrders.reduce((sum, o) => sum + parseFloat(o.total_price), 0);
+  const comparisonSales = comparisonOrders.reduce((sum, o) => sum + parseFloat(o.total_price), 0);
 
-  const todayCount = todayOrders.length;
-  const yesterdayCount = yesterdayOrders.length;
+  const primaryCount = primaryOrders.length;
+  const comparisonCount = comparisonOrders.length;
 
-  const todayAov = todayCount > 0 ? todaySales / todayCount : 0;
-  const yesterdayAov = yesterdayCount > 0 ? yesterdaySales / yesterdayCount : 0;
+  const primaryAov = primaryCount > 0 ? primarySales / primaryCount : 0;
+  const comparisonAov = comparisonCount > 0 ? comparisonSales / comparisonCount : 0;
 
   return {
-    sales: { value: Math.round(todaySales * 100) / 100, change: calcChange(todaySales, yesterdaySales) },
-    orders: { value: todayCount, change: calcChange(todayCount, yesterdayCount) },
-    aov: { value: Math.round(todayAov * 100) / 100, change: calcChange(todayAov, yesterdayAov) },
+    sales: { value: Math.round(primarySales * 100) / 100, change: calcChange(primarySales, comparisonSales) },
+    orders: { value: primaryCount, change: calcChange(primaryCount, comparisonCount) },
+    aov: { value: Math.round(primaryAov * 100) / 100, change: calcChange(primaryAov, comparisonAov) },
   };
 }
 
@@ -152,8 +152,8 @@ export interface TopProduct {
   revenue: number;
 }
 
-export async function getTopProducts(): Promise<TopProduct[]> {
-  const orders = await fetchOrders(startOfDay(0), endOfDay(0));
+export async function getTopProducts(daysAgo: number = 0): Promise<TopProduct[]> {
+  const orders = await fetchOrders(startOfDay(daysAgo), endOfDay(daysAgo));
 
   const productMap = new Map<string, { quantity: number; revenue: number }>();
 

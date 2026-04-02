@@ -18,7 +18,7 @@ ${businessContext}
 Кратко резюме на бизнеса в 2-3 изречения. Общ приход, поръчки, рекламен ROAS.
 
 ## Продажби
-Анализ на Shopify данните — приходи, AOV, топ продукти. Сравни с очакванията.
+Анализ на ВЧЕРАШНИТЕ Shopify данни — приходи, AOV, топ продукти. Сравни с очакванията (среден дневен приход ~364 EUR).
 
 ## Реклама
 Meta Ads performance — spend, ROAS, CPA. Кои кампании работят, кои не. Фуния анализ — къде се губят хората.
@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
       try {
         send({ t: "status", msg: "Зареждам бизнес данните..." });
 
-        const ctx = await fetchBusinessContext(baseUrl);
-        const businessContext = formatContextForPrompt(ctx);
+        const ctx = await fetchBusinessContext(baseUrl, { shopifyDay: "yesterday" });
+        const businessContext = formatContextForPrompt(ctx, { shopifyLabel: "продажби вчера" });
         const prompt = buildPrompt(businessContext);
 
         send({ t: "status", msg: "Генерирам сутрешния доклад..." });
