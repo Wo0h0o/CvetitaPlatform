@@ -156,6 +156,8 @@ export async function POST(req: NextRequest) {
         const finalPrompt = `Reproduce the product from the reference image exactly as-is in this scene. Do not alter the packaging. ${refinedPrompt}`;
         result = await generateImageWithReference(finalPrompt, refImage.data, refImage.mimeType, aspectRatio);
       } else {
+        console.warn("[Image Gen] Failed to fetch product image from:", productImageUrl);
+        // Generate without reference — Art Director already handles this case
         result = await generateImage(refinedPrompt, aspectRatio);
       }
     } else {

@@ -321,13 +321,14 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, approach, angle, audience, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput }: {
+function GenerateStep({ product, avatar, format, approach, angle, audience, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated }: {
   product: SlimProduct; avatar: string; format: string; approach: string;
   angle: string; audience: string; intensity: number; creativeType: string;
   generatedContent: string; setGeneratedContent: (v: string) => void;
   variants: Variant[]; setVariants: (v: Variant[]) => void;
   selectedVariants: Set<number>; setSelectedVariants: (v: Set<number>) => void;
   additionalInput: string;
+  hasCopyGenerated: boolean; setHasCopyGenerated: (v: boolean) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [expandedVariant, setExpandedVariant] = useState<number | null>(null);
@@ -400,11 +401,10 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
     setLoading(false);
   }, [product, avatar, format, approach, angle, audience, intensity, creativeType, additionalInput, setGeneratedContent, setVariants, setSelectedVariants]);
 
-  // Auto-generate only on first visit (no content yet), not when navigating back
-  const hasGenerated = useRef(false);
+  // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
-    if (!generatedContent && !loading && !hasGenerated.current) {
-      hasGenerated.current = true;
+    if (!hasCopyGenerated && !loading) {
+      setHasCopyGenerated(true);
       generate();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -525,11 +525,12 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
 }
 
 // --- Step 5: Visuals ---
-function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType }: {
+function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType, images, setImages }: {
   variants: Variant[]; selectedVariants: Set<number>; format: string; productImageUrl: string | null; creativeType: string;
+  images: { variant: Variant; image: string | null; loading: boolean; error: string | null }[];
+  setImages: React.Dispatch<React.SetStateAction<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>>;
 }) {
   const selected = useMemo(() => variants.filter((_, i) => selectedVariants.has(i)), [variants, selectedVariants]);
-  const [images, setImages] = useState<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>([]);
   const [generating, setGenerating] = useState(false);
 
   const generateAll = useCallback(async () => {
@@ -553,14 +554,12 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
     setGenerating(false);
   }, [selected, format, productImageUrl, creativeType]);
 
-  // Auto-generate only on first visit, not when navigating back from other steps
-  const hasGeneratedImages = useRef(false);
+  // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
-    if (selected.length > 0 && images.length === 0 && !hasGeneratedImages.current) {
-      hasGeneratedImages.current = true;
+    if (selected.length > 0 && images.length === 0) {
       generateAll();
     }
-  }, [selected.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const downloadImage = (base64: string, name: string) => {
     const link = document.createElement("a");
@@ -643,6 +642,8 @@ export default function AdCreatorPage() {
   const [additionalInput, setAdditionalInput] = useState("");
   const [variants, setVariants] = useState<Variant[]>([]);
   const [selectedVariants, setSelectedVariants] = useState<Set<number>>(new Set());
+  const [hasCopyGenerated, setHasCopyGenerated] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>([]);
 
   const canNext: Record<Step, boolean> = {
     product: !!selectedProduct,
@@ -707,11 +708,13 @@ export default function AdCreatorPage() {
             variants={variants} setVariants={setVariants}
             selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants}
             additionalInput={additionalInput}
+            hasCopyGenerated={hasCopyGenerated} setHasCopyGenerated={setHasCopyGenerated}
           />
         )}
         {step === "visuals" && (
           <VisualsStep variants={variants} selectedVariants={selectedVariants} format={format}
             productImageUrl={selectedProduct?.image || null} creativeType={creativeType}
+            images={generatedImages} setImages={setGeneratedImages}
           />
         )}
       </div>
