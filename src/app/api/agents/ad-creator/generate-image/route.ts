@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateImage, generateImageWithReference } from "@/lib/gemini";
+import { LANGUAGE_CONFIGS } from "@/lib/ad-creator-languages";
 
 export const maxDuration = 120;
 
@@ -56,7 +57,7 @@ When NO reference image is provided:
 ### "Научен / Инфо"
 - Infographic-style design with the product as the centerpiece
 - Include EXACTLY 3 short text labels (max 3-4 words each) as benefit badges around the product
-- ALL text in the image MUST be in BULGARIAN language (Cyrillic script). Never English.
+- ALL text in the image MUST be in the TARGET LANGUAGE specified in the request (see language instruction below).
 - LESS IS MORE: lots of white space, only 3 benefit badges, one headline. No walls of text.
 - Use clean typography: Montserrat bold, white text on forest green rounded badges
 - Layout: product hero center (60% of frame), 3 small badges positioned around it
@@ -71,7 +72,7 @@ When NO reference image is provided:
 ### "Lifestyle + текст"
 - Same scene as Lifestyle BUT with text overlay integrated into the image
 - Include the headline/hook text directly on the image in bold Montserrat font
-- ALL text in the image MUST be in BULGARIAN language (Cyrillic script). Never English.
+- ALL text in the image MUST be in the TARGET LANGUAGE specified in the request (see language instruction below).
 - Position text in the top or bottom third with semi-transparent background bar
 - Text should be large, readable, and contrast well with the background
 - The text content will be provided in the creative direction
@@ -92,13 +93,18 @@ async function artDirectorRefine(
   aspectRatio: string,
   hasReferenceImage: boolean,
   creativeType: string,
-  headline?: string
+  headline?: string,
+  language: string = "bg"
 ): Promise<string> {
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) return rawPrompt; // graceful fallback
 
+  const langConfig = LANGUAGE_CONFIGS[language] || LANGUAGE_CONFIGS.bg;
   const needsText = creativeType === "Научен / Инфо" || creativeType === "Lifestyle + текст";
   const dimensions = FORMAT_DIMENSIONS[aspectRatio] || "1080x1080px";
+  const languageInstruction = needsText
+    ? `- TARGET LANGUAGE for all text on the image: ${langConfig.nativeName} (${langConfig.script} script). ALL text labels, headlines, and badges MUST be written in ${langConfig.nativeName}. NEVER use English or Bulgarian (unless that IS the target language).`
+    : "";
   const userMessage = [
     `## Raw creative direction:\n${rawPrompt}`,
     needsText && headline ? `## Text to include in image:\n${headline}` : "",
@@ -106,6 +112,7 @@ async function artDirectorRefine(
     `- Ad format: ${format}`,
     `- Aspect ratio: ${aspectRatio} (${dimensions})`,
     `- Creative type: ${creativeType} — FOLLOW the specific rules for this type`,
+    languageInstruction,
     `- Reference product image provided: ${hasReferenceImage ? "YES — describe ONLY the scene/environment. Do NOT describe the product packaging at all — the model receives the actual photo." : "NO — say 'a premium supplement product', do NOT invent packaging details"}`,
     `\nTransform this into a production-ready image generation prompt.`,
   ].filter(Boolean).join("\n");
@@ -160,7 +167,7 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, format, productImageUrl, creativeType, headline } = await req.json();
+    const { prompt, format, productImageUrl, creativeType, headline, language } = await req.json();
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -168,9 +175,10 @@ export async function POST(req: NextRequest) {
 
     const aspectRatio = FORMAT_RATIOS[format] || "1:1";
     const hasRef = !!productImageUrl;
+    const lang = language || "bg";
 
     // Step 1: Art Director refines the prompt
-    const refinedPrompt = await artDirectorRefine(prompt, format, aspectRatio, hasRef, creativeType || "Lifestyle", headline);
+    const refinedPrompt = await artDirectorRefine(prompt, format, aspectRatio, hasRef, creativeType || "Lifestyle", headline, lang);
 
     // Step 2: Generate image with refined prompt
     let result;

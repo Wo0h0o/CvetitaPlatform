@@ -1,14 +1,13 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import useSWR from "swr";
 import {
-  PenTool, Loader2, Search, Package, ShoppingBag,
+  PenTool, Loader2, Search, Package,
   ChevronRight, ChevronLeft, Check, Camera, FileText,
-  Sun, Layers, Download, RefreshCw, Copy, ChevronDown, ChevronUp,
+  Sun, Layers, Download, RefreshCw, Copy, ChevronDown, ChevronUp, Globe,
 } from "lucide-react";
-import { Card } from "@/components/shared/Card";
 import { Markdown } from "@/components/shared/Markdown";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -68,6 +67,20 @@ const AUDIENCES = [
   { id: "Ретаргетинг — вече са посещавали сайта или купували", label: "Ретаргетинг", desc: "Посещавали сайта / купували. Целта: връщане и cross-sell." },
 ];
 const INTENSITY_LABELS = ["Информативен", "Образователен", "Авторитетен", "Убеждаващ", "Директен"];
+const LANGUAGES = [
+  { id: "bg", label: "\u0411\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u0438", flag: "\ud83c\udde7\ud83c\uddec" },
+  { id: "el", label: "\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac", flag: "\ud83c\uddec\ud83c\uddf7" },
+  { id: "ro", label: "Rom\u00e2n\u0103", flag: "\ud83c\uddf7\ud83c\uddf4" },
+  { id: "it", label: "Italiano", flag: "\ud83c\uddee\ud83c\uddf9" },
+  { id: "de", label: "Deutsch", flag: "\ud83c\udde9\ud83c\uddea" },
+  { id: "fr", label: "Fran\u00e7ais", flag: "\ud83c\uddeb\ud83c\uddf7" },
+  { id: "en", label: "English", flag: "\ud83c\uddec\ud83c\udde7" },
+  { id: "cs", label: "\u010ce\u0161tina", flag: "\ud83c\udde8\ud83c\uddff" },
+];
+const FORMALITY_OPTIONS = [
+  { id: "informal", label: "\u041d\u0435\u0444\u043e\u0440\u043c\u0430\u043b\u043d\u043e (\u0442\u0438/du/tu)" },
+  { id: "formal", label: "\u0424\u043e\u0440\u043c\u0430\u043b\u043d\u043e (\u0412\u0438\u0435/Sie/vous)" },
+];
 
 // --- Progress Bar ---
 function ProgressBar({ current, onNavigate }: { current: Step; onNavigate: (s: Step) => void }) {
@@ -190,12 +203,14 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
 }
 
 // --- Step 2: Settings ---
-function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput }: {
+function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality }: {
   avatar: string; setAvatar: (v: string) => void; format: string; setFormat: (v: string) => void;
   approach: string; setApproach: (v: string) => void; angle: string; setAngle: (v: string) => void;
   audience: string; setAudience: (v: string) => void;
   intensity: number; setIntensity: (v: number) => void;
   additionalInput: string; setAdditionalInput: (v: string) => void;
+  language: string; setLanguage: (v: string) => void;
+  formality: string; setFormality: (v: string) => void;
 }) {
   return (
     <div>
@@ -203,6 +218,22 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
       <p className="text-[13px] text-text-2 mb-5">За кого е рекламата и в какъв формат?</p>
 
       <div className="space-y-5">
+        {/* Language selector */}
+        <div>
+          <div className="text-[13px] font-semibold text-text mb-2 flex items-center gap-1.5"><Globe size={14} />Език на рекламата</div>
+          <div className="flex flex-wrap gap-1.5">
+            {LANGUAGES.map((l) => (
+              <button key={l.id} onClick={() => setLanguage(l.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-medium transition-all cursor-pointer min-h-[40px] ${
+                  language === l.id ? "bg-purple text-white shadow-sm" : "bg-surface-2 text-text-2 hover:bg-border/40"
+                }`}
+              ><span>{l.flag}</span>{l.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Formality toggle */}
+        <PillGroup options={FORMALITY_OPTIONS} value={formality} onChange={setFormality} label="Обръщение" />
         {/* Avatar cards — vertical card style, single row */}
         <div>
           <div className="text-[13px] font-semibold text-text mb-2">Аватар — за кого пишем?</div>
@@ -321,7 +352,7 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, approach, angle, audience, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated }: {
+function GenerateStep({ product, avatar, format, approach, angle, audience, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality }: {
   product: SlimProduct; avatar: string; format: string; approach: string;
   angle: string; audience: string; intensity: number; creativeType: string;
   generatedContent: string; setGeneratedContent: (v: string) => void;
@@ -329,6 +360,7 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
   selectedVariants: Set<number>; setSelectedVariants: (v: Set<number>) => void;
   additionalInput: string;
   hasCopyGenerated: boolean; setHasCopyGenerated: (v: boolean) => void;
+  language: string; formality: string;
 }) {
   const [loading, setLoading] = useState(false);
   const [expandedVariant, setExpandedVariant] = useState<number | null>(null);
@@ -363,7 +395,7 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
           messages: [{ role: "user", content: userMessage }],
           avatar, format, approach, intensity, angle, audience,
           product: product.handle,
-          creativeType,
+          creativeType, language, formality,
         }),
       });
       if (!res.ok) {
@@ -399,7 +431,7 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
       setGeneratedContent("\u26a0\ufe0f Грешка при генериране. Опитай отново.");
     }
     setLoading(false);
-  }, [product, avatar, format, approach, angle, audience, intensity, creativeType, additionalInput, setGeneratedContent, setVariants, setSelectedVariants]);
+  }, [product, avatar, format, approach, angle, audience, intensity, creativeType, additionalInput, language, formality, setGeneratedContent, setVariants, setSelectedVariants]);
 
   // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
@@ -525,10 +557,11 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
 }
 
 // --- Step 5: Visuals ---
-function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType, images, setImages }: {
+function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType, images, setImages, language }: {
   variants: Variant[]; selectedVariants: Set<number>; format: string; productImageUrl: string | null; creativeType: string;
   images: { variant: Variant; image: string | null; loading: boolean; error: string | null }[];
   setImages: React.Dispatch<React.SetStateAction<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>>;
+  language: string;
 }) {
   const selected = useMemo(() => variants.filter((_, i) => selectedVariants.has(i)), [variants, selectedVariants]);
   const [generating, setGenerating] = useState(false);
@@ -542,7 +575,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
         const res = await fetch("/api/agents/ad-creator/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType, headline: selected[i].headline || selected[i].hook }),
+          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType, headline: selected[i].headline || selected[i].hook, language }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -552,7 +585,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
       }
     }
     setGenerating(false);
-  }, [selected, format, productImageUrl, creativeType]);
+  }, [selected, format, productImageUrl, creativeType, language]);
 
   // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
@@ -638,6 +671,8 @@ export default function AdCreatorPage() {
   const [angle, setAngle] = useState(ANGLES[0].id);
   const [audience, setAudience] = useState(AUDIENCES[0].id);
   const [creativeType, setCreativeType] = useState(CREATIVE_TYPES[0].id);
+  const [language, setLanguage] = useState("bg");
+  const [formality, setFormality] = useState("informal");
   const [generatedContent, setGeneratedContent] = useState("");
   const [additionalInput, setAdditionalInput] = useState("");
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -698,6 +733,8 @@ export default function AdCreatorPage() {
             audience={audience} setAudience={setAudience}
             intensity={intensity} setIntensity={setIntensity}
             additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
+            language={language} setLanguage={setLanguage}
+            formality={formality} setFormality={setFormality}
           />
         )}
         {step === "creative-type" && <CreativeTypeStep selected={creativeType} onSelect={setCreativeType} />}
@@ -709,12 +746,14 @@ export default function AdCreatorPage() {
             selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants}
             additionalInput={additionalInput}
             hasCopyGenerated={hasCopyGenerated} setHasCopyGenerated={setHasCopyGenerated}
+            language={language} formality={formality}
           />
         )}
         {step === "visuals" && (
           <VisualsStep variants={variants} selectedVariants={selectedVariants} format={format}
             productImageUrl={selectedProduct?.image || null} creativeType={creativeType}
             images={generatedImages} setImages={setGeneratedImages}
+            language={language}
           />
         )}
       </div>
