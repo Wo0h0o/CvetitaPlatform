@@ -654,11 +654,11 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
 }
 
 // --- Step 5: Visuals ---
-function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType, images, setImages, language }: {
+function VisualsStep({ variants, selectedVariants, format, productImageUrl, creativeType, images, setImages, language, archetype }: {
   variants: Variant[]; selectedVariants: Set<number>; format: string; productImageUrl: string | null; creativeType: string;
   images: { variant: Variant; image: string | null; loading: boolean; error: string | null }[];
   setImages: React.Dispatch<React.SetStateAction<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>>;
-  language: string;
+  language: string; archetype: string;
 }) {
   const selected = useMemo(() => variants.filter((_, i) => selectedVariants.has(i)), [variants, selectedVariants]);
   const [generating, setGenerating] = useState(false);
@@ -672,7 +672,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
         const res = await fetch("/api/agents/ad-creator/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType, headline: selected[i].headline || selected[i].hook, language }),
+          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType, headline: selected[i].headline || selected[i].hook, language, archetype }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -682,7 +682,7 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
       }
     }
     setGenerating(false);
-  }, [selected, format, productImageUrl, creativeType, language]);
+  }, [selected, format, productImageUrl, creativeType, language, archetype]);
 
   // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
@@ -857,7 +857,7 @@ export default function AdCreatorPage() {
           <VisualsStep variants={variants} selectedVariants={selectedVariants} format={format}
             productImageUrl={selectedProduct?.image || null} creativeType={creativeType}
             images={generatedImages} setImages={setGeneratedImages}
-            language={language}
+            language={language} archetype={archetype}
           />
         )}
       </div>

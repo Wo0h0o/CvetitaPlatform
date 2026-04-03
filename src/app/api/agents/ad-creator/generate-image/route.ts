@@ -87,6 +87,19 @@ When NO reference image is provided:
 ## Output format
 Return ONLY the prompt text. No explanations, no markdown, no labels.`;
 
+const ARCHETYPE_COMPOSITION: Record<string, string> = {
+  pas: "Composition: Show the PROBLEM visually (tired face, slouched posture, empty coffee cups) on one side, and the SOLUTION (product + vibrant energy) on the other. Split composition or gradient transition.",
+  mirror: "Composition: Show a person in a reflective moment — looking at mirror, catching reflection in window, quiet self-assessment. Emotional, introspective lighting. The mood is quiet realization, not dramatic despair.",
+  enemy: "Composition: Visualize the THREAT (stress, toxins, modern lifestyle — dark/cold tones) being countered by the product (warm, natural tones). Product as shield/ally. Contrast between harmful environment and natural solution.",
+  ingredient: "Composition: Hero the KEY INGREDIENT — raw botanical, herb, plant close-up alongside the product. Show provenance: mountains, nature, harvesting. Documentary/editorial feel, not commercial.",
+  ugc: "Composition: Native, unpolished feel — as if shot on phone. Real person, real setting (kitchen counter, bathroom shelf, gym bag). Product shown casually, not staged. Authentic, not perfect.",
+  expert: "Composition: Clinical credibility — clean background, professional setting. Product displayed alongside scientific elements (molecular structures, lab equipment as subtle props). Authority and trust.",
+  comparison: "Composition: Side-by-side or split-frame layout. Product on one side with clear, transparent labeling. Other side shows generic/inferior alternative (blurred or muted). Highlight the difference visually.",
+  ritual: "Composition: Product integrated into a beautiful daily ROUTINE moment — morning light, preparation ritual, mixing/pouring. Aspirational but achievable lifestyle. Warm, inviting atmosphere.",
+  origin: "Composition: Bulgarian heritage — Rhodope mountains, wild herbs, traditional harvesting, natural landscapes. Product placed in nature context. Earthy, authentic, rooted in tradition.",
+  beforeafter: "Composition: SPLIT-FRAME or SEQUENCE showing transformation. Left/top = BEFORE state (muted colors, low energy, tired). Right/bottom = AFTER state (vibrant colors, energy, vitality). The transformation is EMOTIONAL/ENERGY, not body shape. This split composition is MANDATORY — do not generate a single-scene image.",
+};
+
 async function artDirectorRefine(
   rawPrompt: string,
   format: string,
@@ -94,7 +107,8 @@ async function artDirectorRefine(
   hasReferenceImage: boolean,
   creativeType: string,
   headline?: string,
-  language: string = "bg"
+  language: string = "bg",
+  archetype: string = "pas"
 ): Promise<string> {
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) return rawPrompt; // graceful fallback
@@ -105,6 +119,7 @@ async function artDirectorRefine(
   const languageInstruction = needsText
     ? `- TARGET LANGUAGE for all text on the image: ${langConfig.nativeName} (${langConfig.script} script). ALL text labels, headlines, and badges MUST be written in ${langConfig.nativeName}. NEVER use English or Bulgarian (unless that IS the target language).`
     : "";
+  const archetypeInstruction = ARCHETYPE_COMPOSITION[archetype] || "";
   const userMessage = [
     `## Raw creative direction:\n${rawPrompt}`,
     needsText && headline ? `## Text to include in image:\n${headline}` : "",
@@ -112,9 +127,10 @@ async function artDirectorRefine(
     `- Ad format: ${format}`,
     `- Aspect ratio: ${aspectRatio} (${dimensions})`,
     `- Creative type: ${creativeType} — FOLLOW the specific rules for this type`,
+    archetypeInstruction ? `- Creative archetype: ${archetype}\n  ${archetypeInstruction}` : "",
     languageInstruction,
     `- Reference product image provided: ${hasReferenceImage ? "YES — describe ONLY the scene/environment. Do NOT describe the product packaging at all — the model receives the actual photo." : "NO — say 'a premium supplement product', do NOT invent packaging details"}`,
-    `\nTransform this into a production-ready image generation prompt.`,
+    `\nTransform this into a production-ready image generation prompt. The archetype composition direction is IMPORTANT — it defines the visual structure of the image. The creative type defines the style (photo vs infographic vs text overlay).`,
   ].filter(Boolean).join("\n");
 
   try {
@@ -167,7 +183,7 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, format, productImageUrl, creativeType, headline, language } = await req.json();
+    const { prompt, format, productImageUrl, creativeType, headline, language, archetype } = await req.json();
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -178,7 +194,7 @@ export async function POST(req: NextRequest) {
     const lang = language || "bg";
 
     // Step 1: Art Director refines the prompt
-    const refinedPrompt = await artDirectorRefine(prompt, format, aspectRatio, hasRef, creativeType || "Lifestyle", headline, lang);
+    const refinedPrompt = await artDirectorRefine(prompt, format, aspectRatio, hasRef, creativeType || "Lifestyle", headline, lang, archetype || "pas");
 
     // Step 2: Generate image with refined prompt
     let result;
