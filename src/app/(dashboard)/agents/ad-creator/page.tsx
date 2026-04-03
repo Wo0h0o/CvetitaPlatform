@@ -7,6 +7,8 @@ import {
   PenTool, Loader2, Search, Package,
   ChevronRight, ChevronLeft, Check, Camera, FileText,
   Sun, Layers, Download, RefreshCw, Copy, ChevronDown, ChevronUp, Globe,
+  Target, Eye, Shield, Microscope, MessageCircle, GraduationCap, Scale,
+  Coffee, Mountain, ArrowRight, Flame,
 } from "lucide-react";
 import { Markdown } from "@/components/shared/Markdown";
 
@@ -42,17 +44,32 @@ const FORMATS = [
   { id: "Advertorial (дълга форма)", label: "Advertorial" }, { id: "Social Post", label: "Social Post" },
   { id: "Email Subject + Preview", label: "Email" },
 ];
-const APPROACHES = [
-  { id: "Образователен (teach first, sell second)", label: "Образователен" },
-  { id: "Стойностен (Hormozi value stack)", label: "Стойностен" },
-  { id: "Забележителен (Purple Cow)", label: "Забележителен" },
-  { id: "Социално доказателство (testimonial style)", label: "Social Proof" },
+const ARCHETYPES = [
+  { id: "pas", label: "Problem \u2192 Solution", desc: "\u041d\u0430\u0437\u043e\u0432\u0438 \u0431\u043e\u043b\u043a\u0430\u0442\u0430, \u0443\u0441\u0438\u043b\u0438 \u044f, \u0440\u0435\u0448\u0438 \u044f \u0441 \u043f\u0440\u043e\u0434\u0443\u043a\u0442\u0430", icon: Target },
+  { id: "mirror", label: "Identity Mirror", desc: "\u041e\u0433\u043b\u0435\u0434\u0430\u043b\u043d\u0438\u044f\u0442 \u043c\u043e\u043c\u0435\u043d\u0442 \u2014 \u043e\u0441\u044a\u0437\u043d\u0430\u0432\u0430\u043d\u0435 \u043d\u0430 \u0440\u0430\u0437\u043b\u0438\u043a\u0430\u0442\u0430", icon: Eye },
+  { id: "enemy", label: "Enemy Framing", desc: "\u0412\u044a\u043d\u0448\u0435\u043d \u0432\u0440\u0430\u0433 (\u0441\u0442\u0440\u0435\u0441, \u0442\u043e\u043a\u0441\u0438\u043d\u0438, \u043c\u043e\u0434\u0435\u0440\u0435\u043d \u0436\u0438\u0432\u043e\u0442) + \u043f\u0440\u043e\u0434\u0443\u043a\u0442\u044a\u0442 \u043a\u0430\u0442\u043e \u0441\u044a\u044e\u0437\u043d\u0438\u043a", icon: Shield },
+  { id: "ingredient", label: "Ingredient Spotlight", desc: "\u0414\u044a\u043b\u0431\u043e\u043a\u043e \u043f\u043e\u0442\u0430\u043f\u044f\u043d\u0435 \u0432 \u043a\u043b\u044e\u0447\u043e\u0432\u0430 \u0441\u044a\u0441\u0442\u0430\u0432\u043a\u0430 \u2014 \u043d\u0430\u0443\u043a\u0430 + \u043f\u0440\u043e\u0438\u0437\u0445\u043e\u0434", icon: Microscope },
+  { id: "ugc", label: "UGC / Testimonial", desc: "Confession \u0441\u0442\u0438\u043b \u2014 \u201e\u0411\u044f\u0445 \u0442\u043e\u0437\u0438 \u0447\u043e\u0432\u0435\u043a, \u043a\u043e\u0439\u0442\u043e...\u201c", icon: MessageCircle },
+  { id: "expert", label: "Expert Authority", desc: "\u041b\u0435\u043a\u0430\u0440, \u0444\u0430\u0440\u043c\u0430\u0446\u0435\u0432\u0442 \u0438\u043b\u0438 \u043d\u0443\u0442\u0440\u0438\u0446\u0438\u043e\u043d\u0438\u0441\u0442 \u043e\u0431\u044f\u0441\u043d\u044f\u0432\u0430 \u043c\u0435\u0445\u0430\u043d\u0438\u0437\u043c\u0430", icon: GraduationCap },
+  { id: "comparison", label: "Comparison", desc: "\u041d\u0430\u0441 vs. \u043a\u043e\u043d\u043a\u0443\u0440\u0435\u043d\u0446\u0438\u044f\u0442\u0430 \u2014 \u0441\u044a\u0441\u0442\u0430\u0432\u043a\u0438, \u0434\u043e\u0437\u0438\u0440\u043e\u0432\u043a\u0438, \u043a\u0430\u0447\u0435\u0441\u0442\u0432\u043e", icon: Scale },
+  { id: "ritual", label: "Routine / Ritual", desc: "\u041f\u0440\u043e\u0434\u0443\u043a\u0442\u044a\u0442 \u043a\u0430\u0442\u043e \u0447\u0430\u0441\u0442 \u043e\u0442 \u0435\u0436\u0435\u0434\u043d\u0435\u0432\u0435\u043d \u0440\u0438\u0442\u0443\u0430\u043b \u0437\u0430 \u0433\u0440\u0438\u0436\u0430", icon: Coffee },
+  { id: "origin", label: "Origin Story", desc: "\u0411\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u043e \u043d\u0430\u0441\u043b\u0435\u0434\u0441\u0442\u0432\u043e \u2014 845 \u0440\u0430\u0441\u0442\u0435\u043d\u0438\u044f, \u0420\u043e\u0434\u043e\u043f\u0438, \u0442\u0440\u0430\u0434\u0438\u0446\u0438\u044f", icon: Mountain },
+  { id: "beforeafter", label: "Before / After", desc: "\u0422\u0440\u0430\u043d\u0441\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044f \u043d\u0430 \u0418\u0414\u0415\u041d\u0422\u0418\u0427\u041d\u041e\u0421\u0422, \u043d\u0435 \u043d\u0430 \u0442\u044f\u043b\u043e", icon: ArrowRight },
 ];
-const ANGLES = [
-  { id: "Желан стейт (какво искат да станат)", label: "Желан стейт" },
-  { id: "Решение на проблем (каква болка да премахнем)", label: "Проблем \u2192 Решение" },
-  { id: "Идентичност (кой искат да бъдат)", label: "Идентичност" },
-  { id: "Социално доказателство (други вече го ползват)", label: "Social Proof" },
+const AGGRESSIVENESS_LEVELS = [
+  { level: 1, label: "\u041d\u0435\u0436\u043d\u043e", desc: "\u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u043d\u043e \u043e\u0441\u044a\u0437\u043d\u0430\u0432\u0430\u043d\u0435 \u0431\u0435\u0437 \u043d\u0430\u0442\u0438\u0441\u043a" },
+  { level: 2, label: "\u041f\u0440\u043e\u0431\u043b\u0435\u043c", desc: "\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u0446\u0438\u0440\u0430 \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430, \u043a\u043e\u0439\u0442\u043e \u043f\u043e\u0442\u0440\u0435\u0431\u0438\u0442\u0435\u043b\u044f\u0442 \u0443\u0441\u0435\u0449\u0430" },
+  { level: 3, label: "\u0411\u043e\u043b\u043a\u0430", desc: "\u0423\u0441\u0438\u043b\u0432\u0430 \u0442\u0440\u0430\u0435\u043a\u0442\u043e\u0440\u0438\u044f\u0442\u0430 \u2014 \u201e\u0432\u0441\u0435\u043a\u0438 \u0434\u0435\u043d \u0431\u0435\u0437 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u0435 \u043f\u043e-\u043b\u043e\u0448\u043e\u201c" },
+  { level: 4, label: "\u041e\u0433\u043b\u0435\u0434\u0430\u043b\u043e", desc: "\u0414\u0438\u0440\u0435\u043a\u0442\u043d\u0430 \u043a\u043e\u043d\u0444\u0440\u043e\u043d\u0442\u0430\u0446\u0438\u044f \u0441 \u0438\u0434\u0435\u043d\u0442\u0438\u0447\u043d\u043e\u0441\u0442\u0442\u0430" },
+  { level: 5, label: "\u041a\u0440\u0438\u0437\u0430", desc: "\u041c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u043d\u0430 \u0441\u043f\u0435\u0448\u043d\u043e\u0441\u0442 \u2014 \u0442\u044f\u043b\u043e\u0442\u043e \u043f\u043e\u0434\u0430\u0432\u0430 \u0441\u0438\u0433\u043d\u0430\u043b \u0421\u0415\u0413\u0410" },
+];
+const HOOK_STYLES = [
+  { id: "question", label: "\u0412\u044a\u043f\u0440\u043e\u0441", desc: "\u201e\u0417\u043d\u0430\u0435\u0448 \u043b\u0438, \u0447\u0435...?\u201c" },
+  { id: "stat", label: "\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430", desc: "\u201e70% \u043e\u0442 \u043c\u044a\u0436\u0435\u0442\u0435 \u0441\u043b\u0435\u0434 25...\u201c" },
+  { id: "pain", label: "Pain Call-out", desc: "\u201e\u0410\u043a\u043e \u0441\u0435 \u0441\u044a\u0431\u0443\u0436\u0434\u0430\u0448 \u0443\u043c\u043e\u0440\u0435\u043d...\u201c" },
+  { id: "curiosity", label: "Curiosity Gap", desc: "\u201e\u0415\u0434\u0438\u043d\u0441\u0442\u0432\u0435\u043d\u043e\u0442\u043e \u043d\u0435\u0449\u043e, \u043a\u043e\u0435\u0442\u043e...\u201c" },
+  { id: "proof", label: "Social Proof", desc: "\u201e23,000+ \u043a\u043b\u0438\u0435\u043d\u0442\u0438 \u0432\u0435\u0447\u0435...\u201c" },
+  { id: "humor", label: "Dark Humor", desc: "\u0421\u0430\u043c\u043e\u0438\u0440\u043e\u043d\u0438\u044f, \u043a\u043e\u044f\u0442\u043e \u0447\u0443\u043f\u0438 \u0431\u0430\u0440\u0438\u0435\u0440\u0430\u0442\u0430" },
 ];
 const CREATIVE_TYPES = [
   { id: "Продуктова снимка", label: "Продуктова снимка", desc: "Чист product shot на бял или стилизиран фон", icon: Camera },
@@ -203,9 +220,8 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
 }
 
 // --- Step 2: Settings ---
-function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setApproach, angle, setAngle, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality }: {
+function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality }: {
   avatar: string; setAvatar: (v: string) => void; format: string; setFormat: (v: string) => void;
-  approach: string; setApproach: (v: string) => void; angle: string; setAngle: (v: string) => void;
   audience: string; setAudience: (v: string) => void;
   intensity: number; setIntensity: (v: number) => void;
   additionalInput: string; setAdditionalInput: (v: string) => void;
@@ -272,9 +288,6 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
           </div>
         </div>
 
-        <PillGroup options={APPROACHES} value={approach} onChange={setApproach} label="Подход" />
-        <PillGroup options={ANGLES} value={angle} onChange={setAngle} label="Емоционален ъгъл" />
-
         <div>
           <div className="text-[13px] font-semibold text-text mb-2">Интензивност: {intensity}/5 — {INTENSITY_LABELS[intensity - 1]}</div>
           <div className="flex gap-1.5">
@@ -297,33 +310,102 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, approach, setAppro
   );
 }
 
-// --- Step 3: Creative Type ---
-function CreativeTypeStep({ selected, onSelect }: { selected: string; onSelect: (v: string) => void }) {
+// --- Step 3: Creative Settings ---
+function CreativeStep({ creativeType, setCreativeType, archetype, setArchetype, aggressiveness, setAggressiveness, hookStyle, setHookStyle }: {
+  creativeType: string; setCreativeType: (v: string) => void;
+  archetype: string; setArchetype: (v: string) => void;
+  aggressiveness: number; setAggressiveness: (v: number) => void;
+  hookStyle: string; setHookStyle: (v: string) => void;
+}) {
   return (
     <div>
-      <h2 className="text-[18px] font-semibold text-text mb-1">Тип креатив</h2>
-      <p className="text-[13px] text-text-2 mb-5">Какъв визуален стил искаш?</p>
+      <h2 className="text-[18px] font-semibold text-text mb-1">Креативна стратегия</h2>
+      <p className="text-[13px] text-text-2 mb-5">Визуален стил, рамка, агресивност и hook</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {CREATIVE_TYPES.map((ct) => {
-          const Icon = ct.icon;
-          const isSelected = selected === ct.id;
-          return (
-            <button key={ct.id} onClick={() => onSelect(ct.id)}
-              className={`flex items-start gap-4 p-5 rounded-xl text-left transition-all cursor-pointer border-2 ${
-                isSelected ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
-              }`}
-            >
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${isSelected ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>
-                <Icon size={22} />
-              </div>
-              <div>
-                <div className={`text-[14px] font-semibold ${isSelected ? "text-purple" : "text-text"}`}>{ct.label}</div>
-                <p className="text-[12px] text-text-2 mt-0.5">{ct.desc}</p>
-              </div>
-            </button>
-          );
-        })}
+      <div className="space-y-6">
+        {/* Visual Type */}
+        <div>
+          <div className="text-[13px] font-semibold text-text mb-2">Визуален стил</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {CREATIVE_TYPES.map((ct) => {
+              const Icon = ct.icon;
+              const isSelected = creativeType === ct.id;
+              return (
+                <button key={ct.id} onClick={() => setCreativeType(ct.id)}
+                  className={`flex items-start gap-4 p-4 rounded-xl text-left transition-all cursor-pointer border-2 ${
+                    isSelected ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isSelected ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>
+                    <Icon size={18} />
+                  </div>
+                  <div>
+                    <div className={`text-[13px] font-semibold ${isSelected ? "text-purple" : "text-text"}`}>{ct.label}</div>
+                    <p className="text-[11px] text-text-2 mt-0.5">{ct.desc}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Creative Archetype */}
+        <div>
+          <div className="text-[13px] font-semibold text-text mb-2">Creative Archetype — рамка на рекламата</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {ARCHETYPES.map((a) => {
+              const Icon = a.icon;
+              const isSelected = archetype === a.id;
+              return (
+                <button key={a.id} onClick={() => setArchetype(a.id)}
+                  className={`flex items-center gap-3 p-3 rounded-xl text-left transition-all cursor-pointer border-2 ${
+                    isSelected ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
+                  }`}
+                >
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${isSelected ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>
+                    <Icon size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className={`text-[12px] font-semibold ${isSelected ? "text-purple" : "text-text"}`}>{a.label}</div>
+                    <p className="text-[11px] text-text-2 leading-snug truncate">{a.desc}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Aggressiveness */}
+        <div>
+          <div className="text-[13px] font-semibold text-text mb-1 flex items-center gap-1.5">
+            <Flame size={14} />Агресивност: {aggressiveness}/5 — {AGGRESSIVENESS_LEVELS[aggressiveness - 1].label}
+          </div>
+          <p className="text-[11px] text-text-2 mb-2">{AGGRESSIVENESS_LEVELS[aggressiveness - 1].desc}</p>
+          <div className="flex gap-1.5">
+            {AGGRESSIVENESS_LEVELS.map((al) => (
+              <button key={al.level} onClick={() => setAggressiveness(al.level)}
+                className={`flex-1 h-3 rounded-full transition-all cursor-pointer ${al.level <= aggressiveness ? "bg-red" : "bg-surface-2"}`}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Hook Style */}
+        <div>
+          <div className="text-[13px] font-semibold text-text mb-2">Hook стил — първите 3 секунди</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {HOOK_STYLES.map((h) => (
+              <button key={h.id} onClick={() => setHookStyle(h.id)}
+                className={`p-3 rounded-xl text-left transition-all cursor-pointer border-2 ${
+                  hookStyle === h.id ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
+                }`}
+              >
+                <span className={`text-[12px] font-semibold block ${hookStyle === h.id ? "text-purple" : "text-text"}`}>{h.label}</span>
+                <p className="text-[11px] text-text-2 leading-snug mt-0.5">{h.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -364,9 +446,10 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, approach, angle, audience, intensity, creativeType, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality }: {
-  product: SlimProduct; avatar: string; format: string; approach: string;
-  angle: string; audience: string; intensity: number; creativeType: string;
+function GenerateStep({ product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality }: {
+  product: SlimProduct; avatar: string; format: string;
+  audience: string; intensity: number; creativeType: string;
+  archetype: string; aggressiveness: number; hookStyle: string;
   generatedContent: string; setGeneratedContent: (v: string) => void;
   variants: Variant[]; setVariants: (v: Variant[]) => void;
   selectedVariants: Set<number>; setSelectedVariants: (v: Set<number>) => void;
@@ -388,8 +471,9 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
       `[Настройки: Аватар: ${AVATARS.find((a) => a.id === avatar)?.label}`,
       `Формат: ${FORMATS.find((f) => f.id === format)?.label}`,
       `Аудитория: ${AUDIENCES.find((a) => a.id === audience)?.label}`,
-      `Подход: ${APPROACHES.find((a) => a.id === approach)?.label}`,
-      `Ъгъл: ${ANGLES.find((a) => a.id === angle)?.label}`,
+      `Archetype: ${ARCHETYPES.find((a) => a.id === archetype)?.label}`,
+      `Агресивност: ${aggressiveness}/5`,
+      `Hook стил: ${HOOK_STYLES.find((h) => h.id === hookStyle)?.label}`,
       `Интензивност: ${intensity}/5`,
       `Продукт: ${product.title} (handle: ${product.handle})`,
       `Тип креатив: ${creativeType}]`,
@@ -405,9 +489,10 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: [{ role: "user", content: userMessage }],
-          avatar, format, approach, intensity, angle, audience,
+          avatar, format, intensity, audience,
           product: product.handle,
-          creativeType, language, formality,
+          creativeType, archetype, aggressiveness, hookStyle,
+          language, formality,
         }),
       });
       if (!res.ok) {
@@ -443,7 +528,7 @@ function GenerateStep({ product, avatar, format, approach, angle, audience, inte
       setGeneratedContent("\u26a0\ufe0f Грешка при генериране. Опитай отново.");
     }
     setLoading(false);
-  }, [product, avatar, format, approach, angle, audience, intensity, creativeType, additionalInput, language, formality, setGeneratedContent, setVariants, setSelectedVariants]);
+  }, [product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, additionalInput, language, formality, setGeneratedContent, setVariants, setSelectedVariants]);
 
   // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
@@ -678,10 +763,11 @@ export default function AdCreatorPage() {
   const [selectedProduct, setSelectedProduct] = useState<SlimProduct | null>(null);
   const [avatar, setAvatar] = useState(AVATARS[0].id);
   const [format, setFormat] = useState(FORMATS[0].id);
-  const [approach, setApproach] = useState(APPROACHES[0].id);
   const [intensity, setIntensity] = useState(3);
-  const [angle, setAngle] = useState(ANGLES[0].id);
   const [audience, setAudience] = useState(AUDIENCES[0].id);
+  const [archetype, setArchetype] = useState("pas");
+  const [aggressiveness, setAggressiveness] = useState(3);
+  const [hookStyle, setHookStyle] = useState("curiosity");
   const [creativeType, setCreativeType] = useState(CREATIVE_TYPES[0].id);
   const [language, setLanguage] = useState("bg");
   const [formality, setFormality] = useState("informal");
@@ -741,7 +827,6 @@ export default function AdCreatorPage() {
         {step === "product" && <ProductStep selected={selectedProduct} onSelect={setSelectedProduct} />}
         {step === "settings" && (
           <SettingsStep avatar={avatar} setAvatar={setAvatar} format={format} setFormat={setFormat}
-            approach={approach} setApproach={setApproach} angle={angle} setAngle={setAngle}
             audience={audience} setAudience={setAudience}
             intensity={intensity} setIntensity={setIntensity}
             additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
@@ -749,10 +834,17 @@ export default function AdCreatorPage() {
             formality={formality} setFormality={setFormality}
           />
         )}
-        {step === "creative-type" && <CreativeTypeStep selected={creativeType} onSelect={setCreativeType} />}
+        {step === "creative-type" && (
+          <CreativeStep creativeType={creativeType} setCreativeType={setCreativeType}
+            archetype={archetype} setArchetype={setArchetype}
+            aggressiveness={aggressiveness} setAggressiveness={setAggressiveness}
+            hookStyle={hookStyle} setHookStyle={setHookStyle}
+          />
+        )}
         {step === "generate" && selectedProduct && (
-          <GenerateStep product={selectedProduct} avatar={avatar} format={format} approach={approach}
-            angle={angle} audience={audience} intensity={intensity} creativeType={creativeType}
+          <GenerateStep product={selectedProduct} avatar={avatar} format={format}
+            audience={audience} intensity={intensity} creativeType={creativeType}
+            archetype={archetype} aggressiveness={aggressiveness} hookStyle={hookStyle}
             generatedContent={generatedContent} setGeneratedContent={setGeneratedContent}
             variants={variants} setVariants={setVariants}
             selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants}
