@@ -424,21 +424,21 @@ function parseVariants(content: string): Variant[] {
   for (const section of sections) {
     const nameMatch = section.match(/^([A-DА-Д][^:\n]*)/);
     const name = nameMatch ? nameMatch[1].replace(/[:#]/g, "").trim() : "Variant";
-    const extract = (labels: string[]): string => {
+    const extract = (labels: string[], preserveNewlines = false): string => {
       for (const label of labels) {
         const regex = new RegExp(`\\*\\*${label}[^*]*\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n\\*\\*|\\n---|$)`, "i");
         const match = section.match(regex);
-        if (match && match[1].trim()) return match[1].trim().replace(/\n+/g, " ");
+        if (match && match[1].trim()) return preserveNewlines ? match[1].trim() : match[1].trim().replace(/\n+/g, " ");
       }
       return "";
     };
     variants.push({
       name,
       hook: extract(["Hook"]),
-      body: extract(["Основен текст", "Testo principale", "Haupttext", "Main text", "Texte principal", "Texto principal", "Κύριο κείμενο", "Text principal", "Hlavní text"]),
+      body: extract(["Основен текст", "Testo principale", "Haupttext", "Main text", "Texte principal", "Texto principal", "Κύριο κείμενο", "Text principal", "Hlavní text"], true),
       headline: extract(["Headline", "Titolo", "Überschrift", "Titre", "Τίτλος", "Titlu", "Nadpis"]),
       cta: extract(["CTA", "Call to action"]),
-      visualDirection: extract(["Визуална насока", "Indicazioni visive", "Visual direction", "Visuelle Richtung", "Direction visuelle", "Οπτική κατεύθυνση", "Direcție vizuală", "Vizuální směr"]),
+      visualDirection: extract(["Визуална насока", "Indicazioni visive", "Visual direction", "Visuelle Richtung", "Direction visuelle", "Οπτική κατεύθυνση", "Direcție vizuală", "Vizuální směr"], true),
       imagePrompt: extract(["Image Prompt"]),
     });
   }
@@ -621,7 +621,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
                   {v.body && (
                     <div className="mb-2">
                       <div className="text-[11px] font-semibold text-text-2 mb-0.5">Текст</div>
-                      <p className={`text-[12px] text-text-2 leading-relaxed ${expanded ? "" : "line-clamp-4"}`}>{v.body}</p>
+                      <div className={`text-[12px] text-text-2 leading-relaxed whitespace-pre-line ${expanded ? "" : "line-clamp-4"}`}>{v.body}</div>
                     </div>
                   )}
 
@@ -629,7 +629,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
                   {expanded && v.visualDirection && (
                     <div className="mb-2">
                       <div className="text-[11px] font-semibold text-text-2 mb-0.5">Визуална насока</div>
-                      <p className="text-[12px] text-text-2 leading-relaxed">{v.visualDirection}</p>
+                      <div className="text-[12px] text-text-2 leading-relaxed whitespace-pre-line">{v.visualDirection}</div>
                     </div>
                   )}
 
