@@ -167,32 +167,32 @@ ${lang.complianceWording}
 5. Без discount-first messaging, без фалшива спешност
 
 == ФОРМАТ НА ОТГОВОРА ==
-За ВСЕКИ от 4-те варианта, следвай ТОЧНО тази структура:
+За ВСЕКИ от 4-те варианта, следвай ТОЧНО тази структура (labels ТРЯБВА да са точно както са дадени):
 
-## Вариант A: [кратко име на ъгъла]
+## ${lang.outputLabels.variant} A: [кратко име на ъгъла]
 
-**Hook (първите 125 символа):**
+**${lang.outputLabels.hook}:**
 [текст на hook-а]
 
-**Основен текст:**
+**${lang.outputLabels.body}:**
 [пълен текст на рекламата]
 
-**Headline (до 40 символа):**
+**${lang.outputLabels.headline}:**
 [headline]
 
-**CTA:**
+**${lang.outputLabels.cta}:**
 [call to action]
 
-**Визуална насока:**
+**${lang.outputLabels.visualDirection}:**
 [кратко описание на визуала — цветове, композиция, стил]
 
-**Image Prompt (EN):**
+**${lang.outputLabels.imagePrompt}:**
 [ДЕТАЙЛЕН prompt на АНГЛИЙСКИ за генериране на изображение. Включва: продукт, стил (${settings.creativeType}), настроение, цветове (#2D5016 forest green, #C4922A gold, #F5F2EB off-white), композиция, осветление. НЕ включвай текст върху изображението. Формат: professional product photography / lifestyle photography / editorial style.]
 
 ---
 
 След 4-те варианта, добави:
-## 📋 Препоръка
+## ${lang.outputLabels.recommendation}
 Кой вариант за коя аудитория е най-подходящ и защо.`;
 }
 

@@ -2,6 +2,17 @@
 // Each language has grammar rules, cultural copywriting principles, editor prompts,
 // EFSA compliance wording, and few-shot examples.
 
+export interface OutputLabels {
+  variant: string;
+  hook: string;
+  body: string;
+  headline: string;
+  cta: string;
+  visualDirection: string;
+  imagePrompt: string;
+  recommendation: string;
+}
+
 export interface LanguageConfig {
   code: string;
   label: string;
@@ -14,6 +25,7 @@ export interface LanguageConfig {
   exampleCopy: string;
   formalDefault: boolean;
   formalityInstruction: { formal: string; informal: string };
+  outputLabels: OutputLabels;
 }
 
 // ---- BULGARIAN ----
@@ -24,6 +36,11 @@ const BG: LanguageConfig = {
   nativeName: "Български",
   script: "Cyrillic",
   formalDefault: false,
+  outputLabels: {
+    variant: "Вариант", hook: "Hook (първите 125 символа)", body: "Основен текст",
+    headline: "Headline (до 40 символа)", cta: "CTA", visualDirection: "Визуална насока",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Препоръка",
+  },
   formalityInstruction: {
     informal: `РЕГИСТЪР: Използвай "ти" навсякъде. НИКОГА не смесвай "ти" и "Вие" в едно копи.`,
     formal: `РЕГИСТЪР: Използвай "Вие" навсякъде. НИКОГА не смесвай "ти" и "Вие" в едно копи. "Вие" винаги с главна буква.`,
@@ -170,6 +187,11 @@ const DE: LanguageConfig = {
   nativeName: "Deutsch",
   script: "Latin",
   formalDefault: true,
+  outputLabels: {
+    variant: "Variante", hook: "Hook (primi 125 Zeichen)", body: "Haupttext",
+    headline: "Überschrift (max. 40 Zeichen)", cta: "CTA", visualDirection: "Visuelle Richtung",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Empfehlung",
+  },
   formalityInstruction: {
     informal: `REGISTER: Verwende durchgehend "du/dein/dir". Niemals "Sie" und "du" mischen. Tonfall: freundschaftlich, direkt, aber respektvoll.`,
     formal: `REGISTER: Verwende durchgehend "Sie/Ihr/Ihnen". "Sie" immer großgeschrieben. Niemals "du" und "Sie" mischen. Tonfall: professionell, respektvoll, vertrauenswürdig.`,
@@ -298,6 +320,11 @@ const EL: LanguageConfig = {
   nativeName: "Ελληνικά",
   script: "Greek",
   formalDefault: false,
+  outputLabels: {
+    variant: "Παραλλαγή", hook: "Hook (πρώτοι 125 χαρακτήρες)", body: "Κύριο κείμενο",
+    headline: "Τίτλος (έως 40 χαρακτήρες)", cta: "CTA", visualDirection: "Οπτική κατεύθυνση",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Σύσταση",
+  },
   formalityInstruction: {
     informal: `ΡΕΓΚΙΣΤΡΟ: Χρησιμοποίησε πάντα "εσύ" (β' ενικό). Ποτέ μην αναμειγνύεις "εσύ" και "εσείς" στο ίδιο κείμενο. Τόνος: φιλικός, άμεσος.`,
     formal: `ΡΕΓΚΙΣΤΡΟ: Χρησιμοποίησε πάντα "εσείς" (β' πληθυντικό ευγενείας). Ποτέ μην αναμειγνύεις "εσύ" και "εσείς" στο ίδιο κείμενο. Τόνος: επαγγελματικός, σεβαστικός.`,
@@ -407,6 +434,11 @@ const RO: LanguageConfig = {
   nativeName: "Română",
   script: "Latin",
   formalDefault: false,
+  outputLabels: {
+    variant: "Varianta", hook: "Hook (primele 125 caractere)", body: "Text principal",
+    headline: "Titlu (max. 40 caractere)", cta: "CTA", visualDirection: "Direcție vizuală",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Recomandare",
+  },
   formalityInstruction: {
     informal: `REGISTRU: Folosește "tu/tine/ție" peste tot. Nu amesteca niciodată "tu" și "dumneavoastră" în același text.`,
     formal: `REGISTRU: Folosește "dumneavoastră" peste tot. Nu amesteca niciodată "tu" și "dumneavoastră" în același text. Ton: profesional, respectuos.`,
@@ -522,6 +554,11 @@ const IT: LanguageConfig = {
   nativeName: "Italiano",
   script: "Latin",
   formalDefault: false,
+  outputLabels: {
+    variant: "Variante", hook: "Hook (primi 125 caratteri)", body: "Testo principale",
+    headline: "Titolo (max. 40 caratteri)", cta: "CTA", visualDirection: "Indicazioni visive",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Raccomandazione",
+  },
   formalityInstruction: {
     informal: `REGISTRO: Usa sempre "tu/te/ti". Non mescolare mai "tu" e "Lei" nello stesso testo. Tono: amichevole, diretto.`,
     formal: `REGISTRO: Usa sempre "Lei/La/Le" (maiuscolo). Non mescolare mai "tu" e "Lei" nello stesso testo. Tono: professionale, rispettoso.`,
@@ -636,6 +673,11 @@ const FR: LanguageConfig = {
   nativeName: "Français",
   script: "Latin",
   formalDefault: false,
+  outputLabels: {
+    variant: "Variante", hook: "Hook (125 premiers caractères)", body: "Texte principal",
+    headline: "Titre (max. 40 caractères)", cta: "CTA", visualDirection: "Direction visuelle",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Recommandation",
+  },
   formalityInstruction: {
     informal: `REGISTRE : Utilise "tu/toi/te" partout. Ne mélange jamais "tu" et "vous" dans le même texte. Ton : amical, direct.`,
     formal: `REGISTRE : Utilise "vous" partout. Ne mélange jamais "tu" et "vous" dans le même texte. Ton : professionnel, respectueux.`,
@@ -754,6 +796,11 @@ const EN: LanguageConfig = {
   nativeName: "English",
   script: "Latin",
   formalDefault: false,
+  outputLabels: {
+    variant: "Variant", hook: "Hook (first 125 characters)", body: "Main text",
+    headline: "Headline (max 40 characters)", cta: "CTA", visualDirection: "Visual direction",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Recommendation",
+  },
   formalityInstruction: {
     informal: `REGISTER: Use casual, conversational English. Contractions are fine ("you'll", "it's", "don't"). Tone: friendly, direct, approachable.`,
     formal: `REGISTER: Use professional, polished English. Minimize contractions. Tone: authoritative, trustworthy, refined.`,
@@ -869,6 +916,11 @@ const CS: LanguageConfig = {
   nativeName: "Čeština",
   script: "Latin",
   formalDefault: false,
+  outputLabels: {
+    variant: "Varianta", hook: "Hook (prvních 125 znaků)", body: "Hlavní text",
+    headline: "Nadpis (max. 40 znaků)", cta: "CTA", visualDirection: "Vizuální směr",
+    imagePrompt: "Image Prompt (EN)", recommendation: "Doporučení",
+  },
   formalityInstruction: {
     informal: `REGISTR: Používej všude "ty/tebe/tobě". Nikdy nemíchej "ty" a "vy" v jednom textu. Tón: přátelský, přímý.`,
     formal: `REGISTR: Používej všude "vy/vás/vám" (vykání). Nikdy nemíchej "ty" a "vy" v jednom textu. Tón: profesionální, respektující.`,

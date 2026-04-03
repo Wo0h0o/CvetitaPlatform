@@ -337,16 +337,28 @@ interface Variant {
 
 function parseVariants(content: string): Variant[] {
   const variants: Variant[] = [];
-  const sections = content.split(/^## Вариант /m).slice(1);
+  // Match variant headers in any language: "## Вариант A", "## Variante A", "## Variant A", "## Παραλλαγή A", "## Varianta A", "## Variante A"
+  const sections = content.split(/^## (?:Вариант|Variant[eai]?|Varianta|Παραλλαγή|Варианта) /m).slice(1);
   for (const section of sections) {
     const nameMatch = section.match(/^([A-DА-Д][^:\n]*)/);
-    const name = nameMatch ? nameMatch[1].replace(/[:#]/g, "").trim() : "Вариант";
-    const extract = (label: string): string => {
-      const regex = new RegExp(`\\*\\*${label}[^*]*\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n\\*\\*|\\n---|$)`, "i");
-      const match = section.match(regex);
-      return match ? match[1].trim().replace(/\n+/g, " ") : "";
+    const name = nameMatch ? nameMatch[1].replace(/[:#]/g, "").trim() : "Variant";
+    const extract = (labels: string[]): string => {
+      for (const label of labels) {
+        const regex = new RegExp(`\\*\\*${label}[^*]*\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n\\*\\*|\\n---|$)`, "i");
+        const match = section.match(regex);
+        if (match && match[1].trim()) return match[1].trim().replace(/\n+/g, " ");
+      }
+      return "";
     };
-    variants.push({ name, hook: extract("Hook"), body: extract("Основен текст"), headline: extract("Headline"), cta: extract("CTA"), visualDirection: extract("Визуална насока"), imagePrompt: extract("Image Prompt") });
+    variants.push({
+      name,
+      hook: extract(["Hook"]),
+      body: extract(["Основен текст", "Testo principale", "Haupttext", "Main text", "Texte principal", "Texto principal", "Κύριο κείμενο", "Text principal", "Hlavní text"]),
+      headline: extract(["Headline", "Titolo", "Überschrift", "Titre", "Τίτλος", "Titlu", "Nadpis"]),
+      cta: extract(["CTA", "Call to action"]),
+      visualDirection: extract(["Визуална насока", "Indicazioni visive", "Visual direction", "Visuelle Richtung", "Direction visuelle", "Οπτική κατεύθυνση", "Direcție vizuală", "Vizuální směr"]),
+      imagePrompt: extract(["Image Prompt"]),
+    });
   }
   return variants;
 }
