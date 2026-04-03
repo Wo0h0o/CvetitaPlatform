@@ -77,6 +77,28 @@ When NO reference image is provided:
 - Text should be large, readable, and contrast well with the background
 - The text content will be provided in the creative direction
 
+### "Emotional Scene"
+- Pure emotional visual — NO PRODUCT in the frame. Zero. None.
+- Focus entirely on the HUMAN MOMENT: a man looking at himself in the mirror, a tired mother catching her reflection, someone staring at an empty coffee cup, a person alone with their thoughts
+- The emotion should be quiet, real, relatable — NOT dramatic or staged
+- Lighting: natural, slightly unflattering (morning bathroom light, late evening). Honest, not glamorous
+- Color palette: muted, cool tones for the "problem" state. NOT bright, NOT aspirational
+- Camera: intimate, candid, as if catching a private moment. Slightly voyeuristic
+- Expression: quiet realization, NOT sadness. The look of someone who just NOTICED something they have been avoiding
+- NO text, no typography, no watermarks, no product, no branding. Add: "no text, no product, no branding, no watermarks"
+- This is a SCROLL-STOPPER — the emotion alone should make someone pause
+
+### "Story Scene"
+- Narrative visual with text overlay — NO PRODUCT in the frame
+- Show a STORY moment: before/after split, daily struggle, transformation moment, the turning point
+- Can include people in real situations: gym, kitchen, work, family
+- Include headline text directly on the image in bold Montserrat font
+- ALL text in the image MUST be in the TARGET LANGUAGE specified in the request (see language instruction below).
+- Position text prominently — this is a text-first visual with the scene as backdrop
+- Semi-transparent overlay or text bar to ensure readability
+- Color grading should support the narrative: muted for "before", warm for "after"
+- NO product packaging anywhere in the image. The story sells, not the product
+
 ## Brand Context: Cvetita Herbal
 - Bulgarian premium supplement brand
 - Aesthetic: clean, scientific yet natural, premium European feel
@@ -114,7 +136,7 @@ async function artDirectorRefine(
   if (!apiKey) return rawPrompt; // graceful fallback
 
   const langConfig = LANGUAGE_CONFIGS[language] || LANGUAGE_CONFIGS.bg;
-  const needsText = creativeType === "Научен / Инфо" || creativeType === "Lifestyle + текст";
+  const needsText = creativeType === "Научен / Инфо" || creativeType === "Lifestyle + текст" || creativeType === "Story Scene";
   const dimensions = FORMAT_DIMENSIONS[aspectRatio] || "1080x1080px";
   const languageInstruction = needsText
     ? `- TARGET LANGUAGE for all text on the image: ${langConfig.nativeName} (${langConfig.script} script). ALL text labels, headlines, and badges MUST be written in ${langConfig.nativeName}. NEVER use English or Bulgarian (unless that IS the target language).`

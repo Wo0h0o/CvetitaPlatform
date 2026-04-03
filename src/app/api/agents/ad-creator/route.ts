@@ -225,7 +225,7 @@ ${lang.complianceWording}
 [кратко описание на визуала — цветове, композиция, стил]
 
 **${lang.outputLabels.imagePrompt}:**
-[ДЕТАЙЛЕН prompt на АНГЛИЙСКИ за генериране на изображение. Включва: продукт, стил (${settings.creativeType}), настроение, цветове (#2D5016 forest green, #C4922A gold, #F5F2EB off-white), композиция, осветление. НЕ включвай текст върху изображението. Формат: professional product photography / lifestyle photography / editorial style.]
+[ДЕТАЙЛЕН prompt на АНГЛИЙСКИ за генериране на изображение. ${settings.creativeType === "Emotional Scene" || settings.creativeType === "Story Scene" ? "БЕЗ ПРОДУКТ — фокус върху ЧОВЕШКАТА ЕМОЦИЯ и СЦЕНАТА. Опиши хората, средата, осветлението, настроението." : "Включва: продукт, стил, настроение, цветове (#2D5016 forest green, #C4922A gold, #F5F2EB off-white), композиция, осветление."} Формат: ${settings.creativeType === "Emotional Scene" ? "cinematic / documentary / candid photography" : settings.creativeType === "Story Scene" ? "narrative / editorial / cinematic photography" : "professional product photography / lifestyle photography / editorial style"}.]
 
 ---
 

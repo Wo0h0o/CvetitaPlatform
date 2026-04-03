@@ -8,7 +8,7 @@ import {
   ChevronRight, ChevronLeft, Check, Camera, FileText,
   Sun, Layers, Download, RefreshCw, Copy, ChevronDown, ChevronUp, Globe,
   Target, Eye, Shield, Microscope, MessageCircle, GraduationCap, Scale,
-  Coffee, Mountain, ArrowRight, Flame,
+  Coffee, Mountain, ArrowRight, Flame, Heart, Clapperboard,
 } from "lucide-react";
 import { Markdown } from "@/components/shared/Markdown";
 
@@ -76,6 +76,8 @@ const CREATIVE_TYPES = [
   { id: "Научен / Инфо", label: "Научен / Инфо", desc: "Текстова карта с факти и статистики", icon: FileText },
   { id: "Lifestyle", label: "Lifestyle", desc: "Продуктът в контекст — фитнес, кухня, природа", icon: Sun },
   { id: "Lifestyle + текст", label: "Lifestyle + оверлей", desc: "Lifestyle с headline текст върху снимката", icon: Layers },
+  { id: "Emotional Scene", label: "Emotional Scene", desc: "Чиста емоция БЕЗ продукт — огледалният момент, осъзнаване, scroll-stopper", icon: Heart },
+  { id: "Story Scene", label: "Story Scene", desc: "Наративна сцена с текст оверлей, БЕЗ продукт — история, трансформация", icon: Clapperboard },
 ];
 const AUDIENCES = [
   { id: "Студена (TOFU) — не познават бранда, образователен подход", label: "Студена (TOFU)", desc: "Не познават бранда. Целта: внимание и любопитство." },
@@ -672,7 +674,10 @@ function VisualsStep({ variants, selectedVariants, format, productImageUrl, crea
         const res = await fetch("/api/agents/ad-creator/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: selected[i].imagePrompt, format, productImageUrl, creativeType, headline: selected[i].headline || selected[i].hook, language, archetype }),
+          body: JSON.stringify({
+            prompt: selected[i].imagePrompt, format, creativeType, headline: selected[i].headline || selected[i].hook, language, archetype,
+            productImageUrl: (creativeType === "Emotional Scene" || creativeType === "Story Scene") ? null : productImageUrl,
+          }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
