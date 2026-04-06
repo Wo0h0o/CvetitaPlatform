@@ -2,7 +2,17 @@ import { NextRequest } from "next/server";
 import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
 import { requireAuth } from "@/lib/api-auth";
 import { rateLimit } from "@/lib/rate-limit";
-import { fetchWithTimeout } from "@/lib/fetch-utils";
+import {
+  getMetaOverview,
+  getMetaCampaignInsights,
+  getMetaAdInsights,
+  getMetaAdCreatives,
+  getMetaAdSetInsights,
+  fetchAdSetsMeta,
+  actionVal,
+} from "@/lib/meta";
+import type { MetaAdSetInsightRow } from "@/lib/meta";
+import { parseAdRow, scoreAd, computeAccountMeans } from "@/lib/meta-scoring";
 
 export const maxDuration = 60;
 
@@ -196,49 +206,79 @@ export async function POST(req: NextRequest) {
         // 1. Fetch ads data + business context in parallel
         send({ t: "status", msg: "Зареждам рекламните данни..." });
 
-        const f = async (url: string) => {
-          try {
-            const res = await fetchWithTimeout(url, { headers: { cookie } }, 25_000);
-            const json = await res.json();
-            if (!res.ok) return { error: json.error || `HTTP ${res.status}` };
-            return json;
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : "Unknown fetch error";
-            console.error(`[ads-intel] fetch failed: ${url} — ${msg}`);
-            return { error: msg };
-          }
-        };
-        const [adsRes, individualRes, adsetsRes, ctx] = await Promise.all([
-          f(`${baseUrl}/api/dashboard/ads?preset=7d`),
-          f(`${baseUrl}/api/dashboard/ads/individual?preset=7d`),
-          f(`${baseUrl}/api/dashboard/ads/adsets?preset=7d`),
-          fetchBusinessContext(baseUrl, { cookie }),
-        ]);
-
-        if (adsRes.error === "Meta Ads not configured" || individualRes.error === "Meta Ads not configured") {
+        if (!process.env.META_ACCESS_TOKEN) {
           send({ t: "error", msg: "Meta Ads не е конфигуриран. Добави META_ACCESS_TOKEN в настройките." });
           controller.close();
           return;
         }
 
-        if (adsRes.error || individualRes.error) {
-          const realError = adsRes.error || individualRes.error;
-          console.error("[ads-intel] Meta data fetch error:", realError);
-          send({ t: "error", msg: `Грешка при зареждане на рекламните данни: ${realError}` });
-          controller.close();
-          return;
-        }
+        // Call Meta API directly (no self-referential HTTP — avoids cold start timeouts)
+        const [overview, campaigns, adRows, adSetRows, adSetsMeta, ctx] = await Promise.all([
+          getMetaOverview("last_7d"),
+          getMetaCampaignInsights("last_7d"),
+          getMetaAdInsights("last_7d"),
+          getMetaAdSetInsights("last_7d"),
+          fetchAdSetsMeta(),
+          fetchBusinessContext(baseUrl, { cookie }),
+        ]);
+
+        // Score ads
+        const parsedAds = adRows.map(parseAdRow);
+        const means = computeAccountMeans(parsedAds);
+        const adIds = parsedAds.map((a) => a.id).filter(Boolean);
+        const creatives = await getMetaAdCreatives(adIds);
+
+        const scoredAds = parsedAds.map((ad) => {
+          const creative = creatives.get(ad.id);
+          const isVideo = creative?.isVideo || false;
+          const scoring = scoreAd(ad, isVideo, { roas: means.roas, cpa: means.cpa });
+          return {
+            ...ad,
+            status: creative?.effective_status || "UNKNOWN",
+            isVideo,
+            score: scoring.score ?? 0,
+            scoringStatus: scoring.status,
+            scoreBreakdown: scoring.scoreBreakdown,
+          };
+        }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+        const accountAverages = {
+          roas: Math.round(means.roas * 100) / 100,
+          cpa: Math.round(means.cpa * 100) / 100,
+          ctr: Math.round(means.ctr * 100) / 100,
+          cvr: Math.round(means.cvr * 100) / 100,
+          frequency: Math.round(means.frequency * 100) / 100,
+        };
+
+        // Parse ad sets
+        const adSetMetaMap = new Map(adSetsMeta.map((m) => [m.id, m]));
+        const parseAdSetRow = (r: MetaAdSetInsightRow) => {
+          const spend = parseFloat(r.spend);
+          const revenue = actionVal(r.action_values, "omni_purchase");
+          const meta = adSetMetaMap.get(r.adset_id || "");
+          const dailyBudget = meta?.daily_budget ? parseFloat(meta.daily_budget) / 100 : null;
+          const lifetimeBudget = meta?.lifetime_budget ? parseFloat(meta.lifetime_budget) / 100 : null;
+          return {
+            name: r.adset_name || "Unknown",
+            campaignName: r.campaign_name || "",
+            status: meta?.effective_status || "UNKNOWN",
+            spend,
+            revenue,
+            roas: spend > 0 ? revenue / spend : 0,
+            frequency: parseFloat(r.frequency || "0"),
+            budget: dailyBudget ? `€${dailyBudget.toFixed(2)}/day` : lifetimeBudget ? `€${lifetimeBudget.toFixed(2)} lifetime` : "—",
+          };
+        };
+        const adsets = adSetRows.map(parseAdSetRow).sort((a, b) => b.spend - a.spend);
 
         const adsContext = buildAdsContext(
-          adsRes.overview,
-          adsRes.campaigns || [],
-          individualRes.ads || [],
-          individualRes.accountAverages || { roas: 0, cpa: 0, ctr: 0, cvr: 0, frequency: 0 }
+          { ...overview, cpa: overview.cpa ?? 0 } as AdsOverview,
+          campaigns,
+          scoredAds as AdItem[],
+          accountAverages
         );
 
-        // Build ad set hierarchy context
-        const adsets = adsetsRes?.adsets || [];
-        const ads = individualRes?.ads || [];
+        const ads = scoredAds as AdItem[];
         let adsetContext = "";
         if (adsets.length > 0) {
           const fmt2 = (n: number) => n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
