@@ -322,7 +322,7 @@ export async function POST(req: NextRequest) {
               "anthropic-beta": "web-search-2025-03-05",
             },
             body: JSON.stringify({
-              model: "claude-opus-4-6",
+              model: "claude-sonnet-4-6",
               max_tokens: 32000,
               stream: true,
               system: systemPrompt,
