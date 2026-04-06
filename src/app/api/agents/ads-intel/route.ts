@@ -213,14 +213,20 @@ export async function POST(req: NextRequest) {
         }
 
         // Call Meta API directly (no self-referential HTTP — avoids cold start timeouts)
-        const [overview, campaigns, adRows, adSetRows, adSetsMeta, ctx] = await Promise.all([
+        // fetchBusinessContext is fire-and-forget — it makes self-referential HTTP calls
+        // that may timeout, but we don't want it to block Meta data loading
+        const ctxPromise = fetchBusinessContext(baseUrl, { cookie }).catch(() => null);
+
+        const [overview, campaigns, adRows, adSetRows, adSetsMeta] = await Promise.all([
           getMetaOverview("last_7d"),
           getMetaCampaignInsights("last_7d"),
           getMetaAdInsights("last_7d"),
           getMetaAdSetInsights("last_7d"),
           fetchAdSetsMeta(),
-          fetchBusinessContext(baseUrl, { cookie }),
         ]);
+
+        // Await business context after Meta data is ready (may be null if timed out)
+        const ctx = await ctxPromise;
 
         // Score ads
         const parsedAds = adRows.map(parseAdRow);
@@ -299,7 +305,7 @@ export async function POST(req: NextRequest) {
           adsetContext = lines.join("\n");
         }
 
-        const businessContext = formatContextForPrompt(ctx);
+        const businessContext = ctx ? formatContextForPrompt(ctx) : "(Бизнес контекстът не е достъпен в момента)";
         const systemPrompt = buildSystemPrompt(adsContext + adsetContext, businessContext);
 
         send({ t: "status", msg: "Анализирам рекламите..." });
