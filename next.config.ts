@@ -6,7 +6,7 @@ const ContentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://cdn.shopify.com https://*.shopify.com https://*.shopifycdn.com https://*.fbcdn.net https://*.facebook.com",
   "font-src 'self'",
-  "connect-src 'self'",
+  "connect-src 'self' https://qggrlwfphxyoslrqkajw.supabase.co",
   "frame-ancestors 'none'",
   "form-action 'self'",
   "base-uri 'self'",

@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
+  const { user, supabaseResponse } = await updateSession(request);
 
-  if (!token) {
+  if (!user) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  // IMPORTANT: return supabaseResponse, not NextResponse.next()
+  // It carries refreshed auth cookies
+  return supabaseResponse;
 }
 
 export const config = {

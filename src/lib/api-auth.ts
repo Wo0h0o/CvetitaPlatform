@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { createServerClient } from "@supabase/ssr";
 import { logger, requestMeta } from "./logger";
 
 /**
- * Checks for a valid NextAuth JWT session.
+ * Checks for a valid Supabase Auth session.
  * Returns a 401 Response if unauthorized, or null if the request is allowed.
  *
  * Usage in any API route:
@@ -14,12 +14,26 @@ import { logger, requestMeta } from "./logger";
 export async function requireAuth(
   req: NextRequest
 ): Promise<NextResponse | null> {
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll() {
+          // No-op in API routes — middleware handles token refresh
+        },
+      },
+    }
+  );
 
-  if (!token) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
     logger.security("Auth rejected", requestMeta(req));
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -30,10 +44,6 @@ export async function requireAuth(
 /**
  * Validates a cron secret header (used by Vercel Cron Jobs).
  * MANDATORY: if CRON_SECRET is not set, the endpoint rejects ALL requests.
- *
- * Usage:
- *   const cronError = requireCronSecret(request);
- *   if (cronError) return cronError;
  */
 export function requireCronSecret(req: Request): NextResponse | null {
   const cronSecret = process.env.CRON_SECRET;
