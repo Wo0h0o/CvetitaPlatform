@@ -13,6 +13,7 @@ import {
   Megaphone,
   Users,
   Bot,
+  DollarSign,
 } from "lucide-react";
 
 interface NavChild {
@@ -43,6 +44,7 @@ const navSections: NavSection[] = [
   {
     label: "Отчети",
     items: [
+      { href: "/sales", icon: DollarSign, label: "Продажби" },
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
       { href: "/customers", icon: Users, label: "Клиенти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
