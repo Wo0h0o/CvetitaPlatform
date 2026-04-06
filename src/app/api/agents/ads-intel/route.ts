@@ -196,7 +196,18 @@ export async function POST(req: NextRequest) {
         // 1. Fetch ads data + business context in parallel
         send({ t: "status", msg: "Зареждам рекламните данни..." });
 
-        const f = (url: string) => fetchWithTimeout(url, { headers: { cookie } }, 8_000).then((r) => r.json()).catch(() => ({ error: "API timeout" }));
+        const f = async (url: string) => {
+          try {
+            const res = await fetchWithTimeout(url, { headers: { cookie } }, 25_000);
+            const json = await res.json();
+            if (!res.ok) return { error: json.error || `HTTP ${res.status}` };
+            return json;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Unknown fetch error";
+            console.error(`[ads-intel] fetch failed: ${url} — ${msg}`);
+            return { error: msg };
+          }
+        };
         const [adsRes, individualRes, adsetsRes, ctx] = await Promise.all([
           f(`${baseUrl}/api/dashboard/ads?preset=7d`),
           f(`${baseUrl}/api/dashboard/ads/individual?preset=7d`),
@@ -204,8 +215,16 @@ export async function POST(req: NextRequest) {
           fetchBusinessContext(baseUrl, { cookie }),
         ]);
 
-        if (adsRes.error || individualRes.error) {
+        if (adsRes.error === "Meta Ads not configured" || individualRes.error === "Meta Ads not configured") {
           send({ t: "error", msg: "Meta Ads не е конфигуриран. Добави META_ACCESS_TOKEN в настройките." });
+          controller.close();
+          return;
+        }
+
+        if (adsRes.error || individualRes.error) {
+          const realError = adsRes.error || individualRes.error;
+          console.error("[ads-intel] Meta data fetch error:", realError);
+          send({ t: "error", msg: `Грешка при зареждане на рекламните данни: ${realError}` });
           controller.close();
           return;
         }
