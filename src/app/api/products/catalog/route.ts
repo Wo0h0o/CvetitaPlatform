@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchProductCatalog } from "@/lib/shopify";
+import { requireAuth } from "@/lib/api-auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
   try {
     const products = await fetchProductCatalog();
 

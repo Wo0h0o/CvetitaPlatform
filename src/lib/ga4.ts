@@ -1,3 +1,6 @@
+import { fetchWithTimeout } from "./fetch-utils";
+import { logger } from "./logger";
+
 const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || "348042832";
 
 // OAuth credentials for token refresh
@@ -12,7 +15,7 @@ async function getAccessToken(): Promise<string> {
     return cachedToken.access_token;
   }
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -21,7 +24,7 @@ async function getAccessToken(): Promise<string> {
       refresh_token: REFRESH_TOKEN,
       grant_type: "refresh_token",
     }),
-  });
+  }, 10_000);
 
   if (!res.ok) {
     throw new Error(`Token refresh failed: ${res.status} ${await res.text()}`);
@@ -48,7 +51,7 @@ async function runReport(
 ): Promise<GA4ReportRow[]> {
   const token = await getAccessToken();
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
     {
       method: "POST",
@@ -60,7 +63,8 @@ async function runReport(
         dateRanges: [{ startDate, endDate }],
         metrics: metrics.map((name) => ({ name })),
       }),
-    }
+    },
+    15_000
   );
 
   if (!res.ok) {
@@ -129,7 +133,7 @@ export async function getGA4KPIs() {
       },
     };
   } catch (error) {
-    console.error("GA4 error:", error);
+    logger.error("GA4 error", { service: "ga4", error: String(error) });
     return { sessions: { value: 0, change: 0 }, conversionRate: { value: 0, change: 0 } };
   }
 }

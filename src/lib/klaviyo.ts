@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "./fetch-utils";
+
 const API_REVISION = "2024-10-15";
 const PLACED_ORDER_METRIC_ID = "QXgXuq";
 
@@ -6,13 +8,13 @@ function getApiKey() {
 }
 
 async function klaviyoGet(path: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://a.klaviyo.com${path}`, {
+  const res = await fetchWithTimeout(`https://a.klaviyo.com${path}`, {
     headers: {
       Authorization: `Klaviyo-API-Key ${getApiKey()}`,
       revision: API_REVISION,
       Accept: "application/json",
     },
-  });
+  }, 15_000);
 
   if (!res.ok) {
     throw new Error(`Klaviyo API error: ${res.status} ${await res.text()}`);
@@ -22,7 +24,7 @@ async function klaviyoGet(path: string): Promise<Record<string, unknown>> {
 }
 
 async function klaviyoPost(path: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://a.klaviyo.com${path}`, {
+  const res = await fetchWithTimeout(`https://a.klaviyo.com${path}`, {
     method: "POST",
     headers: {
       Authorization: `Klaviyo-API-Key ${getApiKey()}`,
@@ -31,7 +33,7 @@ async function klaviyoPost(path: string, body: unknown): Promise<Record<string, 
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-  });
+  }, 15_000);
 
   if (!res.ok) {
     throw new Error(`Klaviyo API error: ${res.status} ${await res.text()}`);

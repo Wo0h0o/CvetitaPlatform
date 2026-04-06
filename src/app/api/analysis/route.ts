@@ -1,11 +1,15 @@
 import { NextRequest } from "next/server";
 import { analysisPrompts } from "@/lib/prompts";
 import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
+import { requireAuth } from "@/lib/api-auth";
 
 // Using Node.js runtime for env var access; switch to edge on Vercel if needed
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   const { type, country } = await req.json();
 
   const promptFn = analysisPrompts[type];
@@ -19,7 +23,8 @@ export async function POST(req: NextRequest) {
   }
 
   const baseUrl = req.nextUrl.origin;
-  const ctx = await fetchBusinessContext(baseUrl);
+  const cookie = req.headers.get("cookie") || "";
+  const ctx = await fetchBusinessContext(baseUrl, { cookie });
   const businessContext = formatContextForPrompt(ctx);
   const prompt = promptFn(country) + "\n\n" + businessContext;
 

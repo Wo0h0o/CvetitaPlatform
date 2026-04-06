@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFlowDetail } from "@/lib/klaviyo";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ flowId: string }> }
 ) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   if (!process.env.KLAVIYO_API_KEY) {
     return NextResponse.json({ error: "Klaviyo not configured" });
   }

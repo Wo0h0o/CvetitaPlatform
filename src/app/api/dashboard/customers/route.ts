@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchOrdersWithCustomers } from "@/lib/shopify";
 import type { CustomerOrder } from "@/lib/shopify";
+import { requireAuth } from "@/lib/api-auth";
 
 export const maxDuration = 30;
 
@@ -82,7 +83,9 @@ function buildCustomerMap(orders: CustomerOrder[]): Map<number, CustomerData> {
   return map;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const authError = await requireAuth(request);
+  if (authError) return authError;
   const { searchParams } = new URL(request.url);
   const preset = searchParams.get("preset") || "90d";
 

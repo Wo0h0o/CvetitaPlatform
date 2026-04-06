@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getMetaAdSetInsights, fetchAdSetsMeta, actionVal } from "@/lib/meta";
 import type { MetaAdSetInsightRow } from "@/lib/meta";
+import { requireAuth } from "@/lib/api-auth";
 
 const PRESET_MAP: Record<string, string> = {
   today: "today",
@@ -42,7 +43,9 @@ function parseAdSetRow(r: MetaAdSetInsightRow) {
   };
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const authError = await requireAuth(request);
+  if (authError) return authError;
   if (!process.env.META_ACCESS_TOKEN) {
     return NextResponse.json({ error: "Meta Ads not configured" }, { status: 200 });
   }

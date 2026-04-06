@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api-auth";
+import { fetchWithTimeout } from "@/lib/fetch-utils";
 
 const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || "348042832";
 const CLIENT_ID = process.env.GA4_CLIENT_ID;
@@ -11,7 +13,7 @@ async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expires_at - 60_000) {
     return cachedToken.access_token;
   }
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -20,7 +22,7 @@ async function getAccessToken(): Promise<string> {
       refresh_token: REFRESH_TOKEN!,
       grant_type: "refresh_token",
     }),
-  });
+  }, 10_000);
   const data = await res.json();
   cachedToken = { access_token: data.access_token, expires_at: Date.now() + data.expires_in * 1000 };
   return cachedToken.access_token;
@@ -47,13 +49,14 @@ async function runReport(
   };
   if (limit) body.limit = limit;
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
+    15_000
   );
   if (!res.ok) throw new Error(`GA4: ${res.status}`);
   const data = await res.json();
@@ -66,7 +69,10 @@ function daysAgoStr(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
     return NextResponse.json({ error: "GA4 not configured" }, { status: 200 });
   }

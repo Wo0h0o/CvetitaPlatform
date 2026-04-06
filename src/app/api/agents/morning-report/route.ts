@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
+import { requireAuth } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 30;
 
@@ -47,12 +49,18 @@ function sseChunk(data: object): Uint8Array {
 }
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+  const limited = rateLimit(req, { limit: 5, windowMs: 60_000 });
+  if (limited) return limited;
+
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
     return new Response("CLAUDE_API_KEY not configured", { status: 500 });
   }
 
   const baseUrl = req.nextUrl.origin;
+  const cookie = req.headers.get("cookie") || "";
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -61,7 +69,7 @@ export async function POST(req: NextRequest) {
       try {
         send({ t: "status", msg: "Зареждам бизнес данните..." });
 
-        const ctx = await fetchBusinessContext(baseUrl, { shopifyDay: "yesterday" });
+        const ctx = await fetchBusinessContext(baseUrl, { shopifyDay: "yesterday", cookie });
         const businessContext = formatContextForPrompt(ctx, { shopifyLabel: "продажби вчера" });
         const prompt = buildPrompt(businessContext);
 

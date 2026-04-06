@@ -112,3 +112,34 @@ src/providers/           # DataProvider (SWR prefetch with loading screen)
 | Tavily Search | `src/lib/tavily.ts` | Active |
 | Meta Ads | `src/lib/meta.ts` | Active |
 | Google Ads | — | Not yet |
+
+## Security
+
+Full docs: `docs/security/README.md`
+
+### Правила за нов API route
+```ts
+import { requireAuth } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit"; // за agent routes
+
+export async function GET(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+  // ... route logic
+}
+```
+
+### Правила за external API calls
+```ts
+import { fetchWithTimeout } from "@/lib/fetch-utils";
+
+// НИКОГА: const res = await fetch(url);
+// ВИНАГИ: const res = await fetchWithTimeout(url, options, TIMEOUT_MS);
+```
+
+### Key rules
+- Secrets: никога в код — само Vercel env vars / `.env.local`
+- Logging: `logger.error()`, не `console.error()`. Никога tokens в логове.
+- Cookie forwarding: ако agent route прави вътрешни fetch calls → forward cookies
+- CSP: при нов external service → update `next.config.ts`
+- Agent definitions: `.agents/` — 5 специализирани агента

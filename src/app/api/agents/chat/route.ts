@@ -1,4 +1,7 @@
 import { NextRequest } from "next/server";
+import { requireAuth } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit";
+import { fetchWithTimeout } from "@/lib/fetch-utils";
 
 export const maxDuration = 120;
 
@@ -141,14 +144,16 @@ const SYSTEM_PROMPT = `Ти си Команден Чат — централен 
 async function executeTool(
   name: string,
   input: Record<string, string>,
-  baseUrl: string
+  baseUrl: string,
+  cookie: string
 ): Promise<string> {
+  const f = (url: string) => fetchWithTimeout(url, { headers: { cookie } }, 8_000).then((r) => r.json()).catch(() => ({ error: "API timeout" }));
   try {
     switch (name) {
       case "get_sales": {
         const [kpis, products] = await Promise.all([
-          fetch(`${baseUrl}/api/dashboard/kpis`).then((r) => r.json()),
-          fetch(`${baseUrl}/api/dashboard/top-products`).then((r) => r.json()),
+          f(`${baseUrl}/api/dashboard/kpis`),
+          f(`${baseUrl}/api/dashboard/top-products`),
         ]);
         return JSON.stringify({ kpis, topProducts: products });
       }
@@ -156,36 +161,36 @@ async function executeTool(
         const now = new Date();
         const from = input.from || new Date(now.getTime() - 30 * 86400000).toISOString().split("T")[0];
         const to = input.to || now.toISOString().split("T")[0];
-        const data = await fetch(`${baseUrl}/api/dashboard/products-analytics?from=${from}&to=${to}`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/products-analytics?from=${from}&to=${to}`);
         return JSON.stringify(data);
       }
       case "get_traffic": {
-        const data = await fetch(`${baseUrl}/api/dashboard/traffic`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/traffic`);
         return JSON.stringify(data);
       }
       case "get_email": {
         const period = input.period || "30d";
-        const data = await fetch(`${baseUrl}/api/dashboard/email?preset=${period}`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/email?preset=${period}`);
         return JSON.stringify(data);
       }
       case "get_ads_overview": {
         const period = input.period || "7d";
-        const data = await fetch(`${baseUrl}/api/dashboard/ads?preset=${period}`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/ads?preset=${period}`);
         return JSON.stringify(data);
       }
       case "get_ads_detail": {
         const period = input.period || "7d";
-        const data = await fetch(`${baseUrl}/api/dashboard/ads/individual?preset=${period}`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/ads/individual?preset=${period}`);
         return JSON.stringify(data);
       }
       case "get_adsets": {
         const period = input.period || "7d";
-        const data = await fetch(`${baseUrl}/api/dashboard/ads/adsets?preset=${period}`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/ads/adsets?preset=${period}`);
         return JSON.stringify(data);
       }
       case "get_customers": {
         const period = input.period || "90d";
-        const data = await fetch(`${baseUrl}/api/dashboard/customers?preset=${period}`).then((r) => r.json());
+        const data = await f(`${baseUrl}/api/dashboard/customers?preset=${period}`);
         return JSON.stringify(data);
       }
       default:
@@ -373,6 +378,11 @@ async function streamClaudeResponse(
 // ---- Main route ----
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+  const limited = rateLimit(req, { limit: 20, windowMs: 60_000 });
+  if (limited) return limited;
+
   const { messages: clientMessages } = (await req.json()) as {
     messages: { role: string; content: string }[];
   };
@@ -383,6 +393,7 @@ export async function POST(req: NextRequest) {
   }
 
   const baseUrl = req.nextUrl.origin;
+  const cookie = req.headers.get("cookie") || "";
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -416,7 +427,7 @@ export async function POST(req: NextRequest) {
           // Execute all tools in parallel
           const toolResults = await Promise.all(
             customToolUses.map(async (toolUse) => {
-              const toolResult = await executeTool(toolUse.name, toolUse.input || {}, baseUrl);
+              const toolResult = await executeTool(toolUse.name, toolUse.input || {}, baseUrl, cookie);
               return {
                 type: "tool_result" as const,
                 tool_use_id: toolUse.id,

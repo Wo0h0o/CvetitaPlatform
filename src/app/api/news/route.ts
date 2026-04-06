@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api-auth";
 
 // Simple in-memory cache
 let cache: { data: unknown; expires: number } | null = null;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
   // Return cached if fresh (1 hour)
   if (cache && Date.now() < cache.expires) {
     return NextResponse.json(cache.data);

@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { fetchProductCatalog, searchProducts, fetchProductByHandle, stripHtml, type ShopifyProduct } from "@/lib/shopify";
 import { LANGUAGE_CONFIGS, type LanguageConfig } from "@/lib/ad-creator-languages";
+import { requireAuth } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 120;
 
@@ -493,6 +495,11 @@ async function runEditor(apiKey: string, generatedText: string, send: (data: obj
 // ---- Main route ----
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+  const limited = rateLimit(req, { limit: 10, windowMs: 60_000 });
+  if (limited) return limited;
+
   let body;
   try {
     body = await req.json();

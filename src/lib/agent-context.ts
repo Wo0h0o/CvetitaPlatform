@@ -1,5 +1,6 @@
 // Fetches real business data and formats it as context for AI agents
 // This is injected into every agent's system prompt automatically
+import { fetchWithTimeout } from "./fetch-utils";
 
 interface BusinessContext {
   shopify: {
@@ -62,16 +63,20 @@ interface BusinessContext {
 
 export async function fetchBusinessContext(
   baseUrl: string,
-  options?: { shopifyDay?: "yesterday" }
+  options?: { shopifyDay?: "yesterday"; cookie?: string }
 ): Promise<BusinessContext> {
   const dayParam = options?.shopifyDay === "yesterday" ? "?day=yesterday" : "";
+  const headers: Record<string, string> = {};
+  if (options?.cookie) headers.cookie = options.cookie;
+
+  const f = (url: string) => fetchWithTimeout(url, { headers }, 8_000).then((r) => r.json()).catch(() => null);
   const results = await Promise.allSettled([
-    fetch(`${baseUrl}/api/dashboard/kpis${dayParam}`).then((r) => r.json()),
-    fetch(`${baseUrl}/api/dashboard/top-products${dayParam}`).then((r) => r.json()),
-    fetch(`${baseUrl}/api/dashboard/email?preset=30d`).then((r) => r.json()),
-    fetch(`${baseUrl}/api/dashboard/traffic`).then((r) => r.json()),
-    fetch(`${baseUrl}/api/dashboard/ads?preset=7d`).then((r) => r.json()),
-    fetch(`${baseUrl}/api/dashboard/customers?preset=90d`).then((r) => r.json()),
+    f(`${baseUrl}/api/dashboard/kpis${dayParam}`),
+    f(`${baseUrl}/api/dashboard/top-products${dayParam}`),
+    f(`${baseUrl}/api/dashboard/email?preset=30d`),
+    f(`${baseUrl}/api/dashboard/traffic`),
+    f(`${baseUrl}/api/dashboard/ads?preset=7d`),
+    f(`${baseUrl}/api/dashboard/customers?preset=90d`),
   ]);
 
   const kpis = results[0].status === "fulfilled" ? results[0].value : null;

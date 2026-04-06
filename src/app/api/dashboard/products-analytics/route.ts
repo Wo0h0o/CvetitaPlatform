@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseDateParams } from "@/lib/api-utils";
 import { fetchAllProducts } from "@/lib/shopify";
+import { requireAuth } from "@/lib/api-auth";
 
 const STORE_URL = process.env.SHOPIFY_STORE_URL!;
 const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -136,6 +137,9 @@ function analyzeOrders(orders: Order[], catalog: Map<string, ProductCatalogItem>
 }
 
 export async function GET(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   try {
     const dates = parseDateParams(req);
 

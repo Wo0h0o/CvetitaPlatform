@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseDateParams } from "@/lib/api-utils";
 import { fetchProductByHandle } from "@/lib/shopify";
+import { requireAuth } from "@/lib/api-auth";
 
 const STORE_URL = process.env.SHOPIFY_STORE_URL!;
 const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN!;
@@ -51,6 +52,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ handle: string }> }
 ) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   try {
     const { handle } = await params;
     const dates = parseDateParams(req);

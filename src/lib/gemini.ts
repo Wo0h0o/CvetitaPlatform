@@ -1,3 +1,6 @@
+import { fetchWithTimeout } from "./fetch-utils";
+import { logger } from "./logger";
+
 const GEMINI_MODEL = "gemini-3-pro-image-preview";
 const GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-image-preview";
 
@@ -25,7 +28,7 @@ async function callGemini(
   aspectRatio: string,
   apiKey: string
 ): Promise<{ image: string; mimeType: string } | null> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
@@ -37,12 +40,13 @@ async function callGemini(
           imageConfig: { aspectRatio },
         },
       }),
-    }
+    },
+    60_000
   );
 
   if (!res.ok) {
     const err = await res.text();
-    console.error(`Gemini API error (${model}):`, res.status, err);
+    logger.error("Gemini API error", { service: "gemini", model, status: res.status });
     return null;
   }
 
@@ -62,7 +66,7 @@ async function callWithFallback(
   if (result) return result;
 
   // Fallback
-  console.warn(`Primary model ${GEMINI_MODEL} failed, falling back to ${GEMINI_FALLBACK_MODEL}`);
+  logger.warn("Gemini primary model failed, using fallback", { service: "gemini", primary: GEMINI_MODEL, fallback: GEMINI_FALLBACK_MODEL });
   const fallback = await callGemini(GEMINI_FALLBACK_MODEL, contents, aspectRatio, apiKey);
   if (fallback) return fallback;
 

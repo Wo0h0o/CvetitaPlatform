@@ -1,7 +1,14 @@
+import { fetchWithTimeout } from "./fetch-utils";
+import { logger } from "./logger";
+
 const API_VERSION = "2024-10";
+const SHOPIFY_TIMEOUT = 15_000;
 
 function getStoreUrl() { return process.env.SHOPIFY_STORE_URL || ""; }
 function getAccessToken() { return process.env.SHOPIFY_ACCESS_TOKEN || ""; }
+function shopifyFetch(url: string) {
+  return fetchWithTimeout(url, { headers: { "X-Shopify-Access-Token": getAccessToken() } }, SHOPIFY_TIMEOUT);
+}
 
 interface ShopifyOrder {
   id: number;
@@ -25,12 +32,10 @@ async function fetchOrders(dateMin: string, dateMax: string): Promise<ShopifyOrd
     }).toString();
 
   while (url) {
-    const res: Response = await fetch(url, {
-      headers: { "X-Shopify-Access-Token": getAccessToken() },
-    });
+    const res: Response = await shopifyFetch(url);
 
     if (!res.ok) {
-      console.error("Shopify API error:", res.status, await res.text());
+      logger.error("Shopify API error", { service: "shopify", status: res.status });
       break;
     }
 
@@ -122,9 +127,7 @@ export async function fetchAllProducts(): Promise<ShopifyProduct[]> {
     `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?limit=250&fields=id,title,handle,image,product_type,vendor,status`;
 
   while (url) {
-    const res: Response = await fetch(url, {
-      headers: { "X-Shopify-Access-Token": getAccessToken() },
-    });
+    const res: Response = await shopifyFetch(url);
     if (!res.ok) break;
     const data = await res.json();
     products.push(...(data.products || []));
@@ -137,9 +140,8 @@ export async function fetchAllProducts(): Promise<ShopifyProduct[]> {
 }
 
 export async function fetchProductByHandle(handle: string): Promise<ShopifyProduct | null> {
-  const res = await fetch(
-    `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?handle=${encodeURIComponent(handle)}`,
-    { headers: { "X-Shopify-Access-Token": getAccessToken() } }
+  const res = await shopifyFetch(
+    `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?handle=${encodeURIComponent(handle)}`
   );
   if (!res.ok) return null;
   const data = await res.json();
@@ -186,9 +188,7 @@ export async function fetchProductCatalog(): Promise<ShopifyProduct[]> {
     `https://${getStoreUrl()}/admin/api/${API_VERSION}/products.json?limit=250&fields=id,title,handle,body_html,vendor,product_type,tags,status,image,images,variants`;
 
   while (url) {
-    const res: Response = await fetch(url, {
-      headers: { "X-Shopify-Access-Token": getAccessToken() },
-    });
+    const res: Response = await shopifyFetch(url);
     if (!res.ok) break;
     const data = await res.json();
     products.push(...(data.products || []));
@@ -247,11 +247,9 @@ export async function fetchOrdersWithCustomers(dateMin: string, dateMax: string)
     }).toString();
 
   while (url) {
-    const res: Response = await fetch(url, {
-      headers: { "X-Shopify-Access-Token": getAccessToken() },
-    });
+    const res: Response = await shopifyFetch(url);
     if (!res.ok) {
-      console.error("Shopify customers API error:", res.status, await res.text());
+      logger.error("Shopify customers API error", { service: "shopify", status: res.status });
       break;
     }
     const data = await res.json();

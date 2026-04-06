@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getKlaviyoMetrics } from "@/lib/klaviyo";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: NextRequest) {
+  const authError = await requireAuth(request);
+  if (authError) return authError;
+
   if (!process.env.KLAVIYO_API_KEY) {
     return NextResponse.json({ error: "Klaviyo not configured" });
   }

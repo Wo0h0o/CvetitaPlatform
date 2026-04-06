@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
 import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
+import { requireAuth } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit";
+import { fetchWithTimeout } from "@/lib/fetch-utils";
 
 export const maxDuration = 60;
 
@@ -168,6 +171,11 @@ function sseChunk(data: object): Uint8Array {
 }
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+  const limited = rateLimit(req, { limit: 5, windowMs: 60_000 });
+  if (limited) return limited;
+
   const { messages } = (await req.json()) as {
     messages: { role: string; content: string }[];
   };
@@ -178,6 +186,7 @@ export async function POST(req: NextRequest) {
   }
 
   const baseUrl = req.nextUrl.origin;
+  const cookie = req.headers.get("cookie") || "";
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -187,11 +196,12 @@ export async function POST(req: NextRequest) {
         // 1. Fetch ads data + business context in parallel
         send({ t: "status", msg: "Зареждам рекламните данни..." });
 
+        const f = (url: string) => fetchWithTimeout(url, { headers: { cookie } }, 8_000).then((r) => r.json()).catch(() => ({ error: "API timeout" }));
         const [adsRes, individualRes, adsetsRes, ctx] = await Promise.all([
-          fetch(`${baseUrl}/api/dashboard/ads?preset=7d`).then((r) => r.json()),
-          fetch(`${baseUrl}/api/dashboard/ads/individual?preset=7d`).then((r) => r.json()),
-          fetch(`${baseUrl}/api/dashboard/ads/adsets?preset=7d`).then((r) => r.json()),
-          fetchBusinessContext(baseUrl),
+          f(`${baseUrl}/api/dashboard/ads?preset=7d`),
+          f(`${baseUrl}/api/dashboard/ads/individual?preset=7d`),
+          f(`${baseUrl}/api/dashboard/ads/adsets?preset=7d`),
+          fetchBusinessContext(baseUrl, { cookie }),
         ]);
 
         if (adsRes.error || individualRes.error) {

@@ -1,3 +1,6 @@
+import { fetchWithTimeout } from "./fetch-utils";
+import { logger } from "./logger";
+
 const API_VERSION = "v21.0";
 const BASE = `https://graph.facebook.com/${API_VERSION}`;
 
@@ -22,14 +25,16 @@ async function getToken(): Promise<string> {
   if (appId && appSecret) {
     try {
       const currentToken = cachedToken?.token || envToken;
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `https://graph.facebook.com/${API_VERSION}/oauth/access_token?` +
         new URLSearchParams({
           grant_type: "fb_exchange_token",
           client_id: appId,
           client_secret: appSecret,
           fb_exchange_token: currentToken,
-        })
+        }),
+        {},
+        10_000
       );
       if (res.ok) {
         const data: { access_token?: string } = await res.json();
@@ -54,14 +59,16 @@ export async function refreshToken(): Promise<{ token: string; expiresIn: number
 
   if (!appId || !appSecret || !currentToken) return null;
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://graph.facebook.com/${API_VERSION}/oauth/access_token?` +
     new URLSearchParams({
       grant_type: "fb_exchange_token",
       client_id: appId,
       client_secret: appSecret,
       fb_exchange_token: currentToken,
-    })
+    }),
+    {},
+    10_000
   );
 
   if (!res.ok) return null;
@@ -113,10 +120,10 @@ async function metaFetch<T>(path: string, params: Record<string, string> = {}): 
   url.searchParams.set("access_token", token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout(url.toString(), {}, 15_000);
   if (!res.ok) {
     const body = await res.text();
-    console.error("Meta API error:", res.status, body);
+    logger.error("Meta API error", { service: "meta", status: res.status });
     throw new Error(`Meta API: ${res.status}`);
   }
   return res.json();
@@ -141,7 +148,7 @@ async function fetchCampaigns(): Promise<MetaCampaign[]> {
     }).toString();
 
   while (url) {
-    const res: Response = await fetch(url);
+    const res: Response = await fetchWithTimeout(url, {}, 15_000);
     if (!res.ok) break;
     const data: { data?: MetaCampaign[]; paging?: { next?: string } } = await res.json();
     all.push(...(data.data || []));
@@ -260,7 +267,7 @@ export async function getMetaAdSetInsights(datePreset: string = "last_7d"): Prom
     }).toString();
 
   while (url) {
-    const res: Response = await fetch(url);
+    const res: Response = await fetchWithTimeout(url, {}, 15_000);
     if (!res.ok) break;
     const data: { data?: MetaAdSetInsightRow[]; paging?: { next?: string } } = await res.json();
     all.push(...(data.data || []));
@@ -281,7 +288,7 @@ export async function fetchAdSetsMeta(): Promise<MetaAdSetMeta[]> {
     }).toString();
 
   while (url) {
-    const res: Response = await fetch(url);
+    const res: Response = await fetchWithTimeout(url, {}, 15_000);
     if (!res.ok) break;
     const data: { data?: MetaAdSetMeta[]; paging?: { next?: string } } = await res.json();
     all.push(...(data.data || []));
@@ -318,7 +325,7 @@ export async function getMetaAdInsights(datePreset: string = "last_7d", adStatus
     new URLSearchParams(params).toString();
 
   while (url) {
-    const res: Response = await fetch(url);
+    const res: Response = await fetchWithTimeout(url, {}, 15_000);
     if (!res.ok) break;
     const data: { data?: MetaAdInsightRow[]; paging?: { next?: string } } = await res.json();
     all.push(...(data.data || []));
@@ -380,7 +387,7 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
     url.searchParams.set("ids", chunk.join(","));
     url.searchParams.set("fields", "id,name,effective_status,creative{thumbnail_url,image_url,body,title,video_id,object_story_spec,asset_feed_spec}");
     url.searchParams.set("access_token", token);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString(), {}, 15_000);
     if (!res.ok) continue;
     const data: Record<string, RawCreativeData> = await res.json();
     for (const [id, raw] of Object.entries(data)) rawMap.set(id, raw);
@@ -413,7 +420,7 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
       url.searchParams.set("ids", chunk.join(","));
       url.searchParams.set("fields", "source,picture");
       url.searchParams.set("access_token", token);
-      const res = await fetch(url.toString());
+      const res = await fetchWithTimeout(url.toString(), {}, 15_000);
       if (!res.ok) continue;
       const data: Record<string, { source?: string; picture?: string }> = await res.json();
       for (const [vid, info] of Object.entries(data)) {
@@ -433,7 +440,7 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
     url.searchParams.set("hashes", JSON.stringify(hashArr));
     url.searchParams.set("fields", "url,hash");
     url.searchParams.set("access_token", token);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString(), {}, 15_000);
     if (res.ok) {
       const data: { data?: { hash: string; url: string }[] } = await res.json();
       for (const img of data.data || []) hashUrls.set(img.hash, img.url);
@@ -486,14 +493,14 @@ export async function getMetaAdCreatives(adIds: string[]): Promise<Map<string, R
 
 export async function updateMetaAdStatus(adId: string, status: "ACTIVE" | "PAUSED"): Promise<boolean> {
   const token = await getToken();
-  const res = await fetch(`${BASE}/${adId}`, {
+  const res = await fetchWithTimeout(`${BASE}/${adId}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ status, access_token: token }),
-  });
+  }, 10_000);
   if (!res.ok) {
     const body = await res.text();
-    console.error("Meta status update error:", res.status, body);
+    logger.error("Meta status update error", { service: "meta", status: res.status });
     return false;
   }
   return true;

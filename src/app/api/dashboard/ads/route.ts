@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getMetaOverview, getMetaCampaignInsights } from "@/lib/meta";
+import { requireAuth } from "@/lib/api-auth";
 
 const PRESET_MAP: Record<string, string> = {
   today: "today",
@@ -12,7 +13,10 @@ const PRESET_MAP: Record<string, string> = {
   last_month: "last_month",
 };
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const authError = await requireAuth(request);
+  if (authError) return authError;
+
   if (!process.env.META_ACCESS_TOKEN) {
     return NextResponse.json({ error: "Meta Ads not configured" }, { status: 200 });
   }

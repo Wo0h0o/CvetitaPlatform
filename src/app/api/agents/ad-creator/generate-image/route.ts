@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateImage, generateImageWithReference } from "@/lib/gemini";
 import { LANGUAGE_CONFIGS } from "@/lib/ad-creator-languages";
+import { requireAuth } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 120;
 
@@ -204,6 +206,11 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 }
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+  const limited = rateLimit(req, { limit: 10, windowMs: 60_000 });
+  if (limited) return limited;
+
   try {
     const { prompt, format, productImageUrl, creativeType, headline, language, archetype } = await req.json();
 

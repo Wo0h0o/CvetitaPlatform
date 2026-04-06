@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "./fetch-utils";
+
 export interface TavilyResult {
   title: string;
   url: string;
@@ -22,7 +24,7 @@ export async function tavilySearch(query: string): Promise<TavilyResponse> {
     };
   }
 
-  const res = await fetch("https://api.tavily.com/search", {
+  const res = await fetchWithTimeout("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -35,7 +37,7 @@ export async function tavilySearch(query: string): Promise<TavilyResponse> {
       include_domains: [],
       exclude_domains: [],
     }),
-  });
+  }, 10_000);
 
   if (!res.ok) {
     const err = await res.text();

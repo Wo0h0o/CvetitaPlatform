@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { refreshToken } from "@/lib/meta";
+import { requireCronSecret } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  // Verify cron secret (Vercel sets this header for cron jobs)
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const cronError = requireCronSecret(request);
+  if (cronError) return cronError;
 
   try {
     const result = await refreshToken();

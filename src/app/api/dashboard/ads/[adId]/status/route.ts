@@ -1,10 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { updateMetaAdStatus } from "@/lib/meta";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ adId: string }> }
 ) {
+  const authError = await requireAuth(request);
+  if (authError) return authError;
+
   if (!process.env.META_ACCESS_TOKEN) {
     return NextResponse.json({ error: "Meta Ads not configured" }, { status: 400 });
   }
