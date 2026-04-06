@@ -323,7 +323,7 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
               model: "claude-opus-4-6",
-              max_tokens: 16384,
+              max_tokens: 32000,
               stream: true,
               system: systemPrompt,
               messages: messages.map((m) => ({
