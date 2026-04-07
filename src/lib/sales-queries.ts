@@ -268,3 +268,222 @@ function weekKey(dateStr: string): string {
 function monthKey(dateStr: string): string {
   return dateStr.slice(0, 7) + "-01"; // YYYY-MM-01
 }
+
+// ---------------------------------------------------------------------------
+// Top Products (cross-store, aggregated from daily_aggregates.top_products)
+// ---------------------------------------------------------------------------
+
+export interface TopProduct {
+  title: string;
+  quantity: number;
+  revenue: number;
+}
+
+export async function fetchTopProducts(
+  schemas: StoreSchema[],
+  from: string,
+  to: string,
+  limit: number = 10
+): Promise<TopProduct[]> {
+  const allResults = await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin
+        .schema(s.schemaName)
+        .from("daily_aggregates")
+        .select("top_products")
+        .gte("order_date", from)
+        .lte("order_date", to);
+
+      if (error) {
+        logger.error("Failed to fetch top products", {
+          schema: s.schemaName,
+          error: error.message,
+        });
+        return [];
+      }
+
+      return (data ?? []) as { top_products: TopProduct[] | null }[];
+    })
+  );
+
+  // Merge by title across all days and stores
+  const byTitle = new Map<string, { quantity: number; revenue: number }>();
+
+  for (const rows of allResults) {
+    for (const row of rows) {
+      if (!row.top_products) continue;
+      for (const p of row.top_products) {
+        const existing = byTitle.get(p.title) ?? { quantity: 0, revenue: 0 };
+        existing.quantity += Number(p.quantity);
+        existing.revenue += Number(p.revenue);
+        byTitle.set(p.title, existing);
+      }
+    }
+  }
+
+  return Array.from(byTitle.entries())
+    .map(([title, vals]) => ({ title, ...vals }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, limit);
+}
+
+// ---------------------------------------------------------------------------
+// Store Performance (per-store KPIs for multi-store comparison table)
+// ---------------------------------------------------------------------------
+
+export interface StorePerformance {
+  storeId: string;
+  storeName: string;
+  marketCode: string;
+  revenue: number;
+  orders: number;
+  aov: number;
+  revenueChange: number | null;
+  ordersChange: number | null;
+}
+
+export async function fetchStorePerformance(
+  schemas: StoreSchema[],
+  from: string,
+  to: string,
+  compFrom: string,
+  compTo: string
+): Promise<StorePerformance[]> {
+  const results = await Promise.all(
+    schemas.map(async (s) => {
+      const [currentRows, compRows] = await Promise.all([
+        fetchAggregatesForPeriod(s, from, to),
+        fetchAggregatesForPeriod(s, compFrom, compTo),
+      ]);
+
+      const current = sumAggRows(currentRows);
+      const comp = sumAggRows(compRows);
+      const aov = current.orders > 0 ? current.revenue / current.orders : 0;
+
+      return {
+        storeId: s.storeId,
+        storeName: s.name,
+        marketCode: s.marketCode,
+        revenue: current.revenue,
+        orders: current.orders,
+        aov,
+        revenueChange: pctChange(current.revenue, comp.revenue),
+        ordersChange: pctChange(current.orders, comp.orders),
+      };
+    })
+  );
+
+  return results.sort((a, b) => b.revenue - a.revenue);
+}
+
+// ---------------------------------------------------------------------------
+// Store Detail: Orders list (latest state per order)
+// ---------------------------------------------------------------------------
+
+export interface OrderRow {
+  shopify_order_id: number;
+  shopify_order_number: string;
+  email: string | null;
+  financial_status: string;
+  fulfillment_status: string | null;
+  total_price: number;
+  total_refunded: number;
+  shopify_created_at: string;
+}
+
+export async function fetchStoreOrders(
+  schema: StoreSchema,
+  from: string,
+  to: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<{ orders: OrderRow[]; total: number }> {
+  // Count total orders in range (latest state only, non-cancelled)
+  // We use a raw RPC approach since DISTINCT ON isn't directly supported by PostgREST.
+  // Instead we fetch orders ordered by received_at DESC and deduplicate client-side.
+  const { data: rawOrders, error } = await supabaseAdmin
+    .schema(schema.schemaName)
+    .from("orders")
+    .select(
+      "shopify_order_id, shopify_order_number, email, financial_status, fulfillment_status, total_price, total_refunded, shopify_created_at, received_at"
+    )
+    .gte("shopify_created_at", `${from}T00:00:00`)
+    .lte("shopify_created_at", `${to}T23:59:59`)
+    .order("received_at", { ascending: false });
+
+  if (error) {
+    logger.error("Failed to fetch store orders", {
+      schema: schema.schemaName,
+      error: error.message,
+    });
+    return { orders: [], total: 0 };
+  }
+
+  // Deduplicate: keep only the latest entry per shopify_order_id
+  const seen = new Set<number>();
+  const deduped: OrderRow[] = [];
+  for (const row of rawOrders ?? []) {
+    const r = row as OrderRow & { received_at: string };
+    if (seen.has(r.shopify_order_id)) continue;
+    seen.add(r.shopify_order_id);
+    deduped.push({
+      shopify_order_id: r.shopify_order_id,
+      shopify_order_number: r.shopify_order_number,
+      email: r.email,
+      financial_status: r.financial_status,
+      fulfillment_status: r.fulfillment_status,
+      total_price: Number(r.total_price),
+      total_refunded: Number(r.total_refunded),
+      shopify_created_at: r.shopify_created_at,
+    });
+  }
+
+  // Sort by created date descending
+  deduped.sort(
+    (a, b) =>
+      new Date(b.shopify_created_at).getTime() -
+      new Date(a.shopify_created_at).getTime()
+  );
+
+  return {
+    orders: deduped.slice(offset, offset + limit),
+    total: deduped.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Store Detail: Connections / metadata
+// ---------------------------------------------------------------------------
+
+export async function fetchStoreConnections(storeId: string) {
+  const { data: store, error: storeError } = await supabaseAdmin
+    .from("stores")
+    .select("*")
+    .eq("id", storeId)
+    .single();
+
+  if (storeError || !store) {
+    throw new Error("Store not found");
+  }
+
+  const { data: creds, error: credsError } = await supabaseAdmin
+    .from("store_credentials")
+    .select("service, status, connected_at")
+    .eq("store_id", storeId);
+
+  if (credsError) {
+    logger.error("Failed to fetch store credentials", {
+      storeId,
+      error: credsError.message,
+    });
+  }
+
+  return {
+    store: store as StoreRow,
+    connections: (creds ?? []).map((c: { service: string; status: string; connected_at: string }) => ({
+      service: c.service,
+      status: c.status,
+      connectedAt: c.connected_at,
+    })),
+  };
+}

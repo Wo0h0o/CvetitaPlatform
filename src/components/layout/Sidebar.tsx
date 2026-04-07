@@ -64,7 +64,15 @@ const navSections: NavSection[] = [
   {
     label: "Система",
     items: [
-      { href: "/settings", icon: Settings, label: "Настройки" },
+      {
+        href: "/settings",
+        icon: Settings,
+        label: "Настройки",
+        children: [
+          { href: "/settings", label: "Профил" },
+          { href: "/settings/stores", label: "Магазини" },
+        ],
+      },
     ],
   },
 ];
