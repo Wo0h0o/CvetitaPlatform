@@ -53,7 +53,7 @@ export function AreaLineChart({
       empty={!data.length}
       className={className}
     >
-      <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 4 }}>
         <defs>
           <linearGradient id={`grad-${yKey}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={fill} stopOpacity={0.2} />
@@ -78,7 +78,12 @@ export function AreaLineChart({
           tick={{ fontSize: 11, fill: c.text3 }}
           tickLine={false}
           axisLine={false}
-          tickFormatter={(v) => formatValue(Number(v))}
+          width={50}
+          tickFormatter={(v) => {
+            const num = Number(v);
+            if (num >= 1000) return `${(num / 1000).toFixed(0)}k`;
+            return formatValue(num);
+          }}
         />
         <Tooltip
           contentStyle={{

@@ -45,7 +45,7 @@ export function ChannelBreakdown() {
         </span>
       }
       loading={isLoading}
-      height={200}
+      height={260}
       colors={CHANNEL_COLORS}
     />
   );

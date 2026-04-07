@@ -102,7 +102,7 @@ export function ChartContainer({
   return (
     <Card className={`flex flex-col ${className}`}>
       {title && <CardHeader action={action}>{title}</CardHeader>}
-      <CardBody className="flex-1">
+      <CardBody className="flex-1 overflow-visible">
         <ResponsiveContainer width="100%" height={height}>
           {children as React.ReactElement}
         </ResponsiveContainer>
