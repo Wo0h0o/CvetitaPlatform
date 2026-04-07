@@ -18,6 +18,7 @@ import {
   Zap,
   ArrowRight,
 } from "lucide-react";
+import { BarChartCard } from "@/components/charts";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -215,6 +216,20 @@ export default function EmailPage() {
           sub={`${(data?.totalEmails || 0).toLocaleString("bg-BG")} имейла изпратени`}
         />
       </div>
+
+      {/* Flow Revenue Chart */}
+      {filteredFlows.length > 0 && (
+        <BarChartCard
+          data={filteredFlows.slice(0, 8).map((f) => ({ name: f.name.length > 25 ? f.name.slice(0, 25) + "..." : f.name, revenue: f.revenue }))}
+          xKey="name"
+          yKey="revenue"
+          title="Flows по Revenue"
+          height={200}
+          formatValue={(v) => `${v.toFixed(2)} EUR`}
+          className="mb-4"
+          horizontal
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Campaigns */}

@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { ChangeBadge } from "@/components/shared/Badge";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
+import { AreaLineChart } from "@/components/charts";
 import { useDateRange } from "@/hooks/useDateRange";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
@@ -120,9 +121,6 @@ export default function ProductsPage() {
 
   const s = data?.summary;
   const ch = data?.changes;
-  const maxRevenue = data?.timeSeries?.length
-    ? Math.max(...data.timeSeries.map((d) => d.revenue))
-    : 0;
 
   return (
     <>
@@ -145,33 +143,17 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Revenue Timeline */}
+      {/* Revenue Timeline — Real Chart */}
       {data?.timeSeries && data.timeSeries.length > 1 && (
-        <Card className="mb-4">
-          <CardHeader>Дневен приход</CardHeader>
-          <CardBody>
-            <div className="flex items-end gap-[2px] h-32">
-              {data.timeSeries.map((d) => {
-                const pct = maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0;
-                return (
-                  <div
-                    key={d.date}
-                    className="flex-1 bg-accent/20 hover:bg-accent/40 rounded-t transition-colors relative group"
-                    style={{ height: `${Math.max(pct, 2)}%` }}
-                  >
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-text text-surface text-[10px] px-2 py-1 rounded whitespace-nowrap z-10">
-                      {d.date}: {d.revenue} EUR
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-between mt-2 text-[11px] text-text-2">
-              <span>{data.timeSeries[0]?.date}</span>
-              <span>{data.timeSeries[data.timeSeries.length - 1]?.date}</span>
-            </div>
-          </CardBody>
-        </Card>
+        <AreaLineChart
+          data={data.timeSeries}
+          xKey="date"
+          yKey="revenue"
+          title="Дневен приход"
+          height={200}
+          formatValue={(v) => `${v.toFixed(0)} EUR`}
+          className="mb-4"
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

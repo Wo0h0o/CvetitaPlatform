@@ -7,6 +7,7 @@ import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { Users, MousePointerClick, Eye, ShoppingCart, Monitor, Smartphone, Tablet, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { DonutChart } from "@/components/charts";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -139,35 +140,16 @@ export default function TrafficPage() {
           </CardBody>
         </Card>
 
-        {/* Devices */}
-        <Card>
-          <CardHeader>Устройства</CardHeader>
-          <CardBody>
-            <div className="space-y-4">
-              {data?.devices?.map((d) => {
-                const Icon = deviceIcons[d.device] || Monitor;
-                const devTotal = data?.devices?.reduce((s, x) => s + x.sessions, 0) || 1;
-                const pct = (d.sessions / devTotal) * 100;
-                return (
-                  <div key={d.device} className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-surface-2 flex items-center justify-center flex-shrink-0">
-                      <Icon size={18} className="text-text-2" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center mb-0.5">
-                        <span className="text-[13px] font-medium text-text capitalize">{d.device}</span>
-                        <span className="text-[13px] font-semibold text-text">{pct.toFixed(0)}%</span>
-                      </div>
-                      <div className="text-[12px] text-text-2">
-                        {d.sessions.toLocaleString("bg-BG")} сесии / {d.users.toLocaleString("bg-BG")} потр.
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardBody>
-        </Card>
+        {/* Devices — Donut Chart */}
+        <DonutChart
+          data={(data?.devices || []).map((d) => ({ device: d.device.charAt(0).toUpperCase() + d.device.slice(1), sessions: d.sessions }))}
+          nameKey="device"
+          valueKey="sessions"
+          title="Устройства"
+          height={220}
+          colors={["#007aff", "#22c55e", "#ff9500"]}
+          formatValue={(v) => `${v.toLocaleString("bg-BG")} сесии`}
+        />
       </div>
 
       {/* Top Pages */}

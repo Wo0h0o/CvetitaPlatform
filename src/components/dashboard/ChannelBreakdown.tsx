@@ -1,8 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { Card, CardHeader, CardBody } from "@/components/shared/Card";
-import { Skeleton } from "@/components/shared/Skeleton";
+import { DonutChart } from "@/components/charts";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -11,16 +10,7 @@ interface TrafficData {
   error?: string;
 }
 
-const channelColors: Record<string, string> = {
-  "Organic Search": "bg-accent",
-  "Direct": "bg-blue",
-  "Paid Search": "bg-orange",
-  "Organic Social": "bg-purple-500",
-  "Paid Social": "bg-red",
-  "Email": "bg-blue",
-  "Referral": "bg-orange",
-  "Display": "bg-red",
-};
+const CHANNEL_COLORS = ["#22c55e", "#007aff", "#ff9500", "#8b5cf6", "#ff3b30", "#06b6d4"];
 
 export function ChannelBreakdown() {
   const { data, isLoading } = useSWR<TrafficData>(
@@ -29,68 +19,34 @@ export function ChannelBreakdown() {
     { revalidateOnFocus: false }
   );
 
-  if (isLoading) {
+  if (!isLoading && (data?.error || !data?.channels?.length)) {
     return (
-      <Card>
-        <CardBody><Skeleton className="h-40 w-full" /></CardBody>
-      </Card>
+      <DonutChart
+        data={[]}
+        nameKey="channel"
+        valueKey="sessions"
+        title="Канали"
+      />
     );
   }
 
-  if (data?.error || !data?.channels?.length) {
-    return (
-      <Card>
-        <CardHeader>Канали</CardHeader>
-        <CardBody>
-          <div className="text-center py-8 text-text-2 text-[13px]">GA4 не е свързан</div>
-        </CardBody>
-      </Card>
-    );
-  }
-
-  const channels = data.channels.slice(0, 6);
-  const totalSessions = channels.reduce((s, c) => s + c.sessions, 0) || 1;
+  const channels = (data?.channels || []).slice(0, 6);
+  const totalSessions = channels.reduce((s, c) => s + c.sessions, 0);
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader
-        action={
-          <span className="text-[12px] text-text-2">
-            {totalSessions.toLocaleString("bg-BG")} сесии (30д)
-          </span>
-        }
-      >
-        Канали
-      </CardHeader>
-      <CardBody className="flex-1 flex flex-col justify-center">
-        <div className="space-y-3">
-          {channels.map((ch) => {
-            const pct = (ch.sessions / totalSessions) * 100;
-            const color = channelColors[ch.channel] || "bg-text-3";
-            return (
-              <div key={ch.channel}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[13px] text-text">{ch.channel}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-text-2">
-                      {ch.sessions.toLocaleString("bg-BG")}
-                    </span>
-                    <span className="text-[12px] text-text-3 w-10 text-right">
-                      {pct.toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${color} transition-all duration-700`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </CardBody>
-    </Card>
+    <DonutChart
+      data={channels}
+      nameKey="channel"
+      valueKey="sessions"
+      title="Канали"
+      action={
+        <span className="text-[12px] text-text-2">
+          {totalSessions.toLocaleString("bg-BG")} сесии (30д)
+        </span>
+      }
+      loading={isLoading}
+      height={200}
+      colors={CHANNEL_COLORS}
+    />
   );
 }
