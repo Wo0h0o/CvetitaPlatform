@@ -12,7 +12,7 @@ import { useToast } from "@/providers/ToastProvider";
 import { BarChartCard } from "@/components/charts";
 import {
   Shield, Plus, Globe, ExternalLink, TrendingUp, TrendingDown,
-  Minus, Eye, X, Megaphone,
+  Minus, X, Megaphone, Scan, Loader2,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -52,6 +52,7 @@ export default function CompetitorsPage() {
   const [addDomain, setAddDomain] = useState("");
   const [addFb, setAddFb] = useState("");
   const [adding, setAdding] = useState(false);
+  const [scanningId, setScanningId] = useState<string | null>(null);
 
   const handleAdd = async () => {
     if (!addName.trim()) return;
@@ -73,6 +74,25 @@ export default function CompetitorsPage() {
       toast("Грешка при добавяне", "error");
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleScan = async (competitorId: string) => {
+    setScanningId(competitorId);
+    try {
+      const res = await fetch("/api/competitors/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ competitorId }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Scan failed");
+      toast(`Сканирани ${result.productsExtracted} продукта от ${result.urlsFound} URL-а`, "success");
+      mutate("/api/competitors");
+    } catch (err) {
+      toast(`Грешка: ${err instanceof Error ? err.message : "Scan failed"}`, "error");
+    } finally {
+      setScanningId(null);
     }
   };
 
@@ -147,7 +167,12 @@ export default function CompetitorsPage() {
           {/* Competitor Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {competitors.map((comp) => (
-              <CompetitorCard key={comp.id} competitor={comp} />
+              <CompetitorCard
+                key={comp.id}
+                competitor={comp}
+                scanning={scanningId === comp.id}
+                onScan={() => handleScan(comp.id)}
+              />
             ))}
           </div>
 
@@ -185,7 +210,7 @@ export default function CompetitorsPage() {
 
 // ---------- Competitor Card ----------
 
-function CompetitorCard({ competitor: comp }: { competitor: Competitor }) {
+function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Competitor; scanning: boolean; onScan: () => void }) {
   const priceCount = comp.latestPrices.length;
   const adCount = comp.activeAds.length;
   const avgPrice = priceCount > 0
@@ -243,6 +268,21 @@ function CompetitorCard({ competitor: comp }: { competitor: Competitor }) {
               {comp.activeAds[0].ad_text}
             </p>
           </div>
+        )}
+
+        {/* Scan button */}
+        {comp.domain && (
+          <button
+            onClick={onScan}
+            disabled={scanning}
+            className="w-full mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium text-text-2 hover:bg-surface-2 border border-border transition-colors disabled:opacity-50"
+          >
+            {scanning ? (
+              <><Loader2 size={14} className="animate-spin" /> Сканиране...</>
+            ) : (
+              <><Scan size={14} /> Сканирай продукти</>
+            )}
+          </button>
         )}
       </CardBody>
     </Card>
