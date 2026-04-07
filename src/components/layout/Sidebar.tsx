@@ -14,6 +14,7 @@ import {
   Users,
   Bot,
   DollarSign,
+  Shield,
 } from "lucide-react";
 
 interface NavChild {
@@ -59,6 +60,7 @@ const navSections: NavSection[] = [
           { href: "/ads/campaigns", label: "Кампании" },
         ],
       },
+      { href: "/competitors", icon: Shield, label: "Конкуренти" },
     ],
   },
   {
