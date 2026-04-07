@@ -1,79 +1,236 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Save } from "lucide-react";
+import { Skeleton } from "@/components/shared/Skeleton";
+import { useToast } from "@/providers/ToastProvider";
+import { Save, Building2, Target, CheckCircle, Wifi } from "lucide-react";
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+interface BusinessSettings {
+  company?: string;
+  website?: string;
+  reportEmail?: string;
+  monthlyBudget?: string;
+  mainGoal?: string;
+  targetMarkets?: string;
+  topProducts?: string;
+  competitors?: string;
+}
 
 export default function SettingsPage() {
+  const { toast } = useToast();
+  const { data, isLoading, mutate } = useSWR<{ orgName: string; settings: BusinessSettings }>(
+    "/api/settings",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  const [form, setForm] = useState<BusinessSettings>({});
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  // Populate form when data loads
+  useEffect(() => {
+    if (data?.settings) {
+      setForm({
+        company: data.settings.company || data.orgName || "",
+        website: data.settings.website || "",
+        reportEmail: data.settings.reportEmail || "",
+        monthlyBudget: data.settings.monthlyBudget || "Над 15 000 лв.",
+        mainGoal: data.settings.mainGoal || "Повече продажби и нови клиенти",
+        targetMarkets: data.settings.targetMarkets || "България + Румъния",
+        topProducts: data.settings.topProducts || "",
+        competitors: data.settings.competitors || "",
+      });
+      setDirty(false);
+    }
+  }, [data]);
+
+  const updateField = (key: keyof BusinessSettings, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+
+  const handleSave = async () => {
+    // Validation
+    if (form.reportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.reportEmail)) {
+      toast("Невалиден имейл адрес", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: form }),
+      });
+
+      if (!res.ok) throw new Error("Failed");
+
+      const result = await res.json();
+      mutate({ orgName: data?.orgName || "", settings: result.settings }, false);
+      setDirty(false);
+      toast("Настройките са запазени", "success");
+    } catch {
+      toast("Грешка при запазване", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <>
+        <PageHeader title="Настройки" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card><CardBody className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i}><Skeleton className="h-4 w-20 mb-1.5" /><Skeleton className="h-10 w-full" /></div>
+            ))}
+          </CardBody></Card>
+          <Card><CardBody className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i}><Skeleton className="h-4 w-20 mb-1.5" /><Skeleton className="h-10 w-full" /></div>
+            ))}
+          </CardBody></Card>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-    <PageHeader title="Настройки" />
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader>Бизнес профил</CardHeader>
-        <CardBody className="space-y-4">
-          <Field label="Компания" defaultValue="Цветита Хербал ЕООД" />
-          <Field label="Сайт" placeholder="www.tsvetita-herbal.com" />
-          <Field
-            label="Имейл за доклади"
-            placeholder="info@tsvetita-herbal.com"
-            type="email"
-          />
-          <Field label="Месечен бюджет реклами" type="select">
-            <option>Над 15 000 лв.</option>
-            <option>5 000-15 000 лв.</option>
-            <option>До 5 000 лв.</option>
-          </Field>
-          <Button className="w-full mt-2">
-            <Save size={16} />
-            Запази
-          </Button>
-        </CardBody>
-      </Card>
+      <PageHeader title="Настройки">
+        {dirty && (
+          <span className="text-[12px] text-orange font-medium">Незапазени промени</span>
+        )}
+      </PageHeader>
 
-      <Card>
-        <CardHeader>Бизнес цели</CardHeader>
-        <CardBody className="space-y-4">
-          <Field label="Главна цел" type="select">
-            <option>Повече продажби и нови клиенти</option>
-            <option>По-нисък CPA</option>
-            <option>По-висок ROAS</option>
-          </Field>
-          <Field label="Целеви пазари" type="select">
-            <option>България + Румъния</option>
-            <option>Само България</option>
-            <option>Цяла Европа</option>
-          </Field>
-          <Field
-            label="Топ продукти"
-            type="textarea"
-            placeholder="Ашваганда, Куркума, Магнезий..."
-          />
-          <Field
-            label="Конкуренти за следене"
-            type="textarea"
-            placeholder="Gymbeam, Myprotein, Superlab..."
-          />
-        </CardBody>
-      </Card>
-    </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Business Profile */}
+        <Card>
+          <CardHeader action={<Building2 size={16} className="text-text-3" />}>
+            Бизнес профил
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <Field
+              label="Компания"
+              value={form.company || ""}
+              onChange={(v) => updateField("company", v)}
+            />
+            <Field
+              label="Сайт"
+              value={form.website || ""}
+              onChange={(v) => updateField("website", v)}
+              placeholder="www.tsvetita-herbal.com"
+            />
+            <Field
+              label="Имейл за доклади"
+              value={form.reportEmail || ""}
+              onChange={(v) => updateField("reportEmail", v)}
+              placeholder="info@tsvetita-herbal.com"
+              type="email"
+            />
+            <Field
+              label="Месечен бюджет реклами"
+              value={form.monthlyBudget || "Над 15 000 лв."}
+              onChange={(v) => updateField("monthlyBudget", v)}
+              type="select"
+              options={["Над 15 000 лв.", "5 000-15 000 лв.", "До 5 000 лв."]}
+            />
+            <Button
+              className="w-full mt-2"
+              onClick={handleSave}
+              disabled={saving || !dirty}
+            >
+              {saving ? (
+                <>Запазване...</>
+              ) : (
+                <><Save size={16} /> Запази</>
+              )}
+            </Button>
+          </CardBody>
+        </Card>
+
+        {/* Business Goals */}
+        <Card>
+          <CardHeader action={<Target size={16} className="text-text-3" />}>
+            Бизнес цели
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <Field
+              label="Главна цел"
+              value={form.mainGoal || "Повече продажби и нови клиенти"}
+              onChange={(v) => updateField("mainGoal", v)}
+              type="select"
+              options={["Повече продажби и нови клиенти", "По-нисък CPA", "По-висок ROAS"]}
+            />
+            <Field
+              label="Целеви пазари"
+              value={form.targetMarkets || "България + Румъния"}
+              onChange={(v) => updateField("targetMarkets", v)}
+              type="select"
+              options={["България + Румъния", "Само България", "Цяла Европа"]}
+            />
+            <Field
+              label="Топ продукти"
+              value={form.topProducts || ""}
+              onChange={(v) => updateField("topProducts", v)}
+              type="textarea"
+              placeholder="Ашваганда, Куркума, Магнезий..."
+            />
+            <Field
+              label="Конкуренти за следене"
+              value={form.competitors || ""}
+              onChange={(v) => updateField("competitors", v)}
+              type="textarea"
+              placeholder="Gymbeam, Myprotein, Superlab..."
+            />
+          </CardBody>
+        </Card>
+
+        {/* Integration Status */}
+        <Card className="lg:col-span-2">
+          <CardHeader action={<Wifi size={16} className="text-text-3" />}>
+            Свързани интеграции
+          </CardHeader>
+          <CardBody>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <IntegrationBadge name="Shopify" connected={!!process.env.NEXT_PUBLIC_SUPABASE_URL} />
+              <IntegrationBadge name="Google Analytics" connected />
+              <IntegrationBadge name="Meta Ads" connected />
+              <IntegrationBadge name="Klaviyo" connected />
+              <IntegrationBadge name="Google Ads" connected={false} />
+            </div>
+          </CardBody>
+        </Card>
+      </div>
     </>
   );
 }
 
+// ---------- Field Component ----------
+
 function Field({
   label,
+  value,
+  onChange,
   type = "text",
-  defaultValue,
   placeholder,
-  children,
+  options,
 }: {
   label: string;
-  type?: string;
-  defaultValue?: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: "text" | "email" | "select" | "textarea";
   placeholder?: string;
-  children?: React.ReactNode;
+  options?: string[];
 }) {
   const inputClasses =
     "w-full bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent transition-colors placeholder:text-text-3";
@@ -83,24 +240,45 @@ function Field({
       <label className="block text-[13px] font-semibold text-text mb-1.5">
         {label}
       </label>
-      {type === "select" ? (
-        <select className={inputClasses + " cursor-pointer"} defaultValue={defaultValue}>
-          {children}
+      {type === "select" && options ? (
+        <select
+          className={inputClasses + " cursor-pointer"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
         </select>
       ) : type === "textarea" ? (
         <textarea
           className={inputClasses + " min-h-[80px] resize-y"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          defaultValue={defaultValue}
         />
       ) : (
         <input
           type={type}
           className={inputClasses}
-          defaultValue={defaultValue}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
         />
       )}
+    </div>
+  );
+}
+
+// ---------- Integration Badge ----------
+
+function IntegrationBadge({ name, connected }: { name: string; connected: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 p-3 rounded-lg border ${connected ? "border-accent/20 bg-accent-soft" : "border-border bg-surface-2"}`}>
+      <CheckCircle size={16} className={connected ? "text-accent" : "text-text-3"} />
+      <span className={`text-[13px] font-medium ${connected ? "text-text" : "text-text-3"}`}>
+        {name}
+      </span>
     </div>
   );
 }
