@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
+// Business context (Shopify/GA4/Klaviyo) removed — it made 6 self-referential
+// HTTP calls that timed out on Vercel Hobby. Meta data is fetched directly.
 import { requireAuth } from "@/lib/api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import {
@@ -195,8 +196,6 @@ export async function POST(req: NextRequest) {
     return new Response("CLAUDE_API_KEY not configured", { status: 500 });
   }
 
-  const baseUrl = req.nextUrl.origin;
-  const cookie = req.headers.get("cookie") || "";
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -212,11 +211,7 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        // Call Meta API directly (no self-referential HTTP — avoids cold start timeouts)
-        // fetchBusinessContext is fire-and-forget — it makes self-referential HTTP calls
-        // that may timeout, but we don't want it to block Meta data loading
-        const ctxPromise = fetchBusinessContext(baseUrl, { cookie }).catch(() => null);
-
+        // Call Meta API directly — no self-referential HTTP, no Supabase auth overhead
         const [overview, campaigns, adRows, adSetRows, adSetsMeta] = await Promise.all([
           getMetaOverview("last_7d"),
           getMetaCampaignInsights("last_7d"),
@@ -224,9 +219,6 @@ export async function POST(req: NextRequest) {
           getMetaAdSetInsights("last_7d"),
           fetchAdSetsMeta(),
         ]);
-
-        // Await business context after Meta data is ready (may be null if timed out)
-        const ctx = await ctxPromise;
 
         // Score ads
         const parsedAds = adRows.map(parseAdRow);
@@ -305,7 +297,7 @@ export async function POST(req: NextRequest) {
           adsetContext = lines.join("\n");
         }
 
-        const businessContext = ctx ? formatContextForPrompt(ctx) : "(Бизнес контекстът не е достъпен в момента)";
+        const businessContext = "";
         const systemPrompt = buildSystemPrompt(adsContext + adsetContext, businessContext);
 
         send({ t: "status", msg: "Анализирам рекламите..." });
