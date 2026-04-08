@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/api-auth";
 import { createClient } from "@supabase/supabase-js";
-import {
-  scrapeProductPrices,
-  fetchMetaAdLibrary,
-  searchCompetitorIntel,
-} from "@/lib/competitor-scraper";
+import { scanCompetitor } from "@/lib/competitor-scanner";
+import { searchCompetitorIntel } from "@/lib/competitor-scraper";
 import { logger } from "@/lib/logger";
 
 // Use service role for cron — no user session
@@ -39,60 +36,62 @@ export async function GET(req: NextRequest) {
     }
 
     for (const comp of competitors) {
-      // 1. Price scraping
-      const productUrls = (comp.settings?.productUrls as string[]) || [];
-      if (productUrls.length > 0) {
-        const prices = await scrapeProductPrices(comp.domain || "", productUrls);
-        if (prices.length > 0) {
-          await supabase.from("competitor_prices").insert(
-            prices.map((p) => ({
-              competitor_id: comp.id,
-              product_name: p.productName,
-              product_url: p.productUrl,
-              price: p.price,
-              currency: p.currency,
-              in_stock: p.inStock,
-            }))
-          );
-          results.push(`${comp.name}: ${prices.length} prices scraped`);
+      // 1. Product scanning (sitemap discovery + price extraction)
+      if (comp.domain) {
+        try {
+          const scanResult = await scanCompetitor(comp.domain, 20);
+          if (scanResult.products.length > 0) {
+            await supabase.from("competitor_prices").insert(
+              scanResult.products.map((p) => ({
+                competitor_id: comp.id,
+                product_name: p.name,
+                product_url: p.url,
+                price: p.price,
+                currency: p.currency,
+                in_stock: p.inStock,
+              }))
+            );
+
+            // Update stored URLs
+            await supabase
+              .from("competitors")
+              .update({
+                settings: {
+                  ...(comp.settings || {}),
+                  productUrls: scanResult.products.map((p) => p.url),
+                  lastScanAt: new Date().toISOString(),
+                },
+              })
+              .eq("id", comp.id);
+
+            results.push(`${comp.name}: ${scanResult.products.length} prices scraped`);
+          }
+        } catch (scanErr) {
+          logger.error("Cron scan failed for competitor", { name: comp.name, error: String(scanErr) });
+          results.push(`${comp.name}: scan failed`);
         }
       }
 
-      // 2. Meta Ad Library
-      if (comp.facebook_page) {
-        const ads = await fetchMetaAdLibrary(comp.facebook_page);
-        if (ads.length > 0) {
-          await supabase.from("competitor_ads").insert(
-            ads.map((a) => ({
+      // 2. Intelligence search
+      try {
+        const intel = await searchCompetitorIntel(comp.name);
+        if (intel.length > 0) {
+          await supabase.from("competitor_intel").insert(
+            intel.map((i) => ({
               competitor_id: comp.id,
-              platform: "meta",
-              ad_id: a.adId,
-              ad_text: a.adText,
-              creative_url: a.creativeUrl,
-              started_at: a.startedAt,
-              is_active: a.isActive,
+              organization_id: comp.organization_id,
+              source: i.source,
+              title: i.title,
+              summary: i.summary,
+              url: i.url,
+              sentiment: i.sentiment,
+              relevance_score: i.relevanceScore,
             }))
           );
-          results.push(`${comp.name}: ${ads.length} ads found`);
+          results.push(`${comp.name}: ${intel.length} intel items`);
         }
-      }
-
-      // 3. Intelligence search
-      const intel = await searchCompetitorIntel(comp.name);
-      if (intel.length > 0) {
-        await supabase.from("competitor_intel").insert(
-          intel.map((i) => ({
-            competitor_id: comp.id,
-            organization_id: comp.organization_id,
-            source: i.source,
-            title: i.title,
-            summary: i.summary,
-            url: i.url,
-            sentiment: i.sentiment,
-            relevance_score: i.relevanceScore,
-          }))
-        );
-        results.push(`${comp.name}: ${intel.length} intel items`);
+      } catch (intelErr) {
+        logger.error("Cron intel failed for competitor", { name: comp.name, error: String(intelErr) });
       }
     }
 

@@ -12,11 +12,11 @@ import { useToast } from "@/providers/ToastProvider";
 import { BarChartCard } from "@/components/charts";
 import {
   Shield, Plus, Globe, ExternalLink, TrendingUp, TrendingDown,
-  Minus, X, Scan, Loader2, Clock, Package, ArrowDownRight,
-  ArrowUpRight, AlertCircle, Eye, Megaphone,
+  Minus, X, Scan, Loader2, Package, ArrowDownRight,
+  ArrowUpRight, AlertCircle, Megaphone, Trash2,
 } from "lucide-react";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
 
 // ---------- Types ----------
 
@@ -254,8 +254,15 @@ function AlertRow({ alert }: { alert: AlertItem }) {
   const data = alert.data;
   const isPrice = alert.type === "price_drop" || alert.type === "price_increase";
   const isDrop = alert.type === "price_drop";
-  const Icon = isDrop ? ArrowDownRight : alert.type === "price_increase" ? ArrowUpRight : Package;
-  const iconColor = isDrop ? "text-red" : alert.type === "price_increase" ? "text-orange" : "text-accent";
+
+  const iconMap: Record<string, { icon: typeof Package; color: string }> = {
+    price_drop: { icon: ArrowDownRight, color: "text-red" },
+    price_increase: { icon: ArrowUpRight, color: "text-orange" },
+    new_product: { icon: Package, color: "text-accent" },
+    url_added: { icon: Globe, color: "text-blue" },
+    url_removed: { icon: Trash2, color: "text-red" },
+  };
+  const { icon: Icon, color: iconColor } = iconMap[alert.type] || { icon: AlertCircle, color: "text-text-3" };
 
   return (
     <div className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-surface-2 transition-colors">

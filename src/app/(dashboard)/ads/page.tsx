@@ -3,12 +3,13 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import useSWR, { mutate } from "swr";
 import Masonry from "react-masonry-css";
-import { Card, CardHeader, CardBody } from "@/components/shared/Card";
+import { Card, CardBody } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
+import { useToast } from "@/providers/ToastProvider";
 import {
   Megaphone, Euro, ShoppingCart, MousePointerClick,
   Target, TrendingUp, ArrowUpDown, ChevronDown, ChevronUp,
@@ -100,6 +101,7 @@ function getScoreStyle(score: number) {
 // ---- Main Page ----
 
 export default function AdsPage() {
+  const { toast } = useToast();
   const { preset } = useDateRange();
   const metaPreset = PRESET_MAP[preset] || "7d";
 
@@ -191,8 +193,10 @@ export default function AdsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed");
-    } catch { /* ignore */ }
-    // Revalidate both
+    } catch {
+      toast("Грешка при смяна на статуса", "error");
+    }
+    // Revalidate both (corrects optimistic update on error)
     mutate(activeKey);
     mutate(restKey);
   };

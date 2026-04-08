@@ -87,7 +87,7 @@ export function DonutChart({
           align="center"
           iconType="circle"
           iconSize={8}
-          wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+          wrapperStyle={{ fontSize: 11, paddingTop: 4, color: "var(--text-2)" }}
           formatter={(value: string) => {
             const item = chartData.find((d) => d.name === value);
             const pct = item ? ((item.value / total) * 100).toFixed(0) : "0";

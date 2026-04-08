@@ -4,9 +4,10 @@ import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
-import { Users, MousePointerClick, Eye, ShoppingCart, Monitor, Smartphone, Tablet, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
+import { Users, MousePointerClick, Eye, ShoppingCart, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { useDateRange } from "@/hooks/useDateRange";
 import { DonutChart } from "@/components/charts";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -26,21 +27,15 @@ interface TrafficData {
   error?: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const deviceIcons: Record<string, any> = {
-  desktop: Monitor,
-  mobile: Smartphone,
-  tablet: Tablet,
-};
-
 type PageSortKey = "sessions" | "engagementRate" | "conversions";
 
 export default function TrafficPage() {
+  const { queryString, label } = useDateRange();
   const [pageSortKey, setPageSortKey] = useState<PageSortKey>("sessions");
   const [pageSortDir, setPageSortDir] = useState<"desc" | "asc">("desc");
 
   const { data, isLoading, error: swrError } = useSWR<TrafficData>(
-    "/api/dashboard/traffic",
+    `/api/dashboard/traffic?${queryString}`,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -59,8 +54,11 @@ export default function TrafficPage() {
   if (isLoading) {
     return (
       <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {[1, 2, 3, 4].map((i) => <KpiSkeleton key={i} />)}
+        <PageHeader title="Трафик & SEO">
+          <DateRangePicker />
+        </PageHeader>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          {[1, 2, 3, 4, 5].map((i) => <KpiSkeleton key={i} />)}
         </div>
         <Card><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
       </>
@@ -103,7 +101,7 @@ export default function TrafficPage() {
 
       {/* Overview KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <MiniKpi icon={Eye} label="Сесии (30д)" value={ov?.sessions?.toLocaleString("bg-BG") || "0"} />
+        <MiniKpi icon={Eye} label={`Сесии (${label})`} value={ov?.sessions?.toLocaleString("bg-BG") || "0"} />
         <MiniKpi icon={Users} label="Потребители" value={ov?.users?.toLocaleString("bg-BG") || "0"} />
         <MiniKpi icon={MousePointerClick} label="Engagement" value={`${((ov?.engagementRate || 0) * 100).toFixed(1)}%`} />
         <MiniKpi icon={ShoppingCart} label="Покупки" value={String(ov?.purchases || 0)} />
@@ -116,7 +114,7 @@ export default function TrafficPage() {
           <CardHeader>Трафик по канали</CardHeader>
           <CardBody>
             <div className="space-y-3">
-              {data?.channels?.map((ch) => {
+              {data?.channels && data.channels.length > 0 ? data.channels.map((ch) => {
                 const pct = (ch.sessions / totalSessions) * 100;
                 return (
                   <div key={ch.channel}>
@@ -135,7 +133,9 @@ export default function TrafficPage() {
                     </div>
                   </div>
                 );
-              })}
+              }) : (
+                <p className="text-center py-8 text-[13px] text-text-2">Няма данни за избрания период</p>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -180,7 +180,7 @@ export default function TrafficPage() {
                 <div className="col-span-2 text-right">Engagement</div>
                 <div className="col-span-1 text-right">Conv.</div>
               </div>
-              {sortedPages.map((p, i) => (
+              {sortedPages.length > 0 ? sortedPages.map((p, i) => (
                 <div
                   key={p.page}
                   className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
@@ -191,7 +191,9 @@ export default function TrafficPage() {
                   <div className="col-span-2 text-right text-[13px] text-text-2">{(p.engagementRate * 100).toFixed(1)}%</div>
                   <div className="col-span-1 text-right text-[13px] font-semibold text-text">{p.conversions}</div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-center py-8 text-[13px] text-text-2">Няма данни за страници</p>
+              )}
             </div>
           </div>
         </CardBody>

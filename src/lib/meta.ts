@@ -122,7 +122,7 @@ async function metaFetch<T>(path: string, params: Record<string, string> = {}): 
 
   const res = await fetchWithTimeout(url.toString(), {}, 15_000);
   if (!res.ok) {
-    const body = await res.text();
+    await res.text(); // drain response
     logger.error("Meta API error", { service: "meta", status: res.status });
     throw new Error(`Meta API: ${res.status}`);
   }
@@ -499,7 +499,7 @@ export async function updateMetaAdStatus(adId: string, status: "ACTIVE" | "PAUSE
     body: new URLSearchParams({ status, access_token: token }),
   }, 10_000);
   if (!res.ok) {
-    const body = await res.text();
+    await res.text(); // drain response
     logger.error("Meta status update error", { service: "meta", status: res.status });
     return false;
   }

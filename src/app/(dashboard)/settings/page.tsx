@@ -7,7 +7,7 @@ import { Button } from "@/components/shared/Button";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { useToast } from "@/providers/ToastProvider";
-import { Save, Building2, Target, CheckCircle, Wifi } from "lucide-react";
+import { Save, Building2, Target, CheckCircle, AlertCircle, XCircle, Wifi } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -202,12 +202,13 @@ export default function SettingsPage() {
           </CardHeader>
           <CardBody>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <IntegrationBadge name="Shopify" connected={!!process.env.NEXT_PUBLIC_SUPABASE_URL} />
-              <IntegrationBadge name="Google Analytics" connected />
-              <IntegrationBadge name="Meta Ads" connected />
-              <IntegrationBadge name="Klaviyo" connected />
-              <IntegrationBadge name="Google Ads" connected={false} />
+              <IntegrationBadge name="Shopify" status="connected" />
+              <IntegrationBadge name="Google Analytics" status="unknown" />
+              <IntegrationBadge name="Meta Ads" status="unknown" />
+              <IntegrationBadge name="Klaviyo" status="unknown" />
+              <IntegrationBadge name="Google Ads" status="disconnected" />
             </div>
+            <p className="text-[11px] text-text-3 mt-3">Статусът се определя от конфигурацията в Vercel Environment Variables.</p>
           </CardBody>
         </Card>
       </div>
@@ -272,13 +273,17 @@ function Field({
 
 // ---------- Integration Badge ----------
 
-function IntegrationBadge({ name, connected }: { name: string; connected: boolean }) {
+function IntegrationBadge({ name, status }: { name: string; status: "connected" | "unknown" | "disconnected" }) {
+  const styles = {
+    connected: { border: "border-accent/20 bg-accent-soft", icon: CheckCircle, iconColor: "text-accent", text: "text-text" },
+    unknown: { border: "border-orange/20 bg-orange-soft", icon: AlertCircle, iconColor: "text-orange", text: "text-text" },
+    disconnected: { border: "border-border bg-surface-2", icon: XCircle, iconColor: "text-text-3", text: "text-text-3" },
+  };
+  const s = styles[status];
   return (
-    <div className={`flex items-center gap-2 p-3 rounded-lg border ${connected ? "border-accent/20 bg-accent-soft" : "border-border bg-surface-2"}`}>
-      <CheckCircle size={16} className={connected ? "text-accent" : "text-text-3"} />
-      <span className={`text-[13px] font-medium ${connected ? "text-text" : "text-text-3"}`}>
-        {name}
-      </span>
+    <div className={`flex items-center gap-2 p-3 rounded-lg border ${s.border}`}>
+      <s.icon size={16} className={s.iconColor} />
+      <span className={`text-[13px] font-medium ${s.text}`}>{name}</span>
     </div>
   );
 }

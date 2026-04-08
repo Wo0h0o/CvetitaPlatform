@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { createClient } from "@supabase/supabase-js";
 import { scanCompetitor } from "@/lib/competitor-scanner";
+import { searchCompetitorIntel } from "@/lib/competitor-scraper";
 import { logger, requestMeta } from "@/lib/logger";
 
 export const maxDuration = 120;
@@ -126,6 +127,30 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Sitemap diff: compare current URLs with previous scan
+      const prevUrls = new Set<string>((comp.settings?.productUrls as string[]) || []);
+      const currentUrls = new Set(result.products.map((p) => p.url));
+
+      if (prevUrls.size > 0) {
+        const added = [...currentUrls].filter((u) => !prevUrls.has(u));
+        if (added.length > 0) {
+          alerts.push({
+            type: "url_added",
+            title: `${comp.name}: ${added.length} нови URL-а открити`,
+            data: { urls: added.slice(0, 10), count: added.length },
+          });
+        }
+
+        const removed = [...prevUrls].filter((u) => !currentUrls.has(u));
+        if (removed.length > 0) {
+          alerts.push({
+            type: "url_removed",
+            title: `${comp.name}: ${removed.length} URL-а премахнати`,
+            data: { urls: removed.slice(0, 10), count: removed.length },
+          });
+        }
+      }
+
       // Update product URLs in settings
       const productUrls = result.products.map((p) => p.url);
       await supabase
@@ -136,12 +161,36 @@ export async function POST(req: NextRequest) {
         .eq("id", competitorId);
     }
 
+    // Search for competitor intel (non-blocking — failure doesn't break scan)
+    let intelCount = 0;
+    try {
+      const intel = await searchCompetitorIntel(comp.name);
+      if (intel.length > 0) {
+        await supabase.from("competitor_intel").insert(
+          intel.map((i) => ({
+            competitor_id: competitorId,
+            organization_id: comp.organization_id,
+            source: i.source,
+            title: i.title,
+            summary: i.summary,
+            url: i.url,
+            sentiment: i.sentiment,
+            relevance_score: i.relevanceScore,
+          }))
+        );
+        intelCount = intel.length;
+      }
+    } catch (intelErr) {
+      logger.error("Intel search failed (non-fatal)", { error: String(intelErr) });
+    }
+
     return NextResponse.json({
       success: true,
       urlsFound: result.urlsFound,
       urlsScanned: result.urlsScanned,
       productsExtracted: result.products.length,
       alertsGenerated: alerts.length,
+      intelFound: intelCount,
       products: result.products,
     });
   } catch (err) {

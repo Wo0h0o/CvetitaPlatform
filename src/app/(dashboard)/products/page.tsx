@@ -230,6 +230,12 @@ export default function ProductsPage() {
                   );
                 })}
 
+                {filteredProducts.length === 0 && (
+                  <div className="text-center py-10">
+                    <p className="text-[13px] text-text-2">Няма продукти за &ldquo;{searchQuery}&rdquo;</p>
+                  </div>
+                )}
+
                 {!showAll && totalCount > 15 && (
                   <button
                     onClick={() => setShowAll(true)}

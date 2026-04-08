@@ -45,7 +45,7 @@ async function callGemini(
   );
 
   if (!res.ok) {
-    const err = await res.text();
+    await res.text(); // drain response
     logger.error("Gemini API error", { service: "gemini", model, status: res.status });
     return null;
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { fetchWithTimeout } from "@/lib/fetch-utils";
+import { getDateRange, type DatePreset } from "@/lib/dates";
 
 const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || "348042832";
 const CLIENT_ID = process.env.GA4_CLIENT_ID;
@@ -63,12 +64,6 @@ async function runReport(
   return data.rows || [];
 }
 
-function daysAgoStr(days: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().split("T")[0];
-}
-
 export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
@@ -78,8 +73,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const start = daysAgoStr(30);
-    const end = daysAgoStr(0);
+    const preset = (req.nextUrl.searchParams.get("preset") || "30d") as DatePreset;
+    const customFrom = req.nextUrl.searchParams.get("from") || undefined;
+    const customTo = req.nextUrl.searchParams.get("to") || undefined;
+    const range = getDateRange(preset, customFrom, customTo);
+    const start = range.from;
+    const end = range.to;
 
     const [channelRows, pageRows, deviceRows, overviewRows] = await Promise.all([
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
@@ -118,7 +117,7 @@ export async function GET(req: NextRequest) {
     };
 
     return NextResponse.json(
-      { period: "30 дни", overview, channels, topPages, devices },
+      { period: range.label, overview, channels, topPages, devices },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );
   } catch (error) {
