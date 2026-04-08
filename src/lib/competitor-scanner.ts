@@ -105,8 +105,19 @@ export async function discoverProductUrls(domain: string, limit = 30): Promise<s
     logger.info("Sitemap fetch failed", { domain });
   }
 
-  logger.info("Product URL discovery complete", { domain, found: urls.length });
-  return [...new Set(urls)].slice(0, limit);
+  // Take a spread sample (not just first N — old products tend to be discontinued)
+  const unique = [...new Set(urls)];
+  if (unique.length <= limit) return unique;
+
+  // Sample evenly across the list
+  const step = Math.floor(unique.length / limit);
+  const sampled: string[] = [];
+  for (let i = 0; i < unique.length && sampled.length < limit; i += step) {
+    sampled.push(unique[i]);
+  }
+
+  logger.info("Product URL discovery complete", { domain, total: unique.length, sampled: sampled.length });
+  return sampled;
 }
 
 function isProductUrl(url: string): boolean {
@@ -126,81 +137,96 @@ function isProductUrl(url: string): boolean {
   return false;
 }
 
-// ---------- AI Product Extraction ----------
+// ---------- Product Extraction (JSON-LD first, Gemini fallback) ----------
 
 export async function extractProductFromHtml(
   html: string,
   url: string
 ): Promise<ScannedProduct | null> {
-  // Trim HTML to essential parts (reduce token usage)
-  const trimmed = trimHtml(html);
-  if (trimmed.length < 50) return null;
+  // Strategy 1: JSON-LD structured data (fast, free, reliable)
+  const jsonLdProduct = extractFromJsonLd(html);
+  if (jsonLdProduct) {
+    return { ...jsonLdProduct, url };
+  }
 
-  const prompt = `Анализирай този HTML от продуктова страница и извлечи информацията.
+  // Strategy 2: Meta tags (og:price, product:price)
+  const metaProduct = extractFromMeta(html);
+  if (metaProduct) {
+    return { ...metaProduct, url };
+  }
 
-URL: ${url}
+  // Strategy 3: Gemini AI fallback (slow, costs tokens)
+  return extractWithGemini(html, url);
+}
 
-HTML (съкратен):
-${trimmed}
+function extractFromJsonLd(html: string): Omit<ScannedProduct, "url"> | null {
+  const matches = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi) || [];
 
-Отговори САМО с JSON в този формат, без markdown, без обяснения:
-{"name":"Име на продукта","price":29.99,"currency":"BGN","inStock":true}
+  for (const match of matches) {
+    try {
+      const json = match.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
+      const parsed = JSON.parse(json);
+      const items = parsed["@graph"] || [parsed];
 
-Правила:
-- name: пълното име на продукта
-- price: числова стойност (без валутен символ)
-- currency: BGN, EUR, RON и т.н.
-- inStock: true/false
-- Ако не можеш да извлечеш цена, върни null`;
+      for (const item of items) {
+        if (item["@type"] !== "Product") continue;
+
+        const offers = item.offers || {};
+        const price = Number(offers.lowPrice || offers.price || offers.offers?.[0]?.price);
+        const currency = offers.priceCurrency || offers.offers?.[0]?.priceCurrency || "BGN";
+        const availability = String(offers.availability || offers.offers?.[0]?.availability || "");
+        const inStock = availability.includes("InStock");
+        const name = String(item.name || "").split("|")[0].trim();
+
+        if (!name || !price || isNaN(price)) return null;
+
+        return { name, price, currency, inStock };
+      }
+    } catch { /* skip invalid JSON-LD */ }
+  }
+  return null;
+}
+
+function extractFromMeta(html: string): Omit<ScannedProduct, "url"> | null {
+  const priceMatch = html.match(/<meta[^>]+property="product:price:amount"[^>]+content="([^"]+)"/i)
+    || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="product:price:amount"/i);
+  const currMatch = html.match(/<meta[^>]+property="product:price:currency"[^>]+content="([^"]+)"/i)
+    || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="product:price:currency"/i);
+  const titleMatch = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)
+    || html.match(/<title[^>]*>([^<]+)<\/title>/i);
+
+  const price = priceMatch ? parseFloat(priceMatch[1]) : null;
+  const name = titleMatch?.[1]?.split("|")[0].trim();
+
+  if (!price || !name || isNaN(price)) return null;
+
+  return {
+    name,
+    price,
+    currency: currMatch?.[1] || "BGN",
+    inStock: !html.toLowerCase().includes("outofstock") && !html.toLowerCase().includes("изчерпан"),
+  };
+}
+
+async function extractWithGemini(html: string, url: string): Promise<ScannedProduct | null> {
+  // Only use Gemini if JSON-LD and meta both failed
+  const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || "";
+  const metas = (html.match(/<meta[^>]+>/gi) || []).slice(0, 20).join("\n");
+  const trimmed = `Title: ${title}\n${metas}`.slice(0, 4000);
+
+  const prompt = `Extract product info from this page. URL: ${url}\n\n${trimmed}\n\nReturn ONLY JSON: {"name":"...","price":29.99,"currency":"BGN","inStock":true}\nIf no price found, return null`;
 
   try {
     const response = await geminiExtract(prompt);
     const cleaned = response.trim().replace(/```json\n?/g, "").replace(/```/g, "").trim();
-
     if (cleaned === "null" || !cleaned.startsWith("{")) return null;
-
     const parsed = JSON.parse(cleaned);
     if (!parsed.name || typeof parsed.price !== "number") return null;
-
-    return {
-      name: parsed.name,
-      price: parsed.price,
-      currency: parsed.currency || "BGN",
-      inStock: parsed.inStock !== false,
-      url,
-    };
+    return { name: parsed.name, price: parsed.price, currency: parsed.currency || "BGN", inStock: parsed.inStock !== false, url };
   } catch (err) {
-    logger.error("AI product extraction failed", { url, error: String(err) });
+    logger.error("Gemini extraction failed", { url, error: String(err) });
     return null;
   }
-}
-
-function trimHtml(html: string): string {
-  // Remove scripts, styles, SVGs, comments
-  let clean = html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-    .replace(/<header[\s\S]*?<\/header>/gi, "");
-
-  // Remove excessive whitespace
-  clean = clean.replace(/\s+/g, " ");
-
-  // Keep only the most relevant parts (title, price areas, meta tags)
-  const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[0] || "";
-  const metas = (html.match(/<meta[^>]+>/gi) || []).join("\n");
-  const jsonLd = (html.match(/<script type="application\/ld\+json"[\s\S]*?<\/script>/gi) || []).join("\n");
-
-  // If we have structured data, prefer it
-  if (jsonLd.length > 50) {
-    return `${title}\n${metas}\n${jsonLd}`.slice(0, 8000);
-  }
-
-  // Otherwise send trimmed HTML body
-  return `${title}\n${metas}\n${clean}`.slice(0, 8000);
 }
 
 // ---------- Full Scan Pipeline ----------
