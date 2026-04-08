@@ -69,7 +69,7 @@ export async function fetchBusinessContext(
   const headers: Record<string, string> = {};
   if (options?.cookie) headers.cookie = options.cookie;
 
-  const f = (url: string) => fetchWithTimeout(url, { headers }, 8_000).then((r) => r.json()).catch(() => null);
+  const f = (url: string) => fetchWithTimeout(url, { headers }, 15_000).then((r) => r.json()).catch(() => null);
   const results = await Promise.allSettled([
     f(`${baseUrl}/api/dashboard/kpis${dayParam}`),
     f(`${baseUrl}/api/dashboard/top-products${dayParam}`),

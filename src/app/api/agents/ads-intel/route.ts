@@ -15,7 +15,7 @@ import {
 import type { MetaAdSetInsightRow } from "@/lib/meta";
 import { parseAdRow, scoreAd, computeAccountMeans } from "@/lib/meta-scoring";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const WEB_SEARCH_TOOL = {
   type: "web_search_20250305",

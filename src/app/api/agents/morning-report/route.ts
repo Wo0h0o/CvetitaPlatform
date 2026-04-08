@@ -3,7 +3,7 @@ import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-contex
 import { requireAuth } from "@/lib/api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 function buildPrompt(businessContext: string): string {
   const today = new Date().toLocaleDateString("bg-BG", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Sofia" });

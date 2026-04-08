@@ -43,7 +43,7 @@ function decrypt(encrypted) {
 }
 
 // ---- Load store config ----
-const STORE_ID = 'ae0db575-6da7-4c19-8d11-76a357247826';
+const STORE_ID = process.argv[2] || 'ae0db575-6da7-4c19-8d11-76a357247826';
 
 async function loadConfig() {
   const { data: store } = await supabase.from('stores').select('*').eq('id', STORE_ID).single();

@@ -4,7 +4,7 @@ import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-contex
 import { requireAuth } from "@/lib/api-auth";
 
 // Using Node.js runtime for env var access; switch to edge on Vercel if needed
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const authError = await requireAuth(req);

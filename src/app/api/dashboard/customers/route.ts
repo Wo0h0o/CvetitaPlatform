@@ -3,7 +3,7 @@ import { fetchOrdersWithCustomers } from "@/lib/shopify";
 import type { CustomerOrder } from "@/lib/shopify";
 import { requireAuth } from "@/lib/api-auth";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 function daysAgoStr(days: number): string {
   const d = new Date();
