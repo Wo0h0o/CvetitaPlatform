@@ -51,70 +51,61 @@ async function geminiExtract(prompt: string): Promise<string> {
 export async function discoverProductUrls(domain: string, limit = 30): Promise<string[]> {
   const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
   const urls: string[] = [];
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)" };
 
-  // Try sitemap.xml first
+  // Step 1: Fetch sitemap.xml
   try {
-    const sitemapUrl = `${baseUrl}/sitemap.xml`;
-    const res = await fetchWithTimeout(sitemapUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)" },
-    }, 8000);
-
+    const res = await fetchWithTimeout(`${baseUrl}/sitemap.xml`, { headers }, 8000);
     if (res.ok) {
       const xml = await res.text();
-      // Find product URLs in sitemap
-      const locMatches = xml.match(/<loc>([^<]+)<\/loc>/g) || [];
-      for (const match of locMatches) {
-        const url = match.replace(/<\/?loc>/g, "");
-        // Filter for product-like URLs
-        if (isProductUrl(url)) {
-          urls.push(url);
+      const allLocs = (xml.match(/<loc>([^<]+)<\/loc>/g) || [])
+        .map((m) => m.replace(/<\/?loc>/g, ""));
+
+      // Detect: is this a sitemap INDEX (contains links to other .xml files)?
+      const isSitemapIndex = xml.includes("<sitemapindex") || allLocs.some((u) => u.endsWith(".xml"));
+
+      if (isSitemapIndex) {
+        // It's an index — find sub-sitemaps with product-related names
+        const productSitemaps = allLocs
+          .filter((u) => u.endsWith(".xml") && /product|item|catalog/i.test(u))
+          .slice(0, 3);
+
+        // If no product-specific sitemap, take all sub-sitemaps (some sites use generic names)
+        const sitemapsToFetch = productSitemaps.length > 0
+          ? productSitemaps
+          : allLocs.filter((u) => u.endsWith(".xml")).slice(0, 3);
+
+        for (const subUrl of sitemapsToFetch) {
           if (urls.length >= limit) break;
+          try {
+            const subRes = await fetchWithTimeout(subUrl, { headers }, 10000);
+            if (!subRes.ok) continue;
+            const subXml = await subRes.text();
+            const subLocs = (subXml.match(/<loc>([^<]+)<\/loc>/g) || [])
+              .map((m) => m.replace(/<\/?loc>/g, ""));
+            for (const loc of subLocs) {
+              if (isProductUrl(loc)) {
+                urls.push(loc);
+                if (urls.length >= limit) break;
+              }
+            }
+          } catch { /* skip failed sub-sitemap */ }
+        }
+      } else {
+        // Regular sitemap — extract product URLs directly
+        for (const loc of allLocs) {
+          if (isProductUrl(loc)) {
+            urls.push(loc);
+            if (urls.length >= limit) break;
+          }
         }
       }
     }
   } catch {
-    logger.info("Sitemap not found, trying category page", { domain });
+    logger.info("Sitemap fetch failed", { domain });
   }
 
-  // If sitemap didn't yield enough, try sitemap index
-  if (urls.length < 5) {
-    try {
-      const indexUrl = `${baseUrl}/sitemap_index.xml`;
-      const res = await fetchWithTimeout(indexUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)" },
-      }, 8000);
-
-      if (res.ok) {
-        const xml = await res.text();
-        // Find sub-sitemaps that look like product sitemaps
-        const subSitemaps = (xml.match(/<loc>([^<]+)<\/loc>/g) || [])
-          .map((m) => m.replace(/<\/?loc>/g, ""))
-          .filter((u) => /product|item|catalog/i.test(u))
-          .slice(0, 3);
-
-        for (const subUrl of subSitemaps) {
-          try {
-            const subRes = await fetchWithTimeout(subUrl, {
-              headers: { "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)" },
-            }, 8000);
-            if (subRes.ok) {
-              const subXml = await subRes.text();
-              const locs = (subXml.match(/<loc>([^<]+)<\/loc>/g) || [])
-                .map((m) => m.replace(/<\/?loc>/g, ""));
-              for (const loc of locs) {
-                if (isProductUrl(loc)) {
-                  urls.push(loc);
-                  if (urls.length >= limit) break;
-                }
-              }
-            }
-          } catch { /* skip failed sub-sitemap */ }
-          if (urls.length >= limit) break;
-        }
-      }
-    } catch { /* no sitemap index */ }
-  }
-
+  logger.info("Product URL discovery complete", { domain, found: urls.length });
   return [...new Set(urls)].slice(0, limit);
 }
 
