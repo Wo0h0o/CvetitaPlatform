@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
-import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { scanCompetitor } from "@/lib/competitor-scanner";
 import { logger, requestMeta } from "@/lib/logger";
 
 export const maxDuration = 120;
 
-function getSupabase(req: NextRequest) {
-  return createServerClient(
+// Use service role for write operations (RLS only has SELECT policies on prices)
+function getAdminSupabase() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 }
 
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "competitorId required" }, { status: 400 });
     }
 
-    const supabase = getSupabase(req);
+    const supabase = getAdminSupabase();
 
     // Get competitor
     const { data: comp, error: compErr } = await supabase
