@@ -12,12 +12,22 @@ import { useToast } from "@/providers/ToastProvider";
 import { BarChartCard } from "@/components/charts";
 import {
   Shield, Plus, Globe, ExternalLink, TrendingUp, TrendingDown,
-  Minus, X, Megaphone, Scan, Loader2,
+  Minus, X, Scan, Loader2, Clock, Package, ArrowDownRight,
+  ArrowUpRight, AlertCircle, Eye, Megaphone,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 // ---------- Types ----------
+
+interface CompetitorPrice {
+  product_name: string;
+  price: number;
+  currency: string;
+  in_stock: boolean;
+  scraped_at: string;
+  product_url?: string;
+}
 
 interface Competitor {
   id: string;
@@ -26,8 +36,19 @@ interface Competitor {
   facebook_page: string | null;
   category: string;
   logo_url: string | null;
-  latestPrices: { product_name: string; price: number; currency: string; in_stock: boolean; scraped_at: string }[];
+  settings: { lastScanAt?: string; productUrls?: string[] } | null;
+  latestPrices: CompetitorPrice[];
   activeAds: { ad_text: string; scraped_at: string }[];
+}
+
+interface AlertItem {
+  id: string;
+  type: string;
+  title: string;
+  data: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+  competitors: { name: string } | null;
 }
 
 interface IntelItem {
@@ -45,6 +66,7 @@ interface IntelItem {
 export default function CompetitorsPage() {
   const { toast } = useToast();
   const { data, isLoading } = useSWR<{ competitors: Competitor[] }>("/api/competitors", fetcher, { revalidateOnFocus: false });
+  const { data: alertsData } = useSWR<{ alerts: AlertItem[] }>("/api/competitors/alerts", fetcher, { revalidateOnFocus: false });
   const { data: intelData } = useSWR<{ intel: IntelItem[] }>("/api/competitors/intel", fetcher, { revalidateOnFocus: false });
 
   const [showAdd, setShowAdd] = useState(false);
@@ -87,8 +109,10 @@ export default function CompetitorsPage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Scan failed");
-      toast(`Сканирани ${result.productsExtracted} продукта от ${result.urlsFound} URL-а`, "success");
+      const alertMsg = result.alertsGenerated > 0 ? ` | ${result.alertsGenerated} промени` : "";
+      toast(`Сканирани ${result.productsExtracted} продукта${alertMsg}`, "success");
       mutate("/api/competitors");
+      mutate("/api/competitors/alerts");
     } catch (err) {
       toast(`Грешка: ${err instanceof Error ? err.message : "Scan failed"}`, "error");
     } finally {
@@ -97,7 +121,9 @@ export default function CompetitorsPage() {
   };
 
   const competitors = data?.competitors || [];
+  const alerts = alertsData?.alerts || [];
   const intel = intelData?.intel || [];
+  const unreadAlerts = alerts.filter((a) => !a.is_read);
 
   if (isLoading) {
     return (
@@ -125,24 +151,9 @@ export default function CompetitorsPage() {
         <Card className="mb-6">
           <CardBody>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <input
-                value={addName}
-                onChange={(e) => setAddName(e.target.value)}
-                placeholder="Име (напр. Gymbeam)"
-                className="bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent placeholder:text-text-3"
-              />
-              <input
-                value={addDomain}
-                onChange={(e) => setAddDomain(e.target.value)}
-                placeholder="Домейн (напр. gymbeam.bg)"
-                className="bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent placeholder:text-text-3"
-              />
-              <input
-                value={addFb}
-                onChange={(e) => setAddFb(e.target.value)}
-                placeholder="Facebook страница"
-                className="bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent placeholder:text-text-3"
-              />
+              <input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Име (напр. Gymbeam)" className="bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent placeholder:text-text-3" />
+              <input value={addDomain} onChange={(e) => setAddDomain(e.target.value)} placeholder="Домейн (напр. gymbeam.bg)" className="bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent placeholder:text-text-3" />
+              <input value={addFb} onChange={(e) => setAddFb(e.target.value)} placeholder="Facebook страница" className="bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-[14px] text-text outline-none focus:border-accent placeholder:text-text-3" />
               <Button onClick={handleAdd} disabled={adding || !addName.trim()}>
                 {adding ? "Добавяне..." : "Запази"}
               </Button>
@@ -156,14 +167,37 @@ export default function CompetitorsPage() {
           icon={Shield}
           title="Няма добавени конкуренти"
           description="Добави конкуренти, за да следиш техните цени, реклами и пазарна активност."
-          action={
-            <Button onClick={() => setShowAdd(true)}>
-              <Plus size={14} /> Добави конкурент
-            </Button>
-          }
+          action={<Button onClick={() => setShowAdd(true)}><Plus size={14} /> Добави конкурент</Button>}
         />
       ) : (
         <>
+          {/* Alerts Feed — top of page */}
+          {unreadAlerts.length > 0 && (
+            <Card className="mb-6">
+              <CardHeader action={<Badge variant="red">{unreadAlerts.length} нови</Badge>}>
+                Промени от последния scan
+              </CardHeader>
+              <CardBody className="space-y-1">
+                {unreadAlerts.slice(0, 10).map((alert) => (
+                  <AlertRow key={alert.id} alert={alert} />
+                ))}
+              </CardBody>
+            </Card>
+          )}
+
+          {/* No changes state */}
+          {unreadAlerts.length === 0 && competitors.some((c) => c.settings?.lastScanAt) && (
+            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-surface-2 text-[13px] text-text-2">
+              <AlertCircle size={14} className="text-text-3" />
+              Няма нови промени. Последен scan: {formatTimeAgo(
+                competitors.reduce((latest, c) => {
+                  const t = c.settings?.lastScanAt;
+                  return t && t > latest ? t : latest;
+                }, "")
+              )}
+            </div>
+          )}
+
           {/* Competitor Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {competitors.map((comp) => (
@@ -177,49 +211,88 @@ export default function CompetitorsPage() {
           </div>
 
           {/* Price Comparison Chart */}
-          {competitors.some((c) => c.latestPrices.length > 0) && (
-            <PriceComparisonChart competitors={competitors} />
+          {competitors.filter((c) => c.latestPrices.length > 0).length >= 1 && (
+            <BarChartCard
+              data={competitors
+                .filter((c) => c.latestPrices.length > 0)
+                .map((c) => ({
+                  name: c.name,
+                  avgPrice: Number((c.latestPrices.reduce((s, p) => s + p.price, 0) / c.latestPrices.length).toFixed(2)),
+                }))}
+              xKey="name"
+              yKey="avgPrice"
+              title="Сравнение на средни цени"
+              height={200}
+              formatValue={(v) => `${v.toFixed(2)}`}
+              colors={["#ff3b30", "#ff9500", "#8b5cf6", "#007aff", "#06b6d4"]}
+              className="mb-6"
+            />
           )}
 
           {/* Intel Feed */}
-          <Card className="mt-6">
-            <CardHeader
-              action={<span className="text-[12px] text-text-2">{intel.length} новини</span>}
-            >
-              Разузнаване
-            </CardHeader>
-            <CardBody>
-              {intel.length > 0 ? (
-                <div className="space-y-3">
-                  {intel.slice(0, 15).map((item) => (
-                    <IntelRow key={item.id} item={item} />
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-text-2 text-[13px]">
-                  Няма налични данни. Стартирай scrape или изчакай дневния cron.
-                </div>
-              )}
-            </CardBody>
-          </Card>
+          {intel.length > 0 && (
+            <Card>
+              <CardHeader action={<span className="text-[12px] text-text-2">{intel.length} новини</span>}>
+                Разузнаване
+              </CardHeader>
+              <CardBody className="space-y-3">
+                {intel.slice(0, 10).map((item) => (
+                  <IntelRow key={item.id} item={item} />
+                ))}
+              </CardBody>
+            </Card>
+          )}
         </>
       )}
     </>
   );
 }
 
-// ---------- Competitor Card ----------
+// ---------- Alert Row ----------
+
+function AlertRow({ alert }: { alert: AlertItem }) {
+  const data = alert.data;
+  const isPrice = alert.type === "price_drop" || alert.type === "price_increase";
+  const isDrop = alert.type === "price_drop";
+  const Icon = isDrop ? ArrowDownRight : alert.type === "price_increase" ? ArrowUpRight : Package;
+  const iconColor = isDrop ? "text-red" : alert.type === "price_increase" ? "text-orange" : "text-accent";
+
+  return (
+    <div className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-surface-2 transition-colors">
+      <Icon size={16} className={iconColor} />
+      <div className="flex-1 min-w-0">
+        <span className="text-[13px] text-text">{alert.title}</span>
+      </div>
+      {isPrice && (
+        <div className="flex items-center gap-2 flex-shrink-0 text-[12px]">
+          <span className="text-text-3 line-through">{Number(data.oldPrice).toFixed(2)}</span>
+          <span className={isDrop ? "text-red font-semibold" : "text-orange font-semibold"}>
+            {Number(data.newPrice).toFixed(2)} {String(data.currency)}
+          </span>
+        </div>
+      )}
+      <span className="text-[11px] text-text-3 flex-shrink-0">
+        {formatTimeAgo(alert.created_at)}
+      </span>
+    </div>
+  );
+}
+
+// ---------- Competitor Card (cleaned up) ----------
 
 function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Competitor; scanning: boolean; onScan: () => void }) {
-  const priceCount = comp.latestPrices.length;
-  const adCount = comp.activeAds.length;
-  const avgPrice = priceCount > 0
-    ? comp.latestPrices.reduce((s, p) => s + p.price, 0) / priceCount
-    : 0;
+  const prices = comp.latestPrices;
+  const priceCount = prices.length;
+  const inStockCount = prices.filter((p) => p.in_stock).length;
+  const avgPrice = priceCount > 0 ? prices.reduce((s, p) => s + p.price, 0) / priceCount : 0;
+  const minPrice = priceCount > 0 ? Math.min(...prices.map((p) => p.price)) : 0;
+  const maxPrice = priceCount > 0 ? Math.max(...prices.map((p) => p.price)) : 0;
+  const lastScan = comp.settings?.lastScanAt;
 
   return (
     <Card hover>
       <CardBody>
+        {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-red-soft flex items-center justify-center flex-shrink-0">
@@ -228,10 +301,11 @@ function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Co
             <div>
               <div className="text-[15px] font-semibold text-text">{comp.name}</div>
               {comp.domain && (
-                <div className="flex items-center gap-1 text-[12px] text-text-2">
+                <a href={`https://${comp.domain}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[12px] text-text-2 hover:text-accent transition-colors">
                   <Globe size={10} />
                   {comp.domain}
-                </div>
+                  <ExternalLink size={8} />
+                </a>
               )}
             </div>
           </div>
@@ -240,33 +314,60 @@ function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Co
           </Badge>
         </div>
 
+        {/* Metrics */}
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div>
             <div className="text-[11px] text-text-3">Продукти</div>
             <div className="text-[15px] font-semibold text-text">{priceCount}</div>
+            {priceCount > 0 && (
+              <div className="text-[11px] text-text-3">{inStockCount} налични</div>
+            )}
           </div>
           <div>
             <div className="text-[11px] text-text-3">Ср. цена</div>
             <div className="text-[15px] font-semibold text-text">
               {avgPrice > 0 ? `${avgPrice.toFixed(2)}` : "—"}
             </div>
+            {priceCount > 1 && (
+              <div className="text-[11px] text-text-3">{minPrice.toFixed(0)}–{maxPrice.toFixed(0)}</div>
+            )}
           </div>
           <div>
-            <div className="text-[11px] text-text-3">Реклами</div>
-            <div className="text-[15px] font-semibold text-text">{adCount}</div>
+            <div className="text-[11px] text-text-3">Последен scan</div>
+            <div className="text-[13px] font-medium text-text">
+              {lastScan ? formatTimeAgo(lastScan) : "—"}
+            </div>
           </div>
         </div>
 
-        {/* Latest ads preview */}
-        {comp.activeAds.length > 0 && (
-          <div className="border-t border-border pt-2 mt-2">
-            <div className="flex items-center gap-1 mb-1">
-              <Megaphone size={10} className="text-text-3" />
-              <span className="text-[11px] text-text-3">Последна реклама</span>
-            </div>
-            <p className="text-[12px] text-text-2 line-clamp-2">
-              {comp.activeAds[0].ad_text}
-            </p>
+        {/* Meta Ad Library link (real, not fake data) */}
+        {comp.facebook_page && (
+          <a
+            href={`https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=BG&q=${encodeURIComponent(comp.name)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-text-2 hover:bg-surface-2 border border-border transition-colors mb-2"
+          >
+            <Megaphone size={14} />
+            <span>Виж реклами в Meta Ad Library</span>
+            <ExternalLink size={10} className="ml-auto" />
+          </a>
+        )}
+
+        {/* Top 3 products preview */}
+        {prices.length > 0 && (
+          <div className="border-t border-border pt-2 mt-1 space-y-1">
+            {prices.slice(0, 3).map((p, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <span className="text-[12px] text-text-2 truncate flex-1 mr-2">{p.product_name}</span>
+                <span className="text-[12px] font-semibold text-text flex-shrink-0">
+                  {p.price.toFixed(2)} {p.currency}
+                </span>
+              </div>
+            ))}
+            {prices.length > 3 && (
+              <div className="text-[11px] text-text-3">+{prices.length - 3} още</div>
+            )}
           </div>
         )}
 
@@ -289,64 +390,39 @@ function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Co
   );
 }
 
-// ---------- Price Comparison ----------
-
-function PriceComparisonChart({ competitors }: { competitors: Competitor[] }) {
-  const chartData = competitors
-    .filter((c) => c.latestPrices.length > 0)
-    .map((c) => ({
-      name: c.name,
-      avgPrice: Number((c.latestPrices.reduce((s, p) => s + p.price, 0) / c.latestPrices.length).toFixed(2)),
-    }));
-
-  if (chartData.length < 2) return null;
-
-  return (
-    <BarChartCard
-      data={chartData}
-      xKey="name"
-      yKey="avgPrice"
-      title="Сравнение на средни цени"
-      height={200}
-      formatValue={(v) => `${v.toFixed(2)} лв.`}
-      colors={["#ff3b30", "#ff9500", "#8b5cf6", "#007aff", "#06b6d4", "#22c55e"]}
-    />
-  );
-}
-
 // ---------- Intel Row ----------
 
 function IntelRow({ item }: { item: IntelItem }) {
-  const SentimentIcon = item.sentiment === "positive" ? TrendingUp
-    : item.sentiment === "negative" ? TrendingDown : Minus;
-  const sentimentColor = item.sentiment === "positive" ? "text-accent"
-    : item.sentiment === "negative" ? "text-red" : "text-text-3";
+  const SentimentIcon = item.sentiment === "positive" ? TrendingUp : item.sentiment === "negative" ? TrendingDown : Minus;
+  const sentimentColor = item.sentiment === "positive" ? "text-accent" : item.sentiment === "negative" ? "text-red" : "text-text-3";
 
   return (
     <div className="flex items-start gap-3 py-2 border-b border-border last:border-0">
       <SentimentIcon size={14} className={`mt-0.5 flex-shrink-0 ${sentimentColor}`} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          {item.competitors?.name && (
-            <Badge variant="neutral">{item.competitors.name}</Badge>
-          )}
-          <span className="text-[11px] text-text-3">
-            {new Date(item.discovered_at).toLocaleDateString("bg-BG")}
-          </span>
+          {item.competitors?.name && <Badge variant="neutral">{item.competitors.name}</Badge>}
+          <span className="text-[11px] text-text-3">{new Date(item.discovered_at).toLocaleDateString("bg-BG")}</span>
         </div>
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[13px] font-medium text-text hover:text-accent transition-colors flex items-center gap-1"
-        >
+        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-[13px] font-medium text-text hover:text-accent transition-colors flex items-center gap-1">
           {item.title}
           <ExternalLink size={10} className="flex-shrink-0" />
         </a>
-        {item.summary && (
-          <p className="text-[12px] text-text-2 mt-0.5 line-clamp-2">{item.summary}</p>
-        )}
+        {item.summary && <p className="text-[12px] text-text-2 mt-0.5 line-clamp-2">{item.summary}</p>}
       </div>
     </div>
   );
+}
+
+// ---------- Helpers ----------
+
+function formatTimeAgo(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "току-що";
+  if (mins < 60) return `${mins} мин`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}ч`;
+  const days = Math.floor(hours / 24);
+  return `${days}д`;
 }
