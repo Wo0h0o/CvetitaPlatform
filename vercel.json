@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/refresh-meta-token",
       "schedule": "0 3 * * 1"
+    },
+    {
+      "path": "/api/cron/meta-sync",
+      "schedule": "0 3 * * *"
     }
   ]
 }
