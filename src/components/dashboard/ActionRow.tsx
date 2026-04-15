@@ -2,8 +2,9 @@
 
 import useSWR from "swr";
 import { Skeleton } from "@/components/shared/Skeleton";
-import { ActionCard, type ActionCardData, type ActionKey } from "./ActionCard";
+import { ActionCard, ACTION_LABEL_BG, type ActionCardData, type ActionKey } from "./ActionCard";
 import { logger } from "@/lib/logger";
+import { useToast } from "@/providers/ToastProvider";
 
 // ============================================================
 // Types
@@ -38,6 +39,7 @@ function ActionCardSkeleton() {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export function ActionRow() {
+  const { toast } = useToast();
   const { data, isLoading, error } = useSWR<ActionCardsResponse>(
     "/api/dashboard/home/action-cards",
     fetcher,
@@ -46,8 +48,11 @@ export function ActionRow() {
 
   // W3 stub handler. W4: wire to a mutation endpoint that updates
   // agent_briefs.status (acknowledged | actioned | dismissed).
+  // Until then, a toast gives the user confirmation their click registered
+  // so the button doesn't feel broken.
   const handleAction = (cardId: string, action: ActionKey) => {
     logger.info("home action-card clicked", { cardId, action });
+    toast(`${ACTION_LABEL_BG[action]} — W4 ще активира това`, "info");
   };
 
   // Mobile carousel: horizontal snap scroll. Desktop: 3-up grid.

@@ -28,7 +28,7 @@ export interface ActionCardData {
 // Label + style maps
 // ============================================================
 
-const ACTION_LABEL_BG: Record<ActionKey, string> = {
+export const ACTION_LABEL_BG: Record<ActionKey, string> = {
   pause: "Пауза",
   scale: "Скалирай",
   review: "Прегледай",
