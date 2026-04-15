@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/meta-sync?window=today",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/agent-briefs",
+      "schedule": "30 4 * * *"
     }
   ]
 }
