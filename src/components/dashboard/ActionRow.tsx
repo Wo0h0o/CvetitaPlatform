@@ -1,8 +1,9 @@
 "use client";
 
-import useSWR from "swr";
+import useSWR, { mutate } from "swr";
+import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/shared/Skeleton";
-import { ActionCard, ACTION_LABEL_BG, type ActionCardData, type ActionKey } from "./ActionCard";
+import { ActionCard, type ActionCardData, type ActionKey } from "./ActionCard";
 import { logger } from "@/lib/logger";
 import { useToast } from "@/providers/ToastProvider";
 
@@ -36,23 +37,82 @@ function ActionCardSkeleton() {
 // ActionRow
 // ============================================================
 
+const ACTION_CARDS_KEY = "/api/dashboard/home/action-cards";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export function ActionRow() {
+  const router = useRouter();
   const { toast } = useToast();
   const { data, isLoading, error } = useSWR<ActionCardsResponse>(
-    "/api/dashboard/home/action-cards",
+    ACTION_CARDS_KEY,
     fetcher,
     { refreshInterval: 120_000, revalidateOnFocus: false }
   );
 
-  // W3 stub handler. W4: wire to a mutation endpoint that updates
-  // agent_briefs.status (acknowledged | actioned | dismissed).
-  // Until then, a toast gives the user confirmation their click registered
-  // so the button doesn't feel broken.
-  const handleAction = (cardId: string, action: ActionKey) => {
-    logger.info("home action-card clicked", { cardId, action });
-    toast(`${ACTION_LABEL_BG[action]} — W4 ще активира това`, "info");
+  const handleAction = async (
+    cardId: string,
+    action: ActionKey,
+    extra?: { factor?: number }
+  ) => {
+    const card = data?.cards.find((c) => c.id === cardId);
+    if (!card) {
+      logger.error("action-row: unknown cardId", { cardId });
+      return;
+    }
+
+    // Review — client-side navigation, no backend call.
+    if (action === "review") {
+      const market = card.target.marketCode;
+      if (!market) {
+        toast("Нямам информация за пазара", "error");
+        return;
+      }
+      router.push(`/ads/${market}?focus=${encodeURIComponent(card.target.id)}`);
+      return;
+    }
+
+    // Pause / Scale / Dismiss — all POST to /api/dashboard/action/*
+    const body: Record<string, unknown> = { briefId: cardId };
+    if (action !== "dismiss") {
+      body.targetType = card.target.type;
+      body.targetId = card.target.id;
+      body.integrationAccountId = card.target.integrationAccountId;
+    }
+    if (action === "scale") {
+      body.factor = extra?.factor;
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`/api/dashboard/action/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      logger.error("action-row: network error", {
+        action,
+        cardId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      toast("Мрежова грешка — опитай отново", "error");
+      throw err;
+    }
+
+    if (!res.ok) {
+      logger.error("action-row: mutation rejected", {
+        action,
+        cardId,
+        status: res.status,
+      });
+      toast("Грешка — опитай отново", "error");
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    // Success — re-fetch so the actioned card drops from the row. SWR
+    // will refetch and the card list will no longer include this brief
+    // (agent_briefs.status flipped to 'actioned' or 'dismissed').
+    await mutate(ACTION_CARDS_KEY);
   };
 
   // Mobile carousel: horizontal snap scroll. Desktop: 3-up grid.

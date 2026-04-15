@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { sofiaDate } from "@/lib/sofia-date";
+import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
 
 // ============================================================
 // Types — must stay in sync with src/components/dashboard/ActionCard.tsx.
@@ -19,6 +20,8 @@ interface ActionTarget {
   id: string;
   name: string;
   integrationAccountId?: string;
+  /** Market code the target belongs to — used for Review deep-link navigation. */
+  marketCode?: string;
 }
 
 interface ActionCard {
@@ -80,6 +83,17 @@ export async function GET(req: NextRequest) {
     const severityRank: Record<Severity, number> = { red: 0, amber: 1, green: 2 };
     rows.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
 
+    // Build account→market map so each card knows where "Прегледай" should
+    // navigate to. resolveAllHomeMarkets is cached (60s TTL in-memory) so
+    // this is cheap on repeat reads.
+    const markets = await resolveAllHomeMarkets();
+    const marketByAccountId = new Map<string, string>();
+    for (const m of markets) {
+      for (const b of m.bindings) {
+        marketByAccountId.set(b.integrationAccountId, m.marketCode);
+      }
+    }
+
     const cards: ActionCard[] = rows.slice(0, 10).map((r) => ({
       id: r.id,
       severity: r.severity,
@@ -90,6 +104,7 @@ export async function GET(req: NextRequest) {
         id: r.target_id,
         name: r.target_name ?? "",
         integrationAccountId: r.integration_account_id,
+        marketCode: marketByAccountId.get(r.integration_account_id),
       },
       actions: (r.actions ?? []) as ActionKey[],
     }));
