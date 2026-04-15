@@ -1,6 +1,7 @@
 "use client";
 
 import { Sun, Moon, Menu } from "lucide-react";
+import { TopBarStoreSwitcher } from "./TopBarStoreSwitcher";
 
 export function TopBar({
   sidebarCollapsed,
@@ -32,6 +33,15 @@ export function TopBar({
         >
           <Menu size={20} />
         </button>
+      </div>
+
+      {/*
+        Center slot: store switcher. Renders null on routes where a market
+        concept doesn't apply (home, settings, etc.), so the header collapses
+        to its original burger + right-icons layout in those cases.
+      */}
+      <div className="flex-1 flex items-center justify-center px-3">
+        <TopBarStoreSwitcher />
       </div>
 
       <div className="flex items-center gap-4 flex-shrink-0">
