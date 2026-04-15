@@ -67,6 +67,8 @@ interface MarketResponse {
   bindings: MarketBinding[];
   /** MAX(last_synced_at) across all bound integration_accounts. */
   lastSyncedAt: string | null;
+  /** MAX(created_at) — used by FreshnessDot to amber-grade new bindings. */
+  accountCreatedAt: string | null;
   error?: string;
 }
 
@@ -75,22 +77,22 @@ interface MarketResponse {
 // ============================================================
 
 const STATUS_MAP: Record<string, { label: string; variant: "green" | "red" | "orange" | "neutral" }> = {
-  ACTIVE: { label: "Active", variant: "green" },
-  PAUSED: { label: "Paused", variant: "neutral" },
-  DELETED: { label: "Deleted", variant: "red" },
-  ARCHIVED: { label: "Archived", variant: "neutral" },
-  CAMPAIGN_PAUSED: { label: "Paused", variant: "neutral" },
-  ADSET_PAUSED: { label: "Paused", variant: "neutral" },
-  IN_PROCESS: { label: "Processing", variant: "orange" },
-  WITH_ISSUES: { label: "Issues", variant: "red" },
+  ACTIVE: { label: "Активна", variant: "green" },
+  PAUSED: { label: "Пауза", variant: "neutral" },
+  DELETED: { label: "Изтрита", variant: "red" },
+  ARCHIVED: { label: "Архивирана", variant: "neutral" },
+  CAMPAIGN_PAUSED: { label: "Пауза", variant: "neutral" },
+  ADSET_PAUSED: { label: "Пауза", variant: "neutral" },
+  IN_PROCESS: { label: "Обработва се", variant: "orange" },
+  WITH_ISSUES: { label: "С проблеми", variant: "red" },
 };
 
 const SCORE_LABELS: { min: number; label: string; variant: "green" | "blue" | "neutral" | "orange" | "red" }[] = [
-  { min: 80, label: "Top", variant: "green" },
-  { min: 60, label: "Good", variant: "blue" },
-  { min: 40, label: "Avg", variant: "neutral" },
-  { min: 20, label: "Below", variant: "orange" },
-  { min: 0, label: "Poor", variant: "red" },
+  { min: 80, label: "Топ", variant: "green" },
+  { min: 60, label: "Добра", variant: "blue" },
+  { min: 40, label: "Средна", variant: "neutral" },
+  { min: 20, label: "Под средната", variant: "orange" },
+  { min: 0, label: "Слаба", variant: "red" },
 ];
 
 type SortKey = "score" | "spend" | "roas" | "ctr" | "purchases";
@@ -294,20 +296,6 @@ export default function AdsMarketPage({
     );
   }
 
-  if (ovLoading || !marketData) {
-    return (
-      <>
-        <PageHeader title="Реклами" />
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => <KpiSkeleton key={i} />)}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => <AdCardSkeleton key={i} />)}
-        </div>
-      </>
-    );
-  }
-
   if (overviewData?.error === "Meta Ads not configured") {
     return (
       <>
@@ -327,35 +315,58 @@ export default function AdsMarketPage({
     );
   }
 
+  // §4.11 + §4.12: keep the PageHeader + DateRangePicker rendered while
+  // loading so the user still sees where they are and can change the date
+  // range. The `marketData.marketCode !== market` check is the SWR flicker
+  // guard — SWR briefly returns the previous market's data after the URL
+  // segment changes, and we don't want that stale payload to reach the UI.
+  const isPageLoading =
+    ovLoading || !marketData || marketData.marketCode !== market;
   const ov = overviewData?.overview;
 
   return (
     <>
       <PageHeader
         title={
-          <>
-            <span>Реклами —</span>
-            <MarketFlag market={marketData.marketCode} size={20} labelled />
-            <span>{marketData.storeName}</span>
-          </>
+          !isPageLoading && marketData ? (
+            <>
+              <span>Реклами —</span>
+              <MarketFlag market={marketData.marketCode} size={20} labelled />
+              <span>{marketData.storeName}</span>
+            </>
+          ) : (
+            <span>Реклами</span>
+          )
         }
       >
-        <FreshnessDot lastSyncedAt={marketData.lastSyncedAt} showLabel />
+        {!isPageLoading && marketData && (
+          <FreshnessDot
+            lastSyncedAt={marketData.lastSyncedAt}
+            accountCreatedAt={marketData.accountCreatedAt}
+            showLabel
+          />
+        )}
         <DateRangePicker />
       </PageHeader>
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        <MiniKpi icon={CreditCard} label="Spend" value={`€${fmt(ov?.spend || 0)}`} />
-        <MiniKpi icon={Euro} label="Revenue" value={`€${fmt(ov?.revenue || 0)}`} />
-        <MiniKpi icon={TrendingUp} label="ROAS" value={`${fmt(ov?.roas || 0)}x`} highlight={(ov?.roas ?? 0) >= 2} />
-        <MiniKpi icon={ShoppingCart} label="Покупки" value={fmtInt(ov?.purchases || 0)} />
-        <MiniKpi icon={Target} label="CPA" value={`€${fmt(ov?.cpa || 0)}`} />
-        <MiniKpi icon={MousePointerClick} label="CTR" value={`${fmt(ov?.ctr || 0)}%`} />
+        {isPageLoading ? (
+          [1, 2, 3, 4, 5, 6].map((i) => <KpiSkeleton key={i} />)
+        ) : (
+          <>
+            <MiniKpi icon={CreditCard} label="Разход" value={`€${fmt(ov?.spend || 0)}`} />
+            <MiniKpi icon={Euro} label="Приходи" value={`€${fmt(ov?.revenue || 0)}`} />
+            <MiniKpi icon={TrendingUp} label="ROAS" value={`${fmt(ov?.roas || 0)}x`} highlight={(ov?.roas ?? 0) >= 2} />
+            <MiniKpi icon={ShoppingCart} label="Покупки" value={fmtInt(ov?.purchases || 0)} />
+            <MiniKpi icon={Target} label="CPA" value={`€${fmt(ov?.cpa || 0)}`} />
+            <MiniKpi icon={MousePointerClick} label="CTR" value={`${fmt(ov?.ctr || 0)}%`} />
+          </>
+        )}
       </div>
 
       {/* Sub-brand filter (BG only — multi-binding markets) */}
-      {subBrandOptions.length > 0 && (
+      {!isPageLoading && subBrandOptions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap mb-4">
           <span className="text-[12px] text-text-3">Суб-бранд:</span>
           {subBrandOptions.map((opt) => (
@@ -372,10 +383,12 @@ export default function AdsMarketPage({
         </div>
       )}
 
-      {/* Sort, Filter & Search */}
+      {/* Sort, Filter & Search — hidden until ad data is ready so the chrome
+          doesn't invite interaction against stale / missing results. */}
+      {!isPageLoading && (
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div className="flex items-center gap-1 flex-wrap">
-          {([["score", "Score"], ["spend", "Spend"], ["roas", "ROAS"], ["ctr", "CTR"], ["purchases", "Покупки"]] as [SortKey, string][]).map(([key, label]) => (
+          {([["score", "Резултат"], ["spend", "Разход"], ["roas", "ROAS"], ["ctr", "CTR"], ["purchases", "Покупки"]] as [SortKey, string][]).map(([key, label]) => (
             <button
               key={key}
               onClick={() => toggleSort(key)}
@@ -396,11 +409,12 @@ export default function AdsMarketPage({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Търси..."
+              aria-label="Търси реклами"
               className="pl-8 pr-3 py-1.5 rounded-lg bg-surface-2 border border-border text-[12px] text-text outline-none focus:border-accent w-36 md:w-48"
             />
           </div>
           <div className="flex items-center gap-1">
-            {([["all", "Всички"], ["ACTIVE", "Active"], ["PAUSED", "Paused"]] as [FilterKey, string][]).map(([key, label]) => (
+            {([["all", "Всички"], ["ACTIVE", "Активни"], ["PAUSED", "На пауза"]] as [FilterKey, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setFilter(key)}
@@ -415,9 +429,10 @@ export default function AdsMarketPage({
           <span className="text-[12px] text-text-2">{filtered.length} реклами</span>
         </div>
       </div>
+      )}
 
       {/* Ad Cards */}
-      {adsLoading ? (
+      {isPageLoading || adsLoading ? (
         <Masonry breakpointCols={{ default: 3, 1024: 2, 640: 1 }} className="flex gap-4 -ml-4" columnClassName="pl-4 space-y-4">
           {[1, 2, 3, 4, 5, 6].map((i) => <AdCardSkeleton key={i} />)}
         </Masonry>
@@ -542,8 +557,8 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
           </div>
         </div>
         <div className="grid grid-cols-3 gap-x-3 gap-y-2 mb-3">
-          <MetricCell label="Spend" value={`€${fmt(ad.spend)}`} />
-          <MetricCell label="Revenue" value={`€${fmt(ad.revenue)}`} />
+          <MetricCell label="Разход" value={`€${fmt(ad.spend)}`} />
+          <MetricCell label="Приходи" value={`€${fmt(ad.revenue)}`} />
           <MetricCell label="ROAS" value={ad.roas > 0 ? `${fmt(ad.roas)}x` : "—"} highlight={ad.roas >= 2} bad={ad.roas > 0 && ad.roas < 1} />
           <MetricCell label="CTR" value={`${fmt(ad.ctr)}%`} />
           <MetricCell label="CPA" value={ad.cpa > 0 ? `€${fmt(ad.cpa)}` : "—"} />
@@ -557,7 +572,7 @@ function AdCard({ ad, isSelected, isConfirming, isPlaying, onSelect, onPlayVideo
           </div>
         ) : (
           <button onClick={onConfirmStart} className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium text-text-2 hover:bg-surface-2 transition-colors">
-            {isActive ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
+            {isActive ? <><Pause size={12} /> Пауза</> : <><Play size={12} /> Активирай</>}
           </button>
         )}
       </div>
@@ -607,15 +622,15 @@ function AdModal({ ad, onClose, onToggleStatus }: {
               </div>
             )}
             <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <StatRow label="Spend" value={`€${fmt(ad.spend)}`} />
-              <StatRow label="Revenue" value={`€${fmt(ad.revenue)}`} />
+              <StatRow label="Разход" value={`€${fmt(ad.spend)}`} />
+              <StatRow label="Приходи" value={`€${fmt(ad.revenue)}`} />
               <StatRow label="ROAS" value={ad.roas > 0 ? `${fmt(ad.roas)}x` : "—"} />
-              {ad.scoreMeta?.shrunkRoas != null && <StatRow label="Adj. ROAS" value={`${fmt(ad.scoreMeta.shrunkRoas)}x`} />}
+              {ad.scoreMeta?.shrunkRoas != null && <StatRow label="Корекция ROAS" value={`${fmt(ad.scoreMeta.shrunkRoas)}x`} />}
               <StatRow label="Покупки" value={fmtInt(ad.purchases)} />
               <StatRow label="CPA" value={ad.cpa > 0 ? `€${fmt(ad.cpa)}` : "—"} />
               <StatRow label="CTR" value={`${fmt(ad.ctr)}%`} />
-              <StatRow label="Frequency" value={fmt(ad.frequency)} />
-              <StatRow label="Confidence" value={`${Math.round(ad.confidence * 100)}%`} />
+              <StatRow label="Честота" value={fmt(ad.frequency)} />
+              <StatRow label="Достоверност" value={`${Math.round(ad.confidence * 100)}%`} />
             </div>
           </div>
 
@@ -637,7 +652,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
           )}
 
           <div className="text-[12px] text-text-2 space-y-0.5">
-            <div>Campaign: <span className="text-text-2">{ad.campaignName}</span></div>
+            <div>Кампания: <span className="text-text-2">{ad.campaignName}</span></div>
             <div>Ad Set: <span className="text-text-2">{ad.adsetName}</span></div>
           </div>
         </div>
@@ -649,7 +664,7 @@ function AdModal({ ad, onClose, onToggleStatus }: {
               isActive ? "bg-surface-2 border border-border text-text hover:bg-border" : "bg-accent text-white hover:bg-accent-hover"
             }`}
           >
-            {isActive ? <><Pause size={16} /> Pause Ad</> : <><Play size={16} /> Resume Ad</>}
+            {isActive ? <><Pause size={16} /> Спри рекламата</> : <><Play size={16} /> Активирай рекламата</>}
           </button>
         </div>
       </div>
