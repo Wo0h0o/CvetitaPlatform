@@ -15,7 +15,7 @@ export async function POST(
 
   const { adId } = await params;
 
-  let body: { status?: string };
+  let body: { status?: string; integrationAccountId?: string };
   try {
     body = await request.json();
   } catch {
@@ -27,7 +27,15 @@ export async function POST(
     return NextResponse.json({ error: "Status must be ACTIVE or PAUSED" }, { status: 400 });
   }
 
-  const ok = await updateMetaAdStatus(adId, status);
+  // The ad's source account must be passed explicitly — an ad from
+  // act_ProteinBar won't resolve under Cvetita's primary token. The client
+  // picks this up from the row's integration_account_id field (populated by
+  // the per-account fan-out in /api/dashboard/ads/individual/route.ts).
+  // Absent in the body → fall back to the env-default client, preserving
+  // legacy single-account behaviour.
+  const integrationAccountId = body.integrationAccountId || undefined;
+
+  const ok = await updateMetaAdStatus(adId, status, integrationAccountId);
   if (!ok) {
     return NextResponse.json({ error: "Failed to update ad status" }, { status: 500 });
   }

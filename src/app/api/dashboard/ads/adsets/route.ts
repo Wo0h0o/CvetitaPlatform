@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMetaAdSetInsights, fetchAdSetsMeta, actionVal } from "@/lib/meta";
 import type { MetaAdSetInsightRow } from "@/lib/meta";
 import { requireAuth } from "@/lib/api-auth";
+import { logger } from "@/lib/logger";
+import { resolveAdsMarketFromRequest } from "@/lib/ads-market";
 
 const PRESET_MAP: Record<string, string> = {
   today: "today",
@@ -43,6 +45,45 @@ function parseAdSetRow(r: MetaAdSetInsightRow) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Per-account adset builder
+// Pulls insights + metadata for one account, joins them, returns tagged rows.
+// ---------------------------------------------------------------------------
+async function fetchAdSetsForAccount(
+  datePreset: string,
+  integrationAccountId?: string
+) {
+  const [insightRows, adSetsMeta] = await Promise.all([
+    getMetaAdSetInsights(datePreset, integrationAccountId),
+    fetchAdSetsMeta(integrationAccountId),
+  ]);
+
+  const metaMap = new Map(adSetsMeta.map((m) => [m.id, m]));
+  const parsed = insightRows.map(parseAdSetRow);
+
+  return parsed.map((adset) => {
+    const meta = metaMap.get(adset.id);
+    const dailyBudget = meta?.daily_budget ? parseFloat(meta.daily_budget) / 100 : null;
+    const lifetimeBudget = meta?.lifetime_budget ? parseFloat(meta.lifetime_budget) / 100 : null;
+
+    return {
+      ...adset,
+      status: meta?.effective_status || "UNKNOWN",
+      dailyBudget,
+      lifetimeBudget,
+      budget: dailyBudget
+        ? `€${dailyBudget.toFixed(2)}/day`
+        : lifetimeBudget
+          ? `€${lifetimeBudget.toFixed(2)} lifetime`
+          : "—",
+      optimizationGoal: meta?.optimization_goal || null,
+      createdTime: meta?.created_time || null,
+      startTime: meta?.start_time || null,
+      integration_account_id: integrationAccountId ?? null,
+    };
+  });
+}
+
 export async function GET(request: NextRequest) {
   const authError = await requireAuth(request);
   if (authError) return authError;
@@ -54,38 +95,42 @@ export async function GET(request: NextRequest) {
   const preset = searchParams.get("preset") || "7d";
   const datePreset = PRESET_MAP[preset] || "last_7d";
 
+  let ids: string[] | null;
   try {
-    const [insightRows, adSetsMeta] = await Promise.all([
-      getMetaAdSetInsights(datePreset),
-      fetchAdSetsMeta(),
-    ]);
+    ({ ids } = await resolveAdsMarketFromRequest(request));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Invalid market";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
 
-    const metaMap = new Map(adSetsMeta.map((m) => [m.id, m]));
-    const parsed = insightRows.map(parseAdSetRow);
+  try {
+    // Env-default path (legacy /ads/adsets sub-route without market)
+    if (ids === null) {
+      const adsets = (await fetchAdSetsForAccount(datePreset)).sort(
+        (a, b) => b.spend - a.spend
+      );
+      return NextResponse.json(
+        { adsets },
+        { headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" } }
+      );
+    }
 
-    const adsets = parsed.map((adset) => {
-      const meta = metaMap.get(adset.id);
-      const dailyBudget = meta?.daily_budget ? parseFloat(meta.daily_budget) / 100 : null; // Meta returns cents
-      const lifetimeBudget = meta?.lifetime_budget ? parseFloat(meta.lifetime_budget) / 100 : null;
-
-      return {
-        ...adset,
-        status: meta?.effective_status || "UNKNOWN",
-        dailyBudget,
-        lifetimeBudget,
-        budget: dailyBudget ? `€${dailyBudget.toFixed(2)}/day` : lifetimeBudget ? `€${lifetimeBudget.toFixed(2)} lifetime` : "—",
-        optimizationGoal: meta?.optimization_goal || null,
-        createdTime: meta?.created_time || null,
-        startTime: meta?.start_time || null,
-      };
-    }).sort((a, b) => b.spend - a.spend);
+    // Per-market fan-out
+    const perAccount = await Promise.all(
+      ids.map((id) => fetchAdSetsForAccount(datePreset, id))
+    );
+    const adsets = perAccount.flat().sort((a, b) => {
+      if (b.spend !== a.spend) return b.spend - a.spend;
+      return a.id.localeCompare(b.id);
+    });
 
     return NextResponse.json(
       { adsets },
       { headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" } }
     );
   } catch (error) {
-    console.error("Meta Ad Sets API error:", error);
+    const msg = error instanceof Error ? error.message : "Meta API fetch failed";
+    logger.error("GET /api/dashboard/ads/adsets failed", { error: msg });
     return NextResponse.json({ error: "Meta API fetch failed" }, { status: 500 });
   }
 }
