@@ -38,6 +38,13 @@ function sofiaWeekdayBg(d: Date): string {
   }).format(d);
 }
 
+// Bulgarian adjectives agree in gender with the noun. Wed/Sat/Sun are
+// feminine ("типична сряда"); the rest are masculine ("типичен понеделник").
+const FEMININE_WEEKDAYS_BG = new Set(["сряда", "събота", "неделя"]);
+function typicalAdjectiveBg(weekdayBg: string): string {
+  return FEMININE_WEEKDAYS_BG.has(weekdayBg) ? "типична" : "типичен";
+}
+
 function fmtEur(n: number): string {
   return `${n.toLocaleString("bg-BG", {
     maximumFractionDigits: 0,
@@ -124,7 +131,7 @@ export function KpiStrip() {
   );
 
   const weekdayBg = sofiaWeekdayBg(new Date());
-  const typicalLabel = `типичен ${weekdayBg}`;
+  const typicalLabel = `${typicalAdjectiveBg(weekdayBg)} ${weekdayBg}`;
 
   if (isLoading || !data) {
     return (
