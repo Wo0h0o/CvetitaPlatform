@@ -15,7 +15,9 @@ interface TempoMetric {
   /**
    * Percentage delta vs matched-hour portion of a typical weekday average.
    * 0 means on pace; +20 means 20% ahead of pace. null when too early in
-   * the day to project reliably (< 1h of Sofia time elapsed).
+   * the day to project reliably (< 3h of Sofia time elapsed). Clamped to
+   * ±999 to avoid runaway values when a stray full-day prior row skews the
+   * denominator in the early hours.
    */
   vsTypical: number | null;
   /** Linear extrapolation of today's value to end-of-day. null when too early. */
@@ -100,9 +102,12 @@ export async function GET(req: NextRequest) {
       return sum / priors.length;
     };
 
-    // If it's too early in the Sofia day (< 1h) or we have no prior data,
-    // skip the tempo/projected math — too noisy to be useful.
-    const tooEarly = hoursElapsed < 1 || priors.length === 0;
+    // If it's too early in the Sofia day (< 3h) or we have no prior data,
+    // skip the tempo/projected math — too noisy to be useful. 3h (not 1h)
+    // because at hoursElapsed≈1 the denominator matchedSoFar is ~4% of typ,
+    // so a single late-attribution prior row can push vsTypical into the
+    // thousands of percent.
+    const tooEarly = hoursElapsed < 3 || priors.length === 0;
 
     const tempoMetric = (field: "spend" | "revenue" | "purchases"): TempoMetric => {
       const value = today[field];
@@ -110,7 +115,10 @@ export async function GET(req: NextRequest) {
       const typ = typical(field);
       if (typ === 0) return { value, vsTypical: null, projected: null };
       const matchedSoFar = typ * (hoursElapsed / 24);
-      const vsTypical = Math.round(((value - matchedSoFar) / matchedSoFar) * 100);
+      const vsTypicalRaw = Math.round(((value - matchedSoFar) / matchedSoFar) * 100);
+      // Belt-and-suspenders against extreme values: clamp the display so a
+      // freak row can't render "+12,450%" in the UI.
+      const vsTypical = Math.max(-999, Math.min(999, vsTypicalRaw));
       const projected = Math.round(value / (hoursElapsed / 24));
       return { value, vsTypical, projected };
     };
