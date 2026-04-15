@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState, useMemo, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import Masonry from "react-masonry-css";
 import { Card, CardBody } from "@/components/shared/Card";
@@ -141,6 +142,8 @@ export default function AdsMarketPage({
   params: Promise<{ market: string }>;
 }) {
   const { market } = use(params);
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { preset } = useDateRange();
   const metaPreset = PRESET_MAP[preset] || "7d";
@@ -164,6 +167,15 @@ export default function AdsMarketPage({
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", handleKey); document.body.style.overflow = ""; };
   }, [selectedId, closeModal]);
+
+  // Handle ?focus=<adId> — set by the Owner Home's "Прегледай" action-card
+  // button (W4). When the matching ad is present in the filtered list, we
+  // auto-open its modal and strip the param from the URL so closing the
+  // modal doesn't re-trigger this effect.
+  //
+  // Focus targets adsets/campaigns won't match any AdCard — we silently do
+  // nothing in that case and leave the user on the page.
+  const focusId = searchParams.get("focus");
 
   // Market metadata — used for PageHeader title, sub-brand filter labels,
   // and as a quick 404 signal when the URL segment doesn't resolve.
@@ -244,6 +256,21 @@ export default function AdsMarketPage({
   }, [adsData?.ads, filter, searchQuery, sortKey, sortDir, subBrand, subBrandOptions]);
 
   const selectedAd = selectedId ? filtered.find((a) => a.id === selectedId) : null;
+
+  // Auto-open the modal when ?focus=<adId> is set and the ad is in the
+  // filtered list. Strip `focus` from the URL immediately so closing the
+  // modal doesn't re-trigger this effect.
+  useEffect(() => {
+    if (!focusId) return;
+    if (selectedId === focusId) return; // already open
+    const match = filtered.find((a) => a.id === focusId);
+    if (!match) return;
+    setSelectedId(match.id);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("focus");
+    const nextUrl = params.toString() ? `?${params.toString()}` : "";
+    router.replace(`/ads/${market}${nextUrl}`);
+  }, [focusId, filtered, selectedId, router, searchParams, market]);
 
   const handleToggleStatus = async (adId: string, newStatus: "ACTIVE" | "PAUSED") => {
     // Find the ad across both cache entries so we can send its source account id.
