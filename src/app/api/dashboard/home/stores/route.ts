@@ -29,6 +29,12 @@ interface StoreCardPayload {
   borderLevel: BorderLevel;
   /** Most recent sync across all bound integration_accounts. ISO timestamp. */
   lastSyncedAt: string | null;
+  /**
+   * MAX(created_at) across all bound integration_accounts. FreshnessDot uses
+   * this to distinguish "freshly bound, cron hasn't fired yet" (amber) from
+   * "never synced, something is broken" (red).
+   */
+  accountCreatedAt: string | null;
 }
 
 interface StoresResponse {
@@ -89,7 +95,7 @@ async function buildStoreCard(
       .lte("date", todayIso),
     supabaseAdmin
       .from("integration_accounts")
-      .select("last_synced_at")
+      .select("last_synced_at, created_at")
       .in("id", market.allIntegrationAccountIds),
   ]);
 
@@ -135,11 +141,22 @@ async function buildStoreCard(
   const borderLevel = deriveBorder(roasLast24h, roasMedian14d);
 
   // "Is any of this data fresh?" — take MAX across bindings (not MIN).
-  const syncTimes = (accountsRes.data ?? [])
-    .map((r) => r.last_synced_at as string | null)
+  // MAX(created_at) pairs with MAX(last_synced_at): if the newest binding
+  // was just added, FreshnessDot enters its grace window.
+  const accountRows = (accountsRes.data ?? []) as Array<{
+    last_synced_at: string | null;
+    created_at: string | null;
+  }>;
+  const syncTimes = accountRows
+    .map((r) => r.last_synced_at)
+    .filter((t): t is string => !!t);
+  const createdTimes = accountRows
+    .map((r) => r.created_at)
     .filter((t): t is string => !!t);
   const lastSyncedAt =
     syncTimes.length > 0 ? syncTimes.reduce((a, b) => (a > b ? a : b)) : null;
+  const accountCreatedAt =
+    createdTimes.length > 0 ? createdTimes.reduce((a, b) => (a > b ? a : b)) : null;
 
   return {
     storeId: market.storeId,
@@ -150,6 +167,7 @@ async function buildStoreCard(
     roasMedian14d,
     borderLevel,
     lastSyncedAt,
+    accountCreatedAt,
   };
 }
 

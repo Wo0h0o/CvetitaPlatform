@@ -2,39 +2,67 @@
  * FreshnessDot — индикатор за свежестта на данните.
  *
  * Цветове според възрастта на данните:
- *   🟢 зелено  — свежи (< 15 мин)
- *   🟡 жълто   — скорошни (< 1 час)
+ *   🟢 зелено   — свежи (< 15 мин)
+ *   🟡 жълто    — скорошни (< 1 час)
  *   🟠 оранжево — днешни (< 24 часа)
- *   ⚪ сиво    — от предишно обновяване (> 24 часа)
- *   🔴 червено — никога не обновявано / грешка
+ *   ⚪ сиво     — от предишно обновяване (> 24 часа)
+ *   🟠 оранжево — очаква първа синхронизация (ново обвързана сметка)
+ *   🔴 червено  — никога не обновявано / грешка
  *
  * Usage:
  *   <FreshnessDot lastSyncedAt={row.last_synced_at} />
  *   <FreshnessDot lastSyncedAt={row.last_synced_at} showLabel />
+ *   <FreshnessDot
+ *     lastSyncedAt={row.last_synced_at}
+ *     accountCreatedAt={row.account_created_at}
+ *     showLabel
+ *   />
  */
 
 import { Tooltip } from "./Tooltip";
 
-type Level = "fresh" | "recent" | "aging" | "stale" | "none";
+type Level = "fresh" | "recent" | "aging" | "stale" | "pending" | "none";
 
+// Window during which a freshly-bound integration account is allowed to have
+// no `last_synced_at` yet without being flagged red. Intraday cron runs every
+// 15 min so 30 min leaves one clear retry window.
+const PENDING_GRACE_MS = 30 * 60_000;
+
+// Design-system tokens rather than raw Tailwind palette — keeps the dot in
+// lockstep with brand colours and dark-mode overrides defined in globals.css.
 const COLOR_BY_LEVEL: Record<Level, string> = {
-  fresh:  "bg-emerald-500",
-  recent: "bg-yellow-400",
-  aging:  "bg-orange-400",
-  stale:  "bg-zinc-400 dark:bg-zinc-500",
-  none:   "bg-red-500",
+  fresh:   "bg-accent",
+  recent:  "bg-yellow",
+  aging:   "bg-orange",
+  stale:   "bg-text-3",
+  pending: "bg-orange",
+  none:    "bg-red",
 };
 
 const LEVEL_LABEL: Record<Level, string> = {
-  fresh:  "току-що обновено",
-  recent: "наскоро обновено",
-  aging:  "обновено днес",
-  stale:  "от предишно обновяване",
-  none:   "никога не е обновявано",
+  fresh:   "току-що обновено",
+  recent:  "наскоро обновено",
+  aging:   "обновено днес",
+  stale:   "от предишно обновяване",
+  pending: "очаква първа синхронизация",
+  none:    "никога не е обновявано",
 };
 
-function classify(ts: string | Date | null | undefined): Level {
-  if (!ts) return "none";
+function classify(
+  ts: string | Date | null | undefined,
+  accountCreatedAt: string | Date | null | undefined
+): Level {
+  if (!ts) {
+    // Never synced: distinguish "freshly-bound, cron hasn't fired yet"
+    // (amber, transient) from "stale binding, cron is broken" (red).
+    if (accountCreatedAt) {
+      const createdAt =
+        typeof accountCreatedAt === "string" ? new Date(accountCreatedAt) : accountCreatedAt;
+      const ageMs = Date.now() - createdAt.getTime();
+      if (ageMs >= 0 && ageMs < PENDING_GRACE_MS) return "pending";
+    }
+    return "none";
+  }
   const when = typeof ts === "string" ? new Date(ts) : ts;
   const ageMs = Date.now() - when.getTime();
   if (ageMs < 15 * 60_000) return "fresh";
@@ -58,6 +86,13 @@ function formatAgeBg(ts: string | Date): string {
 
 interface FreshnessDotProps {
   lastSyncedAt: string | Date | null | undefined;
+  /**
+   * Timestamp of the most recently bound integration account for this
+   * scope (market or store). When present and within PENDING_GRACE_MS,
+   * a null lastSyncedAt renders amber "очаква първа синхронизация"
+   * instead of red "никога не е обновявано".
+   */
+  accountCreatedAt?: string | Date | null;
   /** Показвай и текстова възраст до точката (напр. "преди 3 мин"). */
   showLabel?: boolean;
   /** Допълнителни класове за позициониране. */
@@ -66,10 +101,11 @@ interface FreshnessDotProps {
 
 export function FreshnessDot({
   lastSyncedAt,
+  accountCreatedAt,
   showLabel = false,
   className = "",
 }: FreshnessDotProps) {
-  const level = classify(lastSyncedAt);
+  const level = classify(lastSyncedAt, accountCreatedAt);
   const color = COLOR_BY_LEVEL[level];
   const levelLabel = LEVEL_LABEL[level];
   const ageLabel = lastSyncedAt ? formatAgeBg(lastSyncedAt) : levelLabel;

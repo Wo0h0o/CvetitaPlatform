@@ -35,9 +35,13 @@ export async function GET(
     // Freshness: MAX(last_synced_at) across all bound integration_accounts.
     // "Is any of this data fresh?" — not "is all of it fresh?" (plan gotcha #6).
     // Default to null when no syncs have happened yet.
+    //
+    // Also return MAX(created_at) — consumed by FreshnessDot so a freshly
+    // bound account that hasn't hit its first cron yet renders amber
+    // "очаква първа синхронизация" instead of red "никога не е обновявано".
     const { data: syncRows, error: syncErr } = await supabaseAdmin
       .from("integration_accounts")
-      .select("last_synced_at")
+      .select("last_synced_at, created_at")
       .in("id", resolved.allIntegrationAccountIds);
 
     if (syncErr) {
@@ -47,11 +51,20 @@ export async function GET(
       });
     }
 
-    const syncTimes = (syncRows ?? [])
-      .map((r) => r.last_synced_at as string | null)
+    const rows = (syncRows ?? []) as Array<{
+      last_synced_at: string | null;
+      created_at: string | null;
+    }>;
+    const syncTimes = rows
+      .map((r) => r.last_synced_at)
+      .filter((t): t is string => !!t);
+    const createdTimes = rows
+      .map((r) => r.created_at)
       .filter((t): t is string => !!t);
     const lastSyncedAt =
       syncTimes.length > 0 ? syncTimes.reduce((a, b) => (a > b ? a : b)) : null;
+    const accountCreatedAt =
+      createdTimes.length > 0 ? createdTimes.reduce((a, b) => (a > b ? a : b)) : null;
 
     return NextResponse.json(
       {
@@ -60,6 +73,7 @@ export async function GET(
         storeName: resolved.storeName,
         bindings: resolved.bindings,
         lastSyncedAt,
+        accountCreatedAt,
       },
       { headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=30" } }
     );

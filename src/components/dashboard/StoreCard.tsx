@@ -25,6 +25,8 @@ export interface StoreCardData {
   roasMedian14d: number;
   borderLevel: BorderLevel;
   lastSyncedAt: string | null;
+  /** MAX(created_at) across bindings — lets FreshnessDot amber-grade new accounts. */
+  accountCreatedAt: string | null;
 }
 
 // ============================================================
@@ -163,7 +165,10 @@ export function StoreCard({ data }: StoreCardProps) {
         </div>
 
         <div className="self-end">
-          <FreshnessDot lastSyncedAt={data.lastSyncedAt} />
+          <FreshnessDot
+            lastSyncedAt={data.lastSyncedAt}
+            accountCreatedAt={data.accountCreatedAt}
+          />
         </div>
       </div>
     </div>
