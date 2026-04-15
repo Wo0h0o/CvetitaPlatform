@@ -8,12 +8,13 @@ import {
   type ResolvedMarket,
 } from "@/lib/store-market-resolver";
 import { sofiaDate, lastNDates } from "@/lib/sofia-date";
+// Canonical BorderLevel lives in StoreCard — the route's payload is what
+// that component renders, so the type must stay in sync.
+import type { BorderLevel } from "@/components/dashboard/StoreCard";
 
 // ============================================================
 // Types
 // ============================================================
-
-type BorderLevel = "red" | "amber" | "green";
 
 interface StoreCardPayload {
   /** Store UUID — used as the card-tap target (/sales/store/[storeId]). */
@@ -191,6 +192,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     logger.error("GET /api/dashboard/home/stores failed", { error: message });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

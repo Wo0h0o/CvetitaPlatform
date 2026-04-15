@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { getTopProducts } from "@/lib/shopify";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
       headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" },
     });
   } catch (error) {
-    console.error("Top products error:", error);
+    logger.error("Top products error", { error: String(error) });
     return NextResponse.json(
       { error: "Top products fetch failed" },
       { status: 500 }

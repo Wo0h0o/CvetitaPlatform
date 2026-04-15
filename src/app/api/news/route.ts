@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { requireAuth } from "@/lib/api-auth";
 
 // Simple in-memory cache
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
     cache = { data: news, expires: Date.now() + 3600_000 };
     return NextResponse.json(news);
   } catch (error) {
-    console.error("News fetch error:", error);
+    logger.error("News fetch error", { error: String(error) });
     return NextResponse.json(getFallbackNews());
   }
 }

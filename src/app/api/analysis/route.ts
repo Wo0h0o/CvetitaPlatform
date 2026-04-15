@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { logger } from "@/lib/logger";
 import { analysisPrompts } from "@/lib/prompts";
 import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
 import { requireAuth } from "@/lib/api-auth";
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("Anthropic API error:", err);
+      logger.error("Anthropic API error", { error: String(err) });
       return new Response(`API error: ${res.status}`, { status: 502 });
     }
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   } catch (error) {
-    console.error("Analysis error:", error);
+    logger.error("Analysis error", { error: String(error) });
     return new Response("Analysis failed", { status: 500 });
   }
 }

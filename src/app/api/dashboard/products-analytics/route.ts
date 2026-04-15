@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { parseDateParams } from "@/lib/api-utils";
 import { fetchAllProducts } from "@/lib/shopify";
 import { requireAuth } from "@/lib/api-auth";
@@ -185,7 +186,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Products analytics error:", error);
+    logger.error("Products analytics error", { error: String(error) });
     return NextResponse.json({ error: "Products analytics fetch failed" }, { status: 500 });
   }
 }

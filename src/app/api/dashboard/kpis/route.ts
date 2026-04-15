@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { getShopifyKPIs } from "@/lib/shopify";
 import { getGA4KPIs } from "@/lib/ga4";
 import { requireAuth } from "@/lib/api-auth";
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" } }
     );
   } catch (error) {
-    console.error("KPI fetch error:", error);
+    logger.error("KPI fetch error", { error: String(error) });
     return NextResponse.json(
       { error: "KPI fetch failed" },
       { status: 500 }

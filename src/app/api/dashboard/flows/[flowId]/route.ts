@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { getFlowDetail } from "@/lib/klaviyo";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -26,7 +27,7 @@ export async function GET(
       headers: { "Cache-Control": "s-maxage=1800, stale-while-revalidate=300" },
     });
   } catch (error) {
-    console.error("Flow detail error:", error);
+    logger.error("Flow detail error", { error: String(error) });
     return NextResponse.json({
       error: "Flow fetch failed",
       detail: error instanceof Error ? error.message : "Unknown error",

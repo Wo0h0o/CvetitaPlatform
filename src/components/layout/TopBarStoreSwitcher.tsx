@@ -5,25 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { ChevronDown } from "lucide-react";
 import { MarketFlag } from "@/components/shared/MarketFlag";
+// BorderLevel + StoreCardData are canonical in StoreCard.tsx; the switcher
+// consumes the same /api/dashboard/home/stores shape.
+import { type BorderLevel, type StoreCardData } from "@/components/dashboard/StoreCard";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
-// ============================================================
-// Types (mirror /api/dashboard/home/stores)
-// ============================================================
-
-type BorderLevel = "red" | "amber" | "green";
-
-interface StoreCardData {
-  storeId: string;
-  marketCode: string;
-  name: string;
-  sparkline14d: number[];
-  roasLast24h: number;
-  roasMedian14d: number;
-  borderLevel: BorderLevel;
-  lastSyncedAt: string | null;
-}
 
 interface StoresResponse {
   stores: StoreCardData[];

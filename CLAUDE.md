@@ -61,7 +61,7 @@ npm run build      # Production build
 - **Vercel** for hosting (auto-deploy from GitHub on push to `main`)
 - **GitHub Actions CI** — lint + typecheck + build on every PR/push
 - **No database** — real-time API pulls from Shopify, GA4, Klaviyo, Claude
-- **Auth:** NextAuth with password-based login
+- **Auth:** Supabase SSR (cookie-based, `@supabase/ssr`)
 
 ## Key Directories
 
@@ -108,7 +108,7 @@ src/providers/           # DataProvider (SWR prefetch with loading screen)
 | Shopify GraphQL | `src/lib/shopify.ts` | Active |
 | GA4 (OAuth) | `src/lib/ga4.ts` | Active |
 | Klaviyo (OAuth) | `src/lib/klaviyo.ts` | Active |
-| Claude API | `@ai-sdk/anthropic` | Active |
+| Claude API | raw fetch (no SDK, inline in agent routes) | Active |
 | Tavily Search | `src/lib/tavily.ts` | Active |
 | Meta Ads | `src/lib/meta.ts` | Active |
 | Google Ads | — | Not yet |

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { requireAuth } from "@/lib/api-auth";
 import { fetchWithTimeout } from "@/lib/fetch-utils";
 import { getDateRange, type DatePreset } from "@/lib/dates";
@@ -121,7 +122,7 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );
   } catch (error) {
-    console.error("Traffic API error:", error);
+    logger.error("Traffic API error", { error: String(error) });
     return NextResponse.json({ error: "GA4 fetch failed" }, { status: 500 });
   }
 }

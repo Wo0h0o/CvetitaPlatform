@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { logger } from "@/lib/logger";
 import { fetchProductCatalog, searchProducts, fetchProductByHandle, stripHtml, type ShopifyProduct } from "@/lib/shopify";
 import { LANGUAGE_CONFIGS, type LanguageConfig } from "@/lib/ad-creator-languages";
 import { requireAuth } from "@/lib/api-auth";
@@ -480,7 +481,7 @@ async function runEditor(apiKey: string, generatedText: string, send: (data: obj
   });
 
   if (!res.ok) {
-    console.error("Editor API error:", res.status);
+    logger.error("Editor API error", { error: String(res.status) });
     return;
   }
 

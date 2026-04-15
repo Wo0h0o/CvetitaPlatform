@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { generateImage, generateImageWithReference } from "@/lib/gemini";
 import { LANGUAGE_CONFIGS } from "@/lib/ad-creator-languages";
 import { requireAuth } from "@/lib/api-auth";
@@ -174,7 +175,7 @@ async function artDirectorRefine(
     });
 
     if (!res.ok) {
-      console.error("Art Director API error:", res.status);
+      logger.error("Art Director API error", { error: String(res.status) });
       return rawPrompt;
     }
 
@@ -182,11 +183,11 @@ async function artDirectorRefine(
     const refined = data.content?.[0]?.text?.trim();
 
     if (refined && refined.length > 20) {
-      console.log("[Art Director] Refined prompt:", refined.substring(0, 150) + "...");
+      logger.info("[Art Director] Refined prompt", { detail: String(refined.substring(0, 150) + "...") });
       return refined;
     }
   } catch (err) {
-    console.error("Art Director error:", err);
+    logger.error("Art Director error", { error: String(err) });
   }
 
   return rawPrompt;
@@ -234,7 +235,7 @@ export async function POST(req: NextRequest) {
         const finalPrompt = `Reproduce the product from the reference image exactly as-is in this scene. Do not alter the packaging. ${refinedPrompt}`;
         result = await generateImageWithReference(finalPrompt, refImage.data, refImage.mimeType, aspectRatio);
       } else {
-        console.warn("[Image Gen] Failed to fetch product image from:", productImageUrl);
+        logger.warn("[Image Gen] Failed to fetch product image from", { detail: String(productImageUrl) });
         // Generate without reference — Art Director already handles this case
         result = await generateImage(refinedPrompt, aspectRatio);
       }
@@ -251,7 +252,7 @@ export async function POST(req: NextRequest) {
       mimeType: result.mimeType,
     });
   } catch (error) {
-    console.error("Image generation error:", error);
+    logger.error("Image generation error", { error: String(error) });
     return NextResponse.json(
       { error: `Image generation failed: ${String(error)}` },
       { status: 500 }

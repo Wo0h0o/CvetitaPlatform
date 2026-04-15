@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { logger } from "@/lib/logger";
 import { getKlaviyoMetrics } from "@/lib/klaviyo";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
       headers: { "Cache-Control": "s-maxage=1800, stale-while-revalidate=300" },
     });
   } catch (error) {
-    console.error("Email API error:", error);
+    logger.error("Email API error", { error: String(error) });
     return NextResponse.json(
       { error: "Klaviyo fetch failed" },
       { status: 500 }

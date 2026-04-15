@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { refreshToken } from "@/lib/meta";
 import { requireCronSecret } from "@/lib/api-auth";
 
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       updatedVercel: !!(vercelToken && projectId),
     });
   } catch (error) {
-    console.error("Meta token refresh error:", error);
+    logger.error("Meta token refresh error", { error: String(error) });
     return NextResponse.json({ error: "Refresh failed" }, { status: 500 });
   }
 }

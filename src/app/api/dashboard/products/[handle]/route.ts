@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { parseDateParams } from "@/lib/api-utils";
 import { fetchProductByHandle } from "@/lib/shopify";
 import { requireAuth } from "@/lib/api-auth";
@@ -142,7 +143,7 @@ export async function GET(
       headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" },
     });
   } catch (error) {
-    console.error("Product detail error:", error);
+    logger.error("Product detail error", { error: String(error) });
     return NextResponse.json({ error: "Failed to fetch product" }, { status: 500 });
   }
 }

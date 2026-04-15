@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       logger.error("top-strip query failed", { error: error.message });
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Internal error" }, { status: 500 });
     }
 
     type Row = {
@@ -150,6 +150,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     logger.error("GET /api/dashboard/home/top-strip failed", { error: message });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
