@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { sofiaDate } from "@/lib/sofia-date";
 
 // ============================================================
-// Types
+// Types — must stay in sync with src/components/dashboard/ActionCard.tsx.
+// Extended in W4: ActionTarget now carries integrationAccountId so the
+// mutation routes know which Meta account to hit.
 // ============================================================
 
 type Severity = "red" | "amber" | "green";
@@ -14,6 +18,7 @@ interface ActionTarget {
   type: "ad" | "adset" | "campaign" | "product" | "segment";
   id: string;
   name: string;
+  integrationAccountId?: string;
 }
 
 interface ActionCard {
@@ -27,42 +32,23 @@ interface ActionCard {
 
 interface ActionCardsResponse {
   cards: ActionCard[];
+  error?: string;
+}
+
+interface BriefRow {
+  id: string;
+  severity: Severity;
+  title: string;
+  why: string;
+  target_type: "ad" | "adset" | "campaign";
+  target_id: string;
+  target_name: string | null;
+  actions: ActionKey[] | null;
+  integration_account_id: string;
 }
 
 // ============================================================
-// Stubs — W3 scaffolding only.
-// Replace the body of this route in W4 with a query against agent_briefs.
-// ============================================================
-
-const STUB_CARDS: ActionCard[] = [
-  {
-    id: "stub-1",
-    severity: "red",
-    title: "Пауза на „BG - TOF - Video 3“",
-    why: "CPA €18.40, +140% за 7 дни",
-    target: { type: "ad", id: "stub-ad-001", name: "BG - TOF - Video 3" },
-    actions: ["pause", "dismiss"],
-  },
-  {
-    id: "stub-2",
-    severity: "amber",
-    title: "Прегледай „GR - Retargeting - Carousel“",
-    why: "ROAS спада под медианата за 3 дни подред",
-    target: { type: "adset", id: "stub-adset-002", name: "GR - Retargeting - Carousel" },
-    actions: ["review", "dismiss"],
-  },
-  {
-    id: "stub-3",
-    severity: "green",
-    title: "Скалирай „RO - Cold - UGC v2“",
-    why: "ROAS 4.8, +35% vs типичен вторник",
-    target: { type: "campaign", id: "stub-camp-003", name: "RO - Cold - UGC v2" },
-    actions: ["scale", "dismiss"],
-  },
-];
-
-// ============================================================
-// Route
+// GET — serves today's pending briefs, sorted by severity (red first).
 // ============================================================
 
 export async function GET(req: NextRequest) {
@@ -70,7 +56,45 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const response: ActionCardsResponse = { cards: STUB_CARDS };
+    const forDate = sofiaDate();
+
+    // Fetch pending briefs for today. supabase-js can't express a
+    // `ORDER BY CASE severity ...` custom ordering directly, so we sort
+    // in JS after the fetch (at most ~30 rows so the cost is trivial).
+    const { data, error } = await supabaseAdmin
+      .from("agent_briefs")
+      .select(
+        "id, severity, title, why, target_type, target_id, target_name, actions, integration_account_id"
+      )
+      .eq("for_date", forDate)
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(30);
+
+    if (error) {
+      logger.error("action-cards: agent_briefs fetch failed", { error: error.message });
+      return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    }
+
+    const rows = (data ?? []) as BriefRow[];
+    const severityRank: Record<Severity, number> = { red: 0, amber: 1, green: 2 };
+    rows.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+
+    const cards: ActionCard[] = rows.slice(0, 10).map((r) => ({
+      id: r.id,
+      severity: r.severity,
+      title: r.title,
+      why: r.why,
+      target: {
+        type: r.target_type,
+        id: r.target_id,
+        name: r.target_name ?? "",
+        integrationAccountId: r.integration_account_id,
+      },
+      actions: (r.actions ?? []) as ActionKey[],
+    }));
+
+    const response: ActionCardsResponse = { cards };
     return NextResponse.json(response, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=30" },
     });
