@@ -29,7 +29,7 @@ export function TopBar({
         <button
           onClick={onBurgerClick}
           className="md:hidden p-2.5 -ml-2 rounded-lg text-text-2 hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
-          aria-label="Toggle menu"
+          aria-label="Отвори меню"
         >
           <Menu size={20} />
         </button>
@@ -53,6 +53,7 @@ export function TopBar({
         <button
           onClick={onToggleDarkMode}
           className="p-2.5 rounded-lg text-text-3 hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
+          aria-label={darkMode ? "Превключи към светъл режим" : "Превключи към тъмен режим"}
         >
           {darkMode ? <Sun size={18} /> : <Moon size={18} />}
         </button>

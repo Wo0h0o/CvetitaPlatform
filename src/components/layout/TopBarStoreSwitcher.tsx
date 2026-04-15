@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { ChevronDown } from "lucide-react";
@@ -91,6 +91,9 @@ export function TopBarStoreSwitcher() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // One ref per rendered option so arrow-key nav can move focus without
+  // rerendering. Indexing mirrors the stores array order.
+  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Classify the current path outside the hook so the early `null` return
   // for hidden routes doesn't short-circuit any hooks below.
@@ -148,6 +151,19 @@ export function TopBarStoreSwitcher() {
     }
   }, [open]);
 
+  // When the dropdown opens, move keyboard focus to the current option (or
+  // the first one) so arrow-keys can immediately move between choices.
+  // Must run before the `hidden` early-return to satisfy rules-of-hooks.
+  useEffect(() => {
+    if (!open || stores.length === 0) return;
+    const activeIdx = Math.max(
+      0,
+      stores.findIndex((s) => s.marketCode === current?.marketCode)
+    );
+    const t = setTimeout(() => optionRefs.current[activeIdx]?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [open, stores, current?.marketCode]);
+
   if (ctx.kind === "hidden") return null;
 
   // Switch target URL given a destination store and the current context.
@@ -168,6 +184,29 @@ export function TopBarStoreSwitcher() {
     }
     setOpen(false);
     router.replace(targetUrl(dest));
+  };
+
+  const handleOptionKey = (
+    e: ReactKeyboardEvent<HTMLDivElement>,
+    idx: number,
+    store: StoreCardData
+  ) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleSelect(store);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      optionRefs.current[Math.min(idx + 1, stores.length - 1)]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      optionRefs.current[Math.max(idx - 1, 0)]?.focus();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      optionRefs.current[0]?.focus();
+    } else if (e.key === "End") {
+      e.preventDefault();
+      optionRefs.current[stores.length - 1]?.focus();
+    }
   };
 
   // Collapsed button: shows flag + border dot + chevron. The flag itself
@@ -210,15 +249,24 @@ export function TopBarStoreSwitcher() {
           {stores.length === 0 ? (
             <div className="px-4 py-3 text-[13px] text-text-3">Зареждане…</div>
           ) : (
-            stores.map((store) => {
+            stores.map((store, idx) => {
               const active = current?.marketCode === store.marketCode;
               return (
-                <button
+                // Rendered as a div (not button) per ARIA: an element with
+                // role="option" must not also have the implicit role="button".
+                // Keyboard affordances (Enter/Space to select, arrows to move)
+                // are provided via the shared handleOptionKey.
+                <div
                   key={store.marketCode}
+                  ref={(el) => {
+                    optionRefs.current[idx] = el;
+                  }}
                   onClick={() => handleSelect(store)}
+                  onKeyDown={(e) => handleOptionKey(e, idx, store)}
                   role="option"
                   aria-selected={active}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] transition-colors cursor-pointer ${
+                  tabIndex={-1}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
                     active
                       ? "bg-accent-soft text-accent font-medium"
                       : "text-text hover:bg-surface-2"
@@ -235,7 +283,7 @@ export function TopBarStoreSwitcher() {
                       ROAS {store.roasLast24h.toFixed(2)}
                     </span>
                   )}
-                </button>
+                </div>
               );
             })
           )}
