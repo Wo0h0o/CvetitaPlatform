@@ -15,6 +15,8 @@ import {
 type BorderLevel = "red" | "amber" | "green";
 
 interface StoreCardPayload {
+  /** Store UUID — used as the card-tap target (/sales/store/[storeId]). */
+  storeId: string;
   marketCode: string;
   name: string;
   flag: string;
@@ -169,6 +171,7 @@ async function buildStoreCard(
     syncTimes.length > 0 ? syncTimes.reduce((a, b) => (a > b ? a : b)) : null;
 
   return {
+    storeId: market.storeId,
     marketCode: market.marketCode,
     name: market.storeName,
     flag: FLAG_BY_MARKET[market.marketCode] ?? "",
