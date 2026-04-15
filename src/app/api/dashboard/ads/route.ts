@@ -5,7 +5,17 @@ import { logger } from "@/lib/logger";
 import {
   resolveAdsMarketFromRequest,
   aggregateOverview,
+  buildOverviewFromPostgres,
+  type Overview,
 } from "@/lib/ads-market";
+import { sofiaDate } from "@/lib/sofia-date";
+
+// Cache for 60s so the edge-served numbers stay within a minute of the
+// Postgres rollup backing /api/dashboard/home/stores. Previous 300s cache
+// was the primary cause of the dashboard-vs-dropdown ROAS drift.
+const CACHE_HEADERS = {
+  "Cache-Control": "s-maxage=60, stale-while-revalidate=30",
+};
 
 const PRESET_MAP: Record<string, string> = {
   today: "today",
@@ -47,40 +57,49 @@ export async function GET(request: NextRequest) {
         getMetaOverview(datePreset),
         getMetaCampaignInsights(datePreset),
       ]);
-      return NextResponse.json(
-        { overview, campaigns },
-        { headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" } }
-      );
+      return NextResponse.json({ overview, campaigns }, { headers: CACHE_HEADERS });
     }
 
-    // Market-scoped fan-out path: run per-account in parallel, tag rows with
-    // their source account id so the client can drive a sub-brand filter.
-    const perAccount = await Promise.all(
+    // Market-scoped path.
+    //
+    // Campaigns always come from live Graph — the table column values (status,
+    // created_time, etc.) are not all in Postgres, and stale campaign names
+    // are more visible than slightly stale totals.
+    //
+    // Overview:
+    //   - preset=today → read from Postgres (meta_insights_daily).
+    //     Shares the exact source that /api/dashboard/home/stores and the
+    //     TopBar switcher read, so the dashboard KPI strip and the dropdown
+    //     ROAS badge can't drift apart. Intraday cron keeps this <15 min stale.
+    //   - other presets → per-account live Graph + aggregate. The cron only
+    //     backfills 3 days, so Postgres isn't a complete source for 7d/30d/90d.
+    const perAccountCampaigns = await Promise.all(
       ids.map(async (id) => {
-        const [overview, campaigns] = await Promise.all([
-          getMetaOverview(datePreset, id),
-          getMetaCampaignInsights(datePreset, id),
-        ]);
-        const tagged = campaigns.map((c) => ({ ...c, integration_account_id: id }));
-        return { overview, campaigns: tagged };
+        const campaigns = await getMetaCampaignInsights(datePreset, id);
+        return campaigns.map((c) => ({ ...c, integration_account_id: id }));
       })
     );
 
-    const overview = aggregateOverview(perAccount.map((p) => p.overview));
+    let overview: Overview;
+    if (preset === "today") {
+      overview = await buildOverviewFromPostgres(ids, sofiaDate());
+    } else {
+      const perAccountOverviews = await Promise.all(
+        ids.map((id) => getMetaOverview(datePreset, id))
+      );
+      overview = aggregateOverview(perAccountOverviews);
+    }
 
     // Merge and sort fresh — don't alternate per-account order. Tiebreak by
     // id asc so deterministic pagination across requests.
-    const campaigns = perAccount
-      .flatMap((p) => p.campaigns)
+    const campaigns = perAccountCampaigns
+      .flat()
       .sort((a, b) => {
         if (b.spend !== a.spend) return b.spend - a.spend;
         return a.id.localeCompare(b.id);
       });
 
-    return NextResponse.json(
-      { overview, campaigns },
-      { headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=60" } }
-    );
+    return NextResponse.json({ overview, campaigns }, { headers: CACHE_HEADERS });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Meta API fetch failed";
     logger.error("GET /api/dashboard/ads failed", { error: msg });

@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   resolveMarket,
   type MarketBinding,
@@ -51,7 +52,7 @@ export async function resolveAdsMarketFromRequest(
 // Helper: aggregate /ads overview across N accounts
 // ============================================================
 
-type Overview = {
+export type Overview = {
   spend: number;
   revenue: number;
   roas: number;
@@ -120,5 +121,93 @@ export function aggregateOverview(parts: Overview[]): Overview {
     landingPageViews: sum((p) => p.landingPageViews),
     linkClicks: sum((p) => p.linkClicks),
     period,
+  };
+}
+
+// ============================================================
+// Helper: build /ads overview from the Postgres rollup (today only)
+// ============================================================
+
+type DailyRow = {
+  spend: number | string | null;
+  revenue: number | string | null;
+  impressions: number | string | null;
+  clicks: number | string | null;
+  link_clicks: number | string | null;
+  purchases: number | string | null;
+  add_to_cart: number | string | null;
+  initiate_checkout: number | string | null;
+  landing_page_views: number | string | null;
+};
+
+function num(v: number | string | null | undefined): number {
+  if (v == null) return 0;
+  const n = typeof v === "string" ? Number(v) : v;
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Build an Overview from Postgres-stored insights for a single Sofia-local
+ * date, summing across the given integration accounts.
+ *
+ * Used by /api/dashboard/ads when `preset=today` to share a single source
+ * of truth with /api/dashboard/home/stores — eliminates the "dashboard
+ * ROAS ≠ TopBar dropdown ROAS" drift that live-Graph-vs-rollup produced.
+ * For longer presets (7d, 30d, …) callers should continue to use the
+ * live Graph path because the cron only backfills 3 days.
+ *
+ * Reads from `meta_insights_daily` (level=account) directly rather than
+ * the `meta_insights_by_store` view, because the caller already has
+ * account ids from `resolveAdsMarketFromRequest` — skips an unnecessary
+ * JOIN.
+ */
+export async function buildOverviewFromPostgres(
+  integrationAccountIds: string[],
+  todayIso: string
+): Promise<Overview> {
+  if (integrationAccountIds.length === 0) {
+    return {
+      spend: 0, revenue: 0, roas: 0, purchases: 0, cpa: 0,
+      impressions: 0, clicks: 0, cpc: 0, cpm: 0, ctr: 0,
+      addToCart: 0, initiateCheckout: 0, landingPageViews: 0, linkClicks: 0,
+      period: { start: todayIso, end: todayIso },
+    };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("meta_insights_daily")
+    .select(
+      "spend, revenue, impressions, clicks, link_clicks, purchases, add_to_cart, initiate_checkout, landing_page_views"
+    )
+    .eq("level", "account")
+    .eq("date", todayIso)
+    .in("integration_account_id", integrationAccountIds);
+
+  if (error) throw new Error(`buildOverviewFromPostgres: ${error.message}`);
+
+  const rows = (data ?? []) as DailyRow[];
+
+  const spend = rows.reduce((a, r) => a + num(r.spend), 0);
+  const revenue = rows.reduce((a, r) => a + num(r.revenue), 0);
+  const impressions = rows.reduce((a, r) => a + num(r.impressions), 0);
+  const clicks = rows.reduce((a, r) => a + num(r.clicks), 0);
+  const purchases = rows.reduce((a, r) => a + num(r.purchases), 0);
+
+  return {
+    spend,
+    revenue,
+    roas: spend > 0 ? revenue / spend : 0,
+    purchases,
+    cpa: purchases > 0 ? spend / purchases : 0,
+    impressions,
+    clicks,
+    cpc: clicks > 0 ? spend / clicks : 0,
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    addToCart: rows.reduce((a, r) => a + num(r.add_to_cart), 0),
+    initiateCheckout: rows.reduce((a, r) => a + num(r.initiate_checkout), 0),
+    landingPageViews: rows.reduce((a, r) => a + num(r.landing_page_views), 0),
+    linkClicks: rows.reduce((a, r) => a + num(r.link_clicks), 0),
+    period: { start: todayIso, end: todayIso },
   };
 }

@@ -94,10 +94,15 @@ export function TopBarStoreSwitcher() {
 
   // Reuse the same /api/dashboard/home/stores endpoint that StoreMultiples
   // fetches on the home page — SWR dedupes across routes.
+  //
+  // refreshInterval: without this the switcher fetches once on mount and
+  // stays frozen. Users who open Home → navigate to /ads/* would see stale
+  // ROAS badges next to the current live KPIs on the drill-down page.
+  // 60s matches StoreMultiples' cadence and the endpoint's s-maxage.
   const { data } = useSWR<StoresResponse>(
     ctx.kind === "hidden" ? null : "/api/dashboard/home/stores",
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, refreshInterval: 60_000 }
   );
 
   // Memoize the stores array so the dependent Maps below have stable identity
