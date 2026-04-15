@@ -161,10 +161,32 @@ export const HOME_MARKET_CODES = ["bg", "gr", "ro"] as const;
 export type HomeMarketCode = (typeof HOME_MARKET_CODES)[number];
 
 /**
- * Resolve every market used on the Owner Home page. Returns one entry per
- * market in the same order as HOME_MARKET_CODES. Throws if any market is
- * missing a primary binding — the home page is not valid without all three.
+ * Resolve every market used on the Owner Home page. Uses Promise.allSettled
+ * and returns only the markets that resolved successfully — a single unseeded
+ * market (e.g. RO without a primary binding in a fresh environment) should
+ * degrade to "2 cards" rather than blank the entire home page. Failed
+ * resolutions are logged at warn level so the ops team can investigate
+ * without taking users down.
+ *
+ * Entries preserve the HOME_MARKET_CODES order; callers that need the
+ * original code for a missing market should compare what they receive
+ * against HOME_MARKET_CODES.
  */
 export async function resolveAllHomeMarkets(): Promise<ResolvedMarket[]> {
-  return Promise.all(HOME_MARKET_CODES.map((code) => resolveMarket(code)));
+  const results = await Promise.allSettled(
+    HOME_MARKET_CODES.map((code) => resolveMarket(code))
+  );
+  const resolved: ResolvedMarket[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "fulfilled") {
+      resolved.push(r.value);
+    } else {
+      logger.warn("resolveAllHomeMarkets: skipping unresolved market", {
+        code: HOME_MARKET_CODES[i],
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  }
+  return resolved;
 }

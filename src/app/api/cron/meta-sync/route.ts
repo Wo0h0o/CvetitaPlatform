@@ -237,7 +237,10 @@ export async function GET(request: Request) {
   // `0 3 * * *` hits the bare URL and gets the 3-day backfill for late
   // attribution.
   const url = new URL(request.url);
-  const windowParam = url.searchParams.get("window");
+  // Case- and whitespace-tolerant — Vercel cron URLs are authored by hand,
+  // and a capital T or trailing space should not silently demote an intraday
+  // run to the 3-day nightly backfill.
+  const windowParam = (url.searchParams.get("window") ?? "").trim().toLowerCase();
   const daysBack =
     windowParam === "today" ? SYNC_DAYS_BACK_INTRADAY : SYNC_DAYS_BACK_NIGHTLY;
 

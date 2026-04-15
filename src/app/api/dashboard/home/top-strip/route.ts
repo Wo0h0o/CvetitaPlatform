@@ -126,7 +126,14 @@ export async function GET(req: NextRequest) {
     const revenue = tempoMetric("revenue");
     const spend = tempoMetric("spend");
     const orders = tempoMetric("purchases");
-    const roas = { value: spend.value > 0 ? Number((revenue.value / spend.value).toFixed(2)) : 0 };
+    // Cap displayed ROAS at 99.99x — an early-day row with €1 spend and
+    // €500 revenue would otherwise render "500.00x" and swamp the tile.
+    const roas = {
+      value:
+        spend.value > 0
+          ? Math.min(99.99, Number((revenue.value / spend.value).toFixed(2)))
+          : 0,
+    };
 
     const response: TopStripResponse = {
       revenue,
