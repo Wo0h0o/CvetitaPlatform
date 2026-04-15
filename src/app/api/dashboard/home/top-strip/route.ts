@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { sofiaDate, sofiaHoursElapsed, shiftDate } from "@/lib/sofia-date";
 
 // ============================================================
 // Types
@@ -28,53 +29,6 @@ interface TopStripResponse {
   roas: { value: number };
   anomalyCount: number;
   freshAsOf: string;
-}
-
-// ============================================================
-// Sofia time helpers (no external date lib)
-// ============================================================
-
-const SOFIA_TZ = "Europe/Sofia";
-
-/** ISO date ('YYYY-MM-DD') in Europe/Sofia for a given JS Date. */
-function sofiaDate(d: Date): string {
-  // en-CA locale → 'YYYY-MM-DD'
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: SOFIA_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-/** Fractional hours elapsed in the current Sofia day (0-24). */
-function sofiaHoursElapsed(d: Date): number {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: SOFIA_TZ,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(d);
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
-  // Intl sometimes returns "24" for midnight; normalise.
-  const h = get("hour") % 24;
-  const m = get("minute");
-  const s = get("second");
-  return h + m / 60 + s / 3600;
-}
-
-/** Return a date string N days before the given ISO date (still in Sofia). */
-function shiftDate(isoDate: string, days: number): string {
-  // Parse YYYY-MM-DD as UTC midnight, subtract days, re-format as ISO date.
-  // Safe for day-boundary math because we're only doing whole-day arithmetic.
-  const [y, m, d] = isoDate.split("-").map(Number);
-  const t = Date.UTC(y, m - 1, d) - days * 86_400_000;
-  const dt = new Date(t);
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }
 
 // ============================================================

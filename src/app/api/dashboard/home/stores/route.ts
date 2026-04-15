@@ -7,6 +7,7 @@ import {
   resolveAllHomeMarkets,
   type ResolvedMarket,
 } from "@/lib/store-market-resolver";
+import { sofiaDate, lastNDates } from "@/lib/sofia-date";
 
 // ============================================================
 // Types
@@ -44,37 +45,6 @@ const FLAG_BY_MARKET: Record<string, string> = {
   gr: "🇬🇷",
   ro: "🇷🇴",
 };
-
-// ============================================================
-// Sofia date helpers (duplicated from top-strip route — small enough
-// that extracting a shared util would be premature)
-// ============================================================
-
-const SOFIA_TZ = "Europe/Sofia";
-
-function sofiaDate(d: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: SOFIA_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-/** ISO dates for the last N days ending at today (oldest first). */
-function lastNDates(n: number, todayIso: string): string[] {
-  const [y, m, d] = todayIso.split("-").map(Number);
-  const base = Date.UTC(y, m - 1, d);
-  const out: string[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const dt = new Date(base - i * 86_400_000);
-    const yy = dt.getUTCFullYear();
-    const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(dt.getUTCDate()).padStart(2, "0");
-    out.push(`${yy}-${mm}-${dd}`);
-  }
-  return out;
-}
 
 // ============================================================
 // Math

@@ -9,6 +9,7 @@ import {
 } from "@/lib/meta";
 import { decide, sleepForThrottle, type BucUsage } from "@/lib/meta-rate-limit";
 import { logger } from "@/lib/logger";
+import { sofiaDate, shiftDate } from "@/lib/sofia-date";
 
 // Vercel Pro tier — 60s headroom for the whole fan-out. Promise.allSettled
 // parallelism keeps us well under this for 5 active accounts × 2 levels each.
@@ -237,11 +238,11 @@ export async function GET(request: Request) {
   const daysBack =
     windowParam === "today" ? SYNC_DAYS_BACK_INTRADAY : SYNC_DAYS_BACK_NIGHTLY;
 
-  // Date window: today - daysBack + 1 .. today
-  const today = new Date();
-  const since = new Date(today.getTime() - (daysBack - 1) * 86_400_000);
-  const sinceStr = since.toISOString().slice(0, 10);
-  const untilStr = today.toISOString().slice(0, 10);
+  // Date window: today - daysBack + 1 .. today, anchored to Europe/Sofia (the
+  // business operating timezone). UTC-based math here would shift the window
+  // 1-3h near midnight Sofia and create gaps vs dashboard reads.
+  const untilStr = sofiaDate();
+  const sinceStr = shiftDate(untilStr, daysBack - 1);
 
   // Load all active meta_ads integration accounts
   const { data: accounts, error: loadErr } = await supabaseAdmin
