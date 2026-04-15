@@ -75,8 +75,11 @@ type InsightRow = {
   revenue: number | string | null;
 };
 
-const num = (v: number | string | null | undefined): number =>
-  v == null ? 0 : typeof v === "string" ? Number(v) : v;
+const num = (v: number | string | null | undefined): number => {
+  if (v == null) return 0;
+  const n = typeof v === "string" ? Number(v) : v;
+  return Number.isFinite(n) ? n : 0;
+};
 
 async function buildStoreCard(
   market: ResolvedMarket,
@@ -106,8 +109,17 @@ async function buildStoreCard(
 
   const rows = (insightsRes.data ?? []) as InsightRow[];
   const byDate = new Map<string, { spend: number; revenue: number }>();
+  // The view returns one row per (date, object_id) at level=account, so a
+  // BG-style store with multiple active bindings (Cvetita primary +
+  // ProteinBar + legacy) yields several rows per date. Accumulate instead
+  // of overwriting so the card reflects the total business, not just the
+  // last row Postgres returned.
   for (const r of rows) {
-    byDate.set(r.date, { spend: num(r.spend), revenue: num(r.revenue) });
+    const existing = byDate.get(r.date) ?? { spend: 0, revenue: 0 };
+    byDate.set(r.date, {
+      spend: existing.spend + num(r.spend),
+      revenue: existing.revenue + num(r.revenue),
+    });
   }
 
   // Sparkline: revenue per day, zero-filled. (Footnote in 08-week3-plan.md
