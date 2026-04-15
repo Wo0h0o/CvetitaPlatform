@@ -202,12 +202,15 @@ async function syncOneAccount(
 
   result.peakUsagePct = peakUsage?.peakPct ?? 0;
 
-  // Record per-account sync state back to integration_accounts
+  // Record per-account sync state back to integration_accounts.
+  // On error, leave last_synced_at untouched (don't regress to NULL) so a
+  // transient 502 doesn't flip FreshnessDot to red when yesterday's sync
+  // succeeded. Only overwrite when the run actually produced fresh data.
   const now = new Date().toISOString();
   await supabaseAdmin
     .from("integration_accounts")
     .update({
-      last_synced_at: result.error ? null : now,
+      ...(result.error ? {} : { last_synced_at: now }),
       last_sync_error: result.error,
       // Don't flip status to 'rate_limited' on a soft throttle — only hard stops
       ...(result.throttled && result.peakUsagePct >= 95
