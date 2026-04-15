@@ -184,10 +184,61 @@ function median(values: number[]): number {
 }
 
 // ============================================================
+// Pre-filter thresholds — per-market tuning
+//
+// Tuned after the first cron run (2026-04-15) produced a noisy GR brief
+// on €12.64 spend / 2 purchases (14d ratio 8.62 vs median 11.15). A single
+// conversion swing at that volume flips ROAS by 30%+, which isn't a
+// meaningful signal. Two guards: raise the spend floor, and require a
+// minimum absolute purchase count before flagging on ratio.
+//
+// The "€50+ spend with 0 purchases" red trigger is exempt from the
+// min-purchases gate — a dead creative burning budget IS the signal,
+// precisely because conversions = 0.
+// ============================================================
+
+interface MarketThresholds {
+  /** € — objects with less 14d spend are skipped (noise floor). */
+  noiseFloorSpend14d: number;
+  /**
+   * Required absolute 14d purchase count for ratio-based flagging.
+   * Ad set / campaign with fewer conversions is too statistically noisy
+   * to suggest an action on.
+   */
+  minPurchases14d: number;
+}
+
+const DEFAULT_THRESHOLDS: MarketThresholds = {
+  noiseFloorSpend14d: 30,
+  minPurchases14d: 5,
+};
+
+const MARKET_THRESHOLDS: Record<string, MarketThresholds> = {
+  // BG: stable €230-690/day. Most ads easily clear €30 over 14d and ≥5 conversions.
+  bg: { noiseFloorSpend14d: 30, minPurchases14d: 5 },
+  // GR: €22-105/day, volatile — one stray conversion flips ratios.
+  // Tighter spend floor keeps the LLM focused on objects with real signal.
+  gr: { noiseFloorSpend14d: 50, minPurchases14d: 5 },
+  // RO: smallest market (€5-15/day). Too strict = nothing ever flags.
+  // Lower purchase gate; keep spend floor modest.
+  ro: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
+};
+
+function thresholdsFor(marketCode: string | null): MarketThresholds {
+  if (!marketCode) return DEFAULT_THRESHOLDS;
+  return MARKET_THRESHOLDS[marketCode] ?? DEFAULT_THRESHOLDS;
+}
+
+// ============================================================
 // Candidate selection — pre-filter outliers before sending to Claude
 // ============================================================
 
-function pickCandidates(rows: InsightRow[], todayIso: string): Candidate[] {
+function pickCandidates(
+  rows: InsightRow[],
+  todayIso: string,
+  marketCode: string | null
+): Candidate[] {
+  const thresholds = thresholdsFor(marketCode);
   const last3dStart = shiftDate(todayIso, 2); // inclusive of today+yesterday+day-before
   const byKey = new Map<ObjectKey, Aggregate>();
 
@@ -230,8 +281,8 @@ function pickCandidates(rows: InsightRow[], todayIso: string): Candidate[] {
 
   const candidates: Candidate[] = [];
   for (const a of byKey.values()) {
-    // Noise floor — skip objects with less than €10 total spend in 14d.
-    if (a.spend_14d < 10) continue;
+    // Noise floor — spend below the per-market threshold isn't worth a card.
+    if (a.spend_14d < thresholds.noiseFloorSpend14d) continue;
 
     const roas_14d = a.spend_14d > 0 ? a.revenue_14d / a.spend_14d : 0;
     const cpa_14d = a.purchases_14d > 0 ? a.spend_14d / a.purchases_14d : 0;
@@ -239,16 +290,21 @@ function pickCandidates(rows: InsightRow[], todayIso: string): Candidate[] {
     const last_3d_roas = a.last_3d_spend > 0 ? a.last_3d_revenue / a.last_3d_spend : 0;
     const frequency_avg = a.frequency_days > 0 ? a.frequency_sum / a.frequency_days : 0;
 
+    // "Dead creative" signal: real spend, zero conversions. Bypasses the
+    // min-purchases gate (0 purchases IS the signal), but still honours
+    // the noise floor above.
+    const isDeadCreative = a.spend_14d > 50 && a.purchases_14d === 0;
+
     let flagged: "red" | "amber" | "green" | null = null;
-    if (median_daily_roas > 0) {
+    if (median_daily_roas > 0 && a.purchases_14d >= thresholds.minPurchases14d) {
       const ratio = last_3d_roas / median_daily_roas;
       if (ratio < 0.7) flagged = "red";
       else if (ratio < 0.9) flagged = "amber";
       else if (ratio > 1.3 && a.spend_14d > 30) flagged = "green";
     }
-    // Secondary red triggers.
+    // Secondary red triggers — don't require the min-purchases gate.
     if (!flagged && frequency_avg > 3.5) flagged = "red";
-    if (!flagged && a.spend_14d > 50 && a.purchases_14d === 0) flagged = "red";
+    if (!flagged && isDeadCreative) flagged = "red";
 
     if (!flagged) continue;
 
@@ -303,7 +359,7 @@ async function buildBriefsForAccount(
   }
 
   const rows = (rowsRaw ?? []) as InsightRow[];
-  const candidates = pickCandidates(rows, forDate);
+  const candidates = pickCandidates(rows, forDate, marketCode);
 
   if (candidates.length === 0) {
     // Everything looks healthy — no need to spend an LLM call.
