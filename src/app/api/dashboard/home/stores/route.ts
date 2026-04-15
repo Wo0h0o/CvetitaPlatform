@@ -20,7 +20,6 @@ interface StoreCardPayload {
   storeId: string;
   marketCode: string;
   name: string;
-  flag: string;
   /** 14 values, oldest first, one per day. Zero-filled for missing days. */
   sparkline14d: number[];
   /** Today's ROAS (revenue / spend). 0 when spend is 0 or no data yet. */
@@ -35,16 +34,6 @@ interface StoreCardPayload {
 interface StoresResponse {
   stores: StoreCardPayload[];
 }
-
-// ============================================================
-// Market → flag emoji
-// ============================================================
-
-const FLAG_BY_MARKET: Record<string, string> = {
-  bg: "🇧🇬",
-  gr: "🇬🇷",
-  ro: "🇷🇴",
-};
 
 // ============================================================
 // Math
@@ -156,7 +145,6 @@ async function buildStoreCard(
     storeId: market.storeId,
     marketCode: market.marketCode,
     name: market.storeName,
-    flag: FLAG_BY_MARKET[market.marketCode] ?? "",
     sparkline14d,
     roasLast24h,
     roasMedian14d,

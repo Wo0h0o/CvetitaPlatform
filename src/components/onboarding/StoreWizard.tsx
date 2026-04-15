@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardBody } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
-import { Badge } from "@/components/shared/Badge";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 import { ConnectionTest } from "@/components/onboarding/ConnectionTest";
 import { SyncProgress } from "@/components/onboarding/SyncProgress";
 import {
@@ -277,11 +277,9 @@ export function StoreWizard({ organizationId }: { organizationId: string }) {
                   <span className="text-text-2">Име</span>
                   <span className="font-medium text-text">{form.name}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-text-2">Пазар</span>
-                  <Badge variant="green">
-                    {form.marketCode.toUpperCase()}
-                  </Badge>
+                  <MarketFlag market={form.marketCode} size={16} labelled />
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-2">Домейн</span>

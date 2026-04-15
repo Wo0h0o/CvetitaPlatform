@@ -6,6 +6,7 @@ import { useMemo, type KeyboardEvent } from "react";
 import { SparkLine } from "@/components/charts/SparkLine";
 import { useChartColors } from "@/components/charts/ChartContainer";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 import { ArrowRight } from "lucide-react";
 
 // ============================================================
@@ -19,7 +20,6 @@ export interface StoreCardData {
   storeId: string;
   marketCode: string;
   name: string;
-  flag: string;
   sparkline14d: number[];
   roasLast24h: number;
   roasMedian14d: number;
@@ -105,7 +105,7 @@ export function StoreCard({ data }: StoreCardProps) {
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[20px] leading-none">{data.flag}</span>
+            <MarketFlag market={data.marketCode} size={20} labelled />
             <h3 className="text-[15px] font-semibold text-text truncate">
               {data.name}
             </h3>

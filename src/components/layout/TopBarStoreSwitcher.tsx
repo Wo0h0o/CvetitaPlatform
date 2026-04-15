@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { ChevronDown } from "lucide-react";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -17,7 +18,6 @@ interface StoreCardData {
   storeId: string;
   marketCode: string;
   name: string;
-  flag: string;
   sparkline14d: number[];
   roasLast24h: number;
   roasMedian14d: number;
@@ -161,8 +161,10 @@ export function TopBarStoreSwitcher() {
     router.replace(targetUrl(dest));
   };
 
-  // Collapsed button: shows flag + market code + border dot + chevron.
-  // On mobile we hide the market code text to save width.
+  // Collapsed button: shows flag + border dot + chevron. The flag itself
+  // identifies the market, so the old "RO" text chip next to it was
+  // redundant (and on Windows without an emoji font it was rendering as
+  // an ugly fallback next to the flag — literally "RO RO").
   return (
     <div ref={ref} className="relative">
       <button
@@ -172,16 +174,19 @@ export function TopBarStoreSwitcher() {
         aria-expanded={open}
         aria-label="Превключи магазин"
       >
-        <span className="text-[16px] leading-none">{current?.flag ?? "🏬"}</span>
+        {current ? (
+          <MarketFlag market={current.marketCode} size={16} labelled />
+        ) : (
+          <span className="text-[16px] leading-none" aria-hidden>
+            🏬
+          </span>
+        )}
         {current && (
           <span
             className={`inline-block h-1.5 w-1.5 rounded-full ${BORDER_DOT[current.borderLevel]}`}
             aria-hidden
           />
         )}
-        <span className="hidden sm:inline font-medium uppercase">
-          {current?.marketCode ?? "?"}
-        </span>
         <ChevronDown
           size={14}
           className={`text-text-3 transition-transform ${open ? "rotate-180" : ""}`}
@@ -210,7 +215,7 @@ export function TopBarStoreSwitcher() {
                       : "text-text hover:bg-surface-2"
                   }`}
                 >
-                  <span className="text-[16px] leading-none">{store.flag}</span>
+                  <MarketFlag market={store.marketCode} size={16} labelled />
                   <span
                     className={`inline-block h-2 w-2 rounded-full ${BORDER_DOT[store.borderLevel]}`}
                     aria-hidden

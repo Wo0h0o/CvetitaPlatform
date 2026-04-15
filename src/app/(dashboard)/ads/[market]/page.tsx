@@ -9,6 +9,7 @@ import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useToast } from "@/providers/ToastProvider";
 import {
@@ -97,12 +98,6 @@ type FilterKey = "all" | "ACTIVE" | "PAUSED";
 
 const PRESET_MAP: Record<string, string> = {
   today: "today", yesterday: "yesterday", "7d": "7d", "30d": "30d", "90d": "90d",
-};
-
-const FLAG_BY_MARKET: Record<string, string> = {
-  bg: "🇧🇬",
-  gr: "🇬🇷",
-  ro: "🇷🇴",
 };
 
 // Sub-brand filter labels — keyed by binding role. Hardcoded for BG's
@@ -333,11 +328,18 @@ export default function AdsMarketPage({
   }
 
   const ov = overviewData?.overview;
-  const flag = FLAG_BY_MARKET[marketData.marketCode] ?? "";
 
   return (
     <>
-      <PageHeader title={`Реклами ${flag ? "— " + flag : ""} ${marketData.storeName}`}>
+      <PageHeader
+        title={
+          <>
+            <span>Реклами —</span>
+            <MarketFlag market={marketData.marketCode} size={20} labelled />
+            <span>{marketData.storeName}</span>
+          </>
+        }
+      >
         <FreshnessDot lastSyncedAt={marketData.lastSyncedAt} showLabel />
         <DateRangePicker />
       </PageHeader>

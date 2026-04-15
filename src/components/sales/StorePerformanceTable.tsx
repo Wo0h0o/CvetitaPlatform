@@ -4,20 +4,14 @@ import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { DataTable, type Column } from "@/components/shared/DataTable";
-import { ChangeBadge, Badge } from "@/components/shared/Badge";
+import { ChangeBadge } from "@/components/shared/Badge";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 import { useDateRange } from "@/hooks/useDateRange";
 import type { StorePerformance } from "@/lib/sales-queries";
 import { Store } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
-const marketColors: Record<string, "green" | "blue" | "orange" | "red"> = {
-  bg: "green",
-  gr: "blue",
-  ro: "orange",
-  hu: "red",
-};
 
 function fmtEur(n: number) {
   return `${n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
@@ -34,9 +28,7 @@ const columns: Column<StorePerformance>[] = [
     label: "Магазин",
     render: (row) => (
       <span className="inline-flex items-center gap-2">
-        <Badge variant={marketColors[row.marketCode] ?? "neutral"}>
-          {row.marketCode.toUpperCase()}
-        </Badge>
+        <MarketFlag market={row.marketCode} size={16} labelled />
         <span className="font-medium text-text">{row.storeName}</span>
       </span>
     ),
@@ -129,9 +121,7 @@ export function StorePerformanceTable() {
             <div className="bg-surface-2 rounded-lg p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-2">
-                  <Badge variant={marketColors[row.marketCode] ?? "neutral"}>
-                    {row.marketCode.toUpperCase()}
-                  </Badge>
+                  <MarketFlag market={row.marketCode} size={16} labelled />
                   <span className="font-medium text-text text-[14px]">{row.storeName}</span>
                 </span>
                 <ChangeBadge value={row.revenueChange} />
