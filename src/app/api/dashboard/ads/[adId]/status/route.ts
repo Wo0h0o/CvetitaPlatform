@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateMetaAdStatus } from "@/lib/meta";
 import { requireAuth } from "@/lib/api-auth";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(
   request: NextRequest,
@@ -34,6 +35,30 @@ export async function POST(
   // Absent in the body → fall back to the env-default client, preserving
   // legacy single-account behaviour.
   const integrationAccountId = body.integrationAccountId || undefined;
+
+  // Authorization: with an agency token that has multi-account reach, the
+  // client could otherwise toggle an ad from account A while claiming it
+  // belongs to account B. Verify the adId actually belongs to the passed
+  // integration_account_id before forwarding to Meta. If the ad isn't in
+  // our local cache yet, fall through — Meta itself will reject out-of-scope
+  // writes, and this route's legacy single-account path shouldn't be broken
+  // for ads we've never synced.
+  if (integrationAccountId) {
+    const { data: adRow } = await supabaseAdmin
+      .from("meta_insights_daily")
+      .select("integration_account_id")
+      .eq("level", "ad")
+      .eq("object_id", adId)
+      .limit(1)
+      .maybeSingle();
+
+    if (adRow && adRow.integration_account_id !== integrationAccountId) {
+      return NextResponse.json(
+        { error: "ad-account mismatch" },
+        { status: 403 }
+      );
+    }
+  }
 
   const ok = await updateMetaAdStatus(adId, status, integrationAccountId);
   if (!ok) {
