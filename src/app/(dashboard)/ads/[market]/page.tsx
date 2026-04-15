@@ -8,6 +8,7 @@ import { Badge } from "@/components/shared/Badge";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { FreshnessDot } from "@/components/shared/FreshnessDot";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useToast } from "@/providers/ToastProvider";
 import {
@@ -63,6 +64,8 @@ interface MarketResponse {
   marketCode: string;
   storeName: string;
   bindings: MarketBinding[];
+  /** MAX(last_synced_at) across all bound integration_accounts. */
+  lastSyncedAt: string | null;
   error?: string;
 }
 
@@ -335,6 +338,7 @@ export default function AdsMarketPage({
   return (
     <>
       <PageHeader title={`Реклами ${flag ? "— " + flag : ""} ${marketData.storeName}`}>
+        <FreshnessDot lastSyncedAt={marketData.lastSyncedAt} showLabel />
         <DateRangePicker />
       </PageHeader>
 

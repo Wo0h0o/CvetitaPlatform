@@ -16,7 +16,11 @@ export const maxDuration = 60;
 
 // Sync window: last 3 days (inclusive). Catches late-attributed conversions
 // without re-fetching settled history every night.
-const SYNC_DAYS_BACK = 3;
+const SYNC_DAYS_BACK_NIGHTLY = 3;
+
+// Intraday mode: today only. Collapses 3 Graph calls × N levels to 1 ×
+// N — safe to run every 15 minutes without exhausting BUC budgets.
+const SYNC_DAYS_BACK_INTRADAY = 1;
 
 const SYNC_LEVELS: InsightsLevel[] = ["account", "campaign"];
 
@@ -224,9 +228,18 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now();
 
-  // Date window: today - SYNC_DAYS_BACK + 1 .. today
+  // `?window=today` collapses the sync window to today only. Vercel cron
+  // schedules `*/15 * * * *` to this URL for intraday freshness; the nightly
+  // `0 3 * * *` hits the bare URL and gets the 3-day backfill for late
+  // attribution.
+  const url = new URL(request.url);
+  const windowParam = url.searchParams.get("window");
+  const daysBack =
+    windowParam === "today" ? SYNC_DAYS_BACK_INTRADAY : SYNC_DAYS_BACK_NIGHTLY;
+
+  // Date window: today - daysBack + 1 .. today
   const today = new Date();
-  const since = new Date(today.getTime() - (SYNC_DAYS_BACK - 1) * 86_400_000);
+  const since = new Date(today.getTime() - (daysBack - 1) * 86_400_000);
   const sinceStr = since.toISOString().slice(0, 10);
   const untilStr = today.toISOString().slice(0, 10);
 
@@ -287,6 +300,7 @@ export async function GET(request: Request) {
   logger.info("meta-sync completed", {
     durationMs,
     accountCount: accounts.length,
+    mode: windowParam === "today" ? "intraday" : "nightly",
     ...totals,
     window: { since: sinceStr, until: untilStr },
   });
@@ -294,6 +308,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     durationMs,
+    mode: windowParam === "today" ? "intraday" : "nightly",
     window: { since: sinceStr, until: untilStr },
     accountCount: accounts.length,
     totals,

@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/meta-sync",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/meta-sync?window=today",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
