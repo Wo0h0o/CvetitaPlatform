@@ -807,3 +807,115 @@ export async function updateMetaAdStatus(
   }
   return true;
 }
+
+// Adset-level status toggle — same shape as the ad-level helper, same
+// endpoint pattern (POST /{object_id} with status param). Used by the W4
+// /api/dashboard/action/pause route when an agent_brief targets an adset
+// (a "dead audience" pause, vs a "dead creative" ad-level pause).
+export async function updateMetaAdSetStatus(
+  adsetId: string,
+  status: "ACTIVE" | "PAUSED",
+  integrationAccountId?: string
+): Promise<boolean> {
+  const client = await getMetaClient(integrationAccountId);
+  const res = await fetchWithTimeout(
+    `${BASE}/${adsetId}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ status, access_token: client.token }),
+    },
+    10_000
+  );
+  if (!res.ok) {
+    await res.text();
+    logger.error("Meta adset status update error", {
+      service: "meta",
+      status: res.status,
+      accountId: client.accountId,
+    });
+    return false;
+  }
+  return true;
+}
+
+// Fetch the current daily budget for an adset or campaign. Returned by
+// Meta as a string in minor currency units (for EUR: cents). We parse to
+// integer; if Meta omits daily_budget (e.g. lifetime-budget campaign),
+// dailyBudgetCents is null and callers must fall back or refuse to scale.
+// Used by /api/dashboard/action/scale to compute the new budget from a factor.
+export async function getMetaBudget(
+  objectId: string,
+  level: "adset" | "campaign",
+  integrationAccountId?: string
+): Promise<{ dailyBudgetCents: number | null; currency: string } | null> {
+  const client = await getMetaClient(integrationAccountId);
+  const url = `${BASE}/${objectId}?fields=daily_budget,currency&access_token=${client.token}`;
+  const res = await fetchWithTimeout(url, { method: "GET" }, 10_000);
+  if (!res.ok) {
+    await res.text();
+    logger.error("Meta budget fetch error", {
+      service: "meta",
+      level,
+      status: res.status,
+      accountId: client.accountId,
+    });
+    return null;
+  }
+  const body: { daily_budget?: string; currency?: string } = await res.json();
+  const parsed = body.daily_budget != null ? Number(body.daily_budget) : NaN;
+  return {
+    dailyBudgetCents: Number.isFinite(parsed) ? Math.trunc(parsed) : null,
+    // All current Cvetita accounts are EUR; the fetched currency is the
+    // source of truth when Meta returns it, but fall back to EUR rather
+    // than an empty string so callers never have to special-case "".
+    currency: body.currency ?? "EUR",
+  };
+}
+
+// Update daily budget on an adset or campaign. `dailyBudgetCents` must be
+// an integer in the account's minor currency unit — Meta rejects decimals.
+// Meta also enforces a per-account minimum (EUR €1 = 100 cents) and a
+// currency-dependent maximum; we do not pre-validate those here — the
+// caller should clamp to sane ranges and rely on Meta's 400 response for
+// the hard limits. Used by /api/dashboard/action/scale after multiplying
+// the result of getMetaBudget() by the user-selected factor.
+export async function updateMetaBudget(
+  objectId: string,
+  level: "adset" | "campaign",
+  dailyBudgetCents: number,
+  integrationAccountId?: string
+): Promise<boolean> {
+  if (!Number.isInteger(dailyBudgetCents) || dailyBudgetCents <= 0) {
+    logger.error("Meta budget update rejected: non-positive integer", {
+      service: "meta",
+      level,
+      dailyBudgetCents,
+    });
+    return false;
+  }
+  const client = await getMetaClient(integrationAccountId);
+  const res = await fetchWithTimeout(
+    `${BASE}/${objectId}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        daily_budget: String(dailyBudgetCents),
+        access_token: client.token,
+      }),
+    },
+    10_000
+  );
+  if (!res.ok) {
+    await res.text();
+    logger.error("Meta budget update error", {
+      service: "meta",
+      level,
+      status: res.status,
+      accountId: client.accountId,
+    });
+    return false;
+  }
+  return true;
+}
