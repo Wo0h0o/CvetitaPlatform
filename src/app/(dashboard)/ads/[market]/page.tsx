@@ -12,6 +12,8 @@ import { FreshnessDot } from "@/components/shared/FreshnessDot";
 import { MarketFlag } from "@/components/shared/MarketFlag";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useToast } from "@/providers/ToastProvider";
+import { MiniKpi } from "@/components/shared/MiniKpi";
+import { type MarketBinding } from "@/lib/store-market-resolver";
 import {
   Megaphone, Euro, ShoppingCart, MousePointerClick,
   Target, TrendingUp, ArrowUpDown, ChevronDown, ChevronUp,
@@ -52,12 +54,6 @@ interface AdsIndividualData {
   ads: AdItem[];
   accountAverages: { roas: number; cpa: number; ctr: number; cvr: number; frequency: number };
   error?: string;
-}
-
-interface MarketBinding {
-  integrationAccountId: string;
-  role: "primary" | "secondary" | "legacy";
-  displayName: string;
 }
 
 interface MarketResponse {
@@ -675,18 +671,6 @@ function AdModal({ ad, onClose, onToggleStatus }: {
 // ============================================================
 // Shared sub-components (inline)
 // ============================================================
-
-function MiniKpi({ icon: Icon, label, value, highlight }: { icon: React.ElementType; label: string; value: string; highlight?: boolean }) {
-  return (
-    <div className="bg-surface rounded-xl shadow-sm p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={16} className="text-text-3" />
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-      </div>
-      <div className={`text-[22px] font-bold tracking-tight ${highlight ? "text-accent" : "text-text"}`}>{value}</div>
-    </div>
-  );
-}
 
 function StatRow({ label, value }: { label: string; value: string }) {
   return (

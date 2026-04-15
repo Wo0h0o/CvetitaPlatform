@@ -8,6 +8,7 @@ import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
+import { MiniKpi } from "@/components/shared/MiniKpi";
 import {
   Megaphone, Euro, ShoppingCart, MousePointerClick,
   Eye, Target, TrendingUp, ArrowRight, ShoppingBag,
@@ -268,19 +269,6 @@ export default function CampaignsPage() {
   );
 }
 
-function MiniKpi({ icon: Icon, label, value, highlight }: {
-  icon: React.ElementType; label: string; value: string; highlight?: boolean;
-}) {
-  return (
-    <div className="bg-surface rounded-xl shadow-sm p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={16} className="text-text-3" />
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-      </div>
-      <div className={`text-[22px] font-bold tracking-tight ${highlight ? "text-accent" : "text-text"}`}>{value}</div>
-    </div>
-  );
-}
 
 function FunnelStep({ icon: Icon, label, value, highlight }: {
   icon: React.ElementType; label: string; value: string; highlight?: boolean;

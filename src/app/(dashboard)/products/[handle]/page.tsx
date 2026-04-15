@@ -10,6 +10,7 @@ import { Badge } from "@/components/shared/Badge";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
+import { MiniKpi } from "@/components/shared/MiniKpi";
 import {
   ArrowLeft,
   TrendingUp,
@@ -323,18 +324,3 @@ export default function ProductDetailPage({
   );
 }
 
-function MiniKpi({
-  icon: Icon, label, value,
-}: {
-  icon: React.ElementType; label: string; value: string;
-}) {
-  return (
-    <div className="bg-surface rounded-xl shadow-sm p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={16} className="text-text-3" />
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-      </div>
-      <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
-    </div>
-  );
-}

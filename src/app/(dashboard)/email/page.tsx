@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SortButton, FilterPill, type SortDir } from "@/components/shared/SortButton";
 import { useDateRange } from "@/hooks/useDateRange";
+import { MiniKpi } from "@/components/shared/MiniKpi";
 import {
   TrendingUp,
   Mail,
@@ -382,19 +383,3 @@ export default function EmailPage() {
   );
 }
 
-function MiniKpi({
-  icon: Icon, label, value, sub,
-}: {
-  icon: React.ElementType; label: string; value: string; sub?: string;
-}) {
-  return (
-    <div className="bg-surface rounded-xl shadow-sm p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={16} className="text-text-3" />
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-      </div>
-      <div className="text-[22px] font-bold tracking-tight text-text">{value}</div>
-      {sub && <div className="text-[12px] text-text-2 mt-1">{sub}</div>}
-    </div>
-  );
-}
