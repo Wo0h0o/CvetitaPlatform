@@ -33,7 +33,11 @@ interface StoresResponse {
 // URL-based market detection
 // ============================================================
 
-const ADS_PATH_RE = /^\/ads\/([a-z]{2,})(\/|$)/;
+// Explicit allowlist — [a-z]{2,} would swallow legacy /ads/campaigns and
+// /ads/adsets sub-routes and render "🏬 ?" in the switcher. When adding a
+// new market, also extend `HOME_MARKET_CODES` in `lib/store-market-resolver.ts`
+// and `FLAG_BY_MARKET` in `api/dashboard/home/stores/route.ts`.
+const ADS_PATH_RE = /^\/ads\/(bg|gr|ro)(\/|$)/;
 const SALES_PATH_RE = /^\/sales\/store\/([a-f0-9-]+)/i;
 
 /**
