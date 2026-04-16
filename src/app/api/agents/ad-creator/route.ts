@@ -122,7 +122,7 @@ function buildSystemPrompt(settings: {
 • Growth: Колаген (Smoothie, Turmeric), Витамини (Inovit 365, D3+Zinc), Адаптогени
 • Defensive: Имунитет (Black Immunoberry, Мурсала), Пробиотици, Omega 3
 
-Цени: единични 15-35 EUR, комбо 40-70 EUR, AOV 44 EUR, безплатна доставка над 60лв.
+Цени: единични 15-35 EUR, комбо 40-70 EUR, AOV 44 EUR, безплатна доставка над 60 EUR.
 
 == ЦЕЛЕВИ АВАТАРИ ==
 1. СТЕФАН — Performance Seeker (М 28-40): Трениращ, иска натурален тестостерон, удря плато. Продукти: TLZ, Tribulus Max, Leuzea. Език: директен, иска данни. Trigger: performance числа, механизми.

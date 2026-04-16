@@ -41,7 +41,7 @@ export default function SettingsPage() {
         company: data.settings.company || data.orgName || "",
         website: data.settings.website || "",
         reportEmail: data.settings.reportEmail || "",
-        monthlyBudget: data.settings.monthlyBudget || "Над 15 000 лв.",
+        monthlyBudget: data.settings.monthlyBudget || "Над 15 000 EUR",
         mainGoal: data.settings.mainGoal || "Повече продажби и нови клиенти",
         targetMarkets: data.settings.targetMarkets || "България + Румъния",
         topProducts: data.settings.topProducts || "",
@@ -139,10 +139,10 @@ export default function SettingsPage() {
             />
             <Field
               label="Месечен бюджет реклами"
-              value={form.monthlyBudget || "Над 15 000 лв."}
+              value={form.monthlyBudget || "Над 15 000 EUR"}
               onChange={(v) => updateField("monthlyBudget", v)}
               type="select"
-              options={["Над 15 000 лв.", "5 000-15 000 лв.", "До 5 000 лв."]}
+              options={["Над 15 000 EUR", "5 000-15 000 EUR", "До 5 000 EUR"]}
             />
             <Button
               className="w-full mt-2"

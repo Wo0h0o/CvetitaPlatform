@@ -69,11 +69,15 @@ interface TileProps {
   vsTypical: number | null;
   projected: string | null;
   typicalLabel: string;
+  /** Hide the delta/projected row entirely (e.g. ROAS — ratio, not cumulative). */
+  hideDelta?: boolean;
 }
 
-function Tile({ label, value, vsTypical, projected, typicalLabel }: TileProps) {
+function Tile({ label, value, vsTypical, projected, typicalLabel, hideDelta }: TileProps) {
   let deltaNode: React.ReactNode;
-  if (vsTypical === null) {
+  if (hideDelta) {
+    deltaNode = null;
+  } else if (vsTypical === null) {
     deltaNode = <span className="text-text-3">още рано</span>;
   } else {
     const sign = vsTypical > 0 ? "+" : "";
@@ -197,6 +201,7 @@ export function KpiStrip() {
           vsTypical={null}
           projected={null}
           typicalLabel={typicalLabel}
+          hideDelta
         />
         <Tile
           label="Поръчки"

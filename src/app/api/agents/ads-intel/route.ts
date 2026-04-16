@@ -139,7 +139,7 @@ function buildSystemPrompt(adsContext: string, businessContext: string): string 
 • Собствено българско производство
 • Онлайн магазин, доставки в България и ЕС
 • Валута: EUR
-• Месечен рекламен бюджет: над 15 000 лв (Meta Ads)
+• Месечен рекламен бюджет: над 15 000 EUR (Meta Ads)
 
 ${adsContext}
 

@@ -330,7 +330,7 @@ export default function AdsMarketPage({
             </div>
             <p className="text-[15px] font-medium text-text mb-2">Meta Ads не е свързан</p>
             <p className="text-[13px] text-text-2">
-              Добави META_ACCESS_TOKEN и META_AD_ACCOUNT_ID в Vercel Environment Variables.
+              Свържи Meta акаунт от Настройки → Магазини → Интеграции.
             </p>
           </div>
         </CardBody></Card>
@@ -391,7 +391,7 @@ export default function AdsMarketPage({
       {/* Sub-brand filter (BG only — multi-binding markets) */}
       {!isPageLoading && subBrandOptions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap mb-4">
-          <span className="text-[12px] text-text-3">Суб-бранд:</span>
+          <span className="text-[12px] text-text-3">Подбранд:</span>
           {subBrandOptions.map((opt) => (
             <button
               key={opt.key}

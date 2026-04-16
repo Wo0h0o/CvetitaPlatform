@@ -52,11 +52,22 @@ export async function GET(req: NextRequest) {
     // Single query covering today + all 4 comparison days, across all stores,
     // at account level (one row per store-day per account — the view already
     // blends all bindings per store). We aggregate across stores in JS.
-    const { data, error } = await supabaseAdmin
-      .from("meta_insights_by_store")
-      .select("date, spend, revenue, purchases, fetched_at")
-      .eq("level", "account")
-      .in("date", [todayIso, ...comparisonDates]);
+    //
+    // Anomaly count: pending red/amber briefs for today — drives the alert
+    // pill in KpiStrip. Runs in parallel with the insights query.
+    const [{ data, error }, { count: anomalyRaw }] = await Promise.all([
+      supabaseAdmin
+        .from("meta_insights_by_store")
+        .select("date, spend, revenue, purchases, fetched_at")
+        .eq("level", "account")
+        .in("date", [todayIso, ...comparisonDates]),
+      supabaseAdmin
+        .from("agent_briefs")
+        .select("*", { count: "exact", head: true })
+        .eq("for_date", todayIso)
+        .in("severity", ["red", "amber"])
+        .eq("status", "pending"),
+    ]);
 
     if (error) {
       logger.error("top-strip query failed", { error: error.message });
@@ -140,7 +151,7 @@ export async function GET(req: NextRequest) {
       spend,
       orders,
       roas,
-      anomalyCount: 0, // W4: wire into agent_briefs / anomaly detector
+      anomalyCount: anomalyRaw ?? 0,
       freshAsOf: latestFetched ?? now.toISOString(),
     };
 

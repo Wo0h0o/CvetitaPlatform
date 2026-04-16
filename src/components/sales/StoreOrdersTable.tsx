@@ -33,10 +33,26 @@ const statusVariant: Record<string, "green" | "orange" | "red" | "blue" | "neutr
   partially_paid: "orange",
 };
 
+const STATUS_LABEL_BG: Record<string, string> = {
+  paid: "Платена",
+  pending: "Чакаща",
+  authorized: "Авторизирана",
+  partially_refunded: "Частично възстановена",
+  refunded: "Възстановена",
+  voided: "Анулирана",
+  partially_paid: "Частично платена",
+};
+
 const fulfillmentVariant: Record<string, "green" | "orange" | "neutral"> = {
   fulfilled: "green",
   partial: "orange",
   unfulfilled: "neutral",
+};
+
+const FULFILLMENT_LABEL_BG: Record<string, string> = {
+  fulfilled: "Изпратена",
+  partial: "Частична",
+  unfulfilled: "Неизпратена",
 };
 
 const columns: Column<OrderRow>[] = [
@@ -77,7 +93,7 @@ const columns: Column<OrderRow>[] = [
     label: "Плащане",
     render: (row) => (
       <Badge variant={statusVariant[row.financial_status] ?? "neutral"}>
-        {row.financial_status}
+        {STATUS_LABEL_BG[row.financial_status] ?? row.financial_status}
       </Badge>
     ),
     hideOnMobile: true,
@@ -87,7 +103,7 @@ const columns: Column<OrderRow>[] = [
     label: "Доставка",
     render: (row) => (
       <Badge variant={fulfillmentVariant[row.fulfillment_status ?? "unfulfilled"] ?? "neutral"}>
-        {row.fulfillment_status ?? "unfulfilled"}
+        {FULFILLMENT_LABEL_BG[row.fulfillment_status ?? "unfulfilled"] ?? row.fulfillment_status ?? "Неизпратена"}
       </Badge>
     ),
     hideOnMobile: true,
@@ -155,10 +171,10 @@ export function StoreOrdersTable({ storeId }: { storeId: string }) {
                 <span className="text-text-2">{fmtDate(row.shopify_created_at)}</span>
                 <div className="flex items-center gap-1.5">
                   <Badge variant={statusVariant[row.financial_status] ?? "neutral"}>
-                    {row.financial_status}
+                    {STATUS_LABEL_BG[row.financial_status] ?? row.financial_status}
                   </Badge>
                   <Badge variant={fulfillmentVariant[row.fulfillment_status ?? "unfulfilled"] ?? "neutral"}>
-                    {row.fulfillment_status ?? "unfulfilled"}
+                    {FULFILLMENT_LABEL_BG[row.fulfillment_status ?? "unfulfilled"] ?? row.fulfillment_status ?? "Неизпратена"}
                   </Badge>
                 </div>
               </div>
