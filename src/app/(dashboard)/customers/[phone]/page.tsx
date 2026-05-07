@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import {
   ArrowLeft, Phone, Mail, MapPin, Package, Euro, Calendar, PhoneCall,
   StickyNote, AlertCircle, PhoneOff, Clock, CheckCircle2, XCircle,
-  ArrowDownNarrowWide, ArrowUpNarrowWide, X,
+  ArrowDownNarrowWide, ArrowUpNarrowWide, X, Truck, Home,
   type LucideIcon,
 } from "lucide-react";
 import { LogEntryForm } from "../_components/LogEntryForm";
@@ -63,6 +63,8 @@ interface OrderRow {
   event_type: string;
   line_items: LineItem[];
   shopify_created_at: string;
+  shipping_title: string | null;
+  shipping_address: string | null;
 }
 
 interface CallLogEntry {
@@ -158,6 +160,46 @@ function customerName(c: Customer): string {
 function itemTitle(item: LineItem): string {
   const base = item.title || item.name || "Артикул";
   return item.variant_title ? `${base} — ${item.variant_title}` : base;
+}
+
+interface ParsedShipping {
+  carrier: string;
+  method: "office" | "home" | "unknown";
+  location: string | null;
+}
+
+const CARRIER_PATTERNS: Array<{ re: RegExp; carrier: string }> = [
+  { re: /еконт|econt/i,        carrier: "Еконт" },
+  { re: /спиди|speedy/i,       carrier: "Спиди" },
+  { re: /box\s*now/i,          carrier: "BoxNow" },
+  { re: /sameday|самдей/i,     carrier: "Sameday" },
+];
+
+function parseShipping(title: string | null, address: string | null): ParsedShipping | null {
+  if (!title && !address) return null;
+
+  const haystack = `${title || ""} ${address || ""}`;
+  let carrier = "Доставка";
+  for (const p of CARRIER_PATTERNS) {
+    if (p.re.test(haystack)) { carrier = p.carrier; break; }
+  }
+
+  const t = title || "";
+  let method: ParsedShipping["method"] = "unknown";
+  if (/офис/i.test(t)) method = "office";
+  else if (/адрес|до адрес|home/i.test(t)) method = "home";
+
+  // For office deliveries the address1 starts with "Офис <Carrier> <City> <Branch>: ..."
+  // Trim the colon-suffix and the leading "Офис <Carrier>" so we keep only the location.
+  let location: string | null = address?.trim() || null;
+  if (location && method === "office") {
+    const beforeColon = location.split(":")[0];
+    location = beforeColon
+      .replace(/^офис\s+(econt|еконт|спиди|speedy|boxnow|box\s*now|sameday|самдей)\s+/i, "")
+      .trim() || null;
+  }
+
+  return { carrier, method, location };
 }
 
 export default function CustomerProfilePage({
@@ -445,6 +487,7 @@ export default function CustomerProfilePage({
                           ) : (
                             <p className="text-[12px] text-text-3">Няма данни за артикулите.</p>
                           )}
+                          <ShippingLine title={o.shipping_title} address={o.shipping_address} />
                         </div>
                         <div className="text-right shrink-0">
                           <div className="font-medium tabular-nums text-text">{formatEUR(o.total_price, o.currency)}</div>
@@ -495,6 +538,33 @@ export default function CustomerProfilePage({
         </div>
       </div>
     </>
+  );
+}
+
+function ShippingLine({ title, address }: { title: string | null; address: string | null }) {
+  const parsed = parseShipping(title, address);
+  if (!parsed) return null;
+
+  const Icon = parsed.method === "home" ? Home : Truck;
+  const methodLabel =
+    parsed.method === "office" ? "офис" :
+    parsed.method === "home"   ? "до адрес" :
+    null;
+
+  return (
+    <div className="mt-2 pt-2 border-t border-border/50 flex items-start gap-1.5 text-[12px] text-text-3">
+      <Icon size={12} className="shrink-0 mt-0.5" />
+      <span className="min-w-0 break-words">
+        <span className="font-medium text-text-2">{parsed.carrier}</span>
+        {methodLabel && <span className="text-text-3"> · {methodLabel}</span>}
+        {parsed.location && (
+          <>
+            <span className="text-text-3"> · </span>
+            <span>{parsed.location}</span>
+          </>
+        )}
+      </span>
+    </div>
   );
 }
 
