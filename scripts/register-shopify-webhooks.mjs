@@ -109,6 +109,24 @@ async function main() {
     process.exit(1);
   }
   baseUrl = baseUrl.replace(/\/$/, '');
+
+  // Guard: refuse deploy-specific Vercel URLs. Two variants we've seen
+  // bite us: (a) team deploys end with `-projects.vercel.app`, and (b)
+  // personal-account deploys carry a 6+ char hash segment before .vercel.app
+  // (e.g. `cvetita-platform-egta7nwfq-cherbalppc-7273s-projects.vercel.app`).
+  // Registering against either means the next deploy breaks all webhooks —
+  // Shopify sees 401/404 and silently stops delivering. Use the stable
+  // production alias (`<project>.vercel.app`) or a custom domain instead.
+  const deployUrlPattern =
+    /-projects\.vercel\.app(?:\/|$)|-[a-z0-9]{6,}-[a-z0-9-]+\.vercel\.app(?:\/|$)/i;
+  if (deployUrlPattern.test(baseUrl)) {
+    console.error(`\n✗ Refusing deploy-specific URL: ${baseUrl}`);
+    console.error(`  This will break webhooks on the next deploy. Use the`);
+    console.error(`  stable production alias instead (e.g. <project>.vercel.app`);
+    console.error(`  or your custom domain). Pass --base-url <stable-url>.`);
+    process.exit(2);
+  }
+
   console.log(`Webhook base URL: ${baseUrl}\n`);
 
   for (const store of stores) {
