@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { upsertCustomerFromOrder } from "@/lib/sync/customer-upsert";
 import type {
   WebhookEvent,
   StoreConfig,
@@ -84,17 +85,31 @@ export async function handleOrderWebhook(
     .from("orders")
     .insert(normalized);
 
-  if (error) {
-    // Duplicate webhook_event_id is expected on retries — not an error
-    if (error.code === "23505") {
-      logger.info("Duplicate order event skipped", {
-        storeId: event.storeId,
-        orderId: payload.id,
-        webhookId: event.webhookId,
-      });
-      return;
-    }
+  // Duplicate webhook_event_id is expected on Shopify retries — not an error.
+  // We still refresh the customer cache below (idempotent), in case a
+  // previous attempt failed mid-way.
+  const isDuplicate = error?.code === "23505";
+  if (error && !isDuplicate) {
     throw new Error(`Order insert failed: ${error.message}`);
+  }
+  if (isDuplicate) {
+    logger.info("Duplicate order event — refreshing customer cache only", {
+      storeId: event.storeId,
+      orderId: payload.id,
+      webhookId: event.webhookId,
+    });
+  }
+
+  // Refresh the materialized customer profile. Failures must not bubble up —
+  // the order is persisted and the cache can be rebuilt from orders later.
+  try {
+    await upsertCustomerFromOrder(payload, config.schemaName);
+  } catch (err) {
+    logger.error("Customer upsert failed (order persisted)", {
+      storeId: event.storeId,
+      orderId: payload.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   logger.info("Order webhook processed", {
