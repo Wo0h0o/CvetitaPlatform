@@ -85,6 +85,7 @@ export interface NormalizedOrder {
   total_tax: number;
   total_discounts: number;
   total_refunded: number;
+  exchange_rate_to_eur: number;
   line_items: NormalizedLineItem[];
   raw_payload: unknown;
   shopify_created_at: string;

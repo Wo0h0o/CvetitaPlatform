@@ -15,6 +15,15 @@ function fmtEur(n: number) {
   return `${n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
 }
 
+function fmtShop(n: number, currency: string) {
+  return `${n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
+function originalCurrencyTooltip(row: OrderRow): string | undefined {
+  if (row.currency === "EUR") return undefined;
+  return `${fmtShop(row.total_price_shop, row.currency)} @ курс ${row.exchange_rate_to_eur.toFixed(4)}`;
+}
+
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("bg-BG", {
     day: "numeric",
@@ -85,7 +94,17 @@ const columns: Column<OrderRow>[] = [
     key: "total_price",
     label: "Сума",
     className: "text-right",
-    render: (row) => <span className="font-medium">{fmtEur(row.total_price)}</span>,
+    render: (row) => {
+      const tip = originalCurrencyTooltip(row);
+      return (
+        <span
+          className={`font-medium ${tip ? "underline decoration-dotted decoration-text-3 underline-offset-2 cursor-help" : ""}`}
+          title={tip}
+        >
+          {fmtEur(row.total_price)}
+        </span>
+      );
+    },
     sortFn: (a, b) => a.total_price - b.total_price,
   },
   {
@@ -163,7 +182,12 @@ export function StoreOrdersTable({ storeId }: { storeId: string }) {
                 <span className="font-medium text-text text-[14px]">
                   #{row.shopify_order_number}
                 </span>
-                <span className="font-medium text-text text-[14px]">
+                <span
+                  className={`font-medium text-text text-[14px] ${
+                    row.currency !== "EUR" ? "underline decoration-dotted decoration-text-3 underline-offset-2" : ""
+                  }`}
+                  title={originalCurrencyTooltip(row)}
+                >
                   {fmtEur(row.total_price)}
                 </span>
               </div>

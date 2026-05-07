@@ -80,6 +80,27 @@ function calculateRefundTotal(payload) {
   }, 0);
 }
 
+// Look up the historical exchange rate from public.exchange_rates.
+// Returns 1.0 for EUR or any failure (so backfill never blocks; cron will
+// later overwrite from ECB if rates were missing for that date).
+async function rateToEur(currency, createdAt) {
+  if (currency === 'EUR') return 1.0;
+  const dateStr = String(createdAt).slice(0, 10);
+  const { data, error } = await supabase
+    .from('exchange_rates')
+    .select('rate_to_eur')
+    .eq('currency', currency)
+    .lte('rate_date', dateStr)
+    .order('rate_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) {
+    console.warn(`    rate lookup miss ${currency}@${dateStr}: ${error?.message || 'no row'}`);
+    return 1.0;
+  }
+  return Number(data.rate_to_eur);
+}
+
 function parseLinkHeader(h) {
   if (!h) return null;
   const m = h.match(/<([^>]+)>;\s*rel="next"/);
@@ -143,6 +164,8 @@ async function backfillStore(store) {
   for (const o of orders) {
     const eventType = o.cancelled_at ? 'cancelled' : 'updated';
     const totalRefunded = calculateRefundTotal(o);
+    const currency = o.currency || 'EUR';
+    const exchangeRate = await rateToEur(currency, o.created_at);
 
     const row = {
       shopify_order_id: o.id,
@@ -152,12 +175,13 @@ async function backfillStore(store) {
       email: o.email || null,
       financial_status: o.financial_status,
       fulfillment_status: o.fulfillment_status || null,
-      currency: o.currency || 'EUR',
+      currency,
       total_price: parseFloat(o.total_price) || 0,
       subtotal_price: parseFloat(o.subtotal_price) || 0,
       total_tax: parseFloat(o.total_tax) || 0,
       total_discounts: parseFloat(o.total_discounts) || 0,
       total_refunded: totalRefunded,
+      exchange_rate_to_eur: exchangeRate,
       line_items: normalizeLineItems(o.line_items),
       raw_payload: o,
       shopify_created_at: o.created_at,

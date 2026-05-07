@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { upsertCustomerFromOrder } from "@/lib/sync/customer-upsert";
 import { claimUpsellAttribution, revokeUpsellAttribution } from "@/lib/sync/upsell-attribution";
+import { getRateToEur } from "@/lib/exchange-rates";
 import type {
   WebhookEvent,
   StoreConfig,
@@ -60,6 +61,8 @@ export async function handleOrderWebhook(
   const eventType = mapTopicToEventType(event.topic);
 
   const totalRefunded = calculateRefundTotal(payload);
+  const currency = payload.currency || "EUR";
+  const exchangeRate = await resolveExchangeRate(currency, payload.created_at, event.storeId);
 
   const normalized: NormalizedOrder = {
     shopify_order_id: payload.id,
@@ -69,12 +72,13 @@ export async function handleOrderWebhook(
     email: payload.email || null,
     financial_status: payload.financial_status,
     fulfillment_status: payload.fulfillment_status || null,
-    currency: payload.currency || "EUR",
+    currency,
     total_price: parseFloat(payload.total_price) || 0,
     subtotal_price: parseFloat(payload.subtotal_price) || 0,
     total_tax: parseFloat(payload.total_tax) || 0,
     total_discounts: parseFloat(payload.total_discounts) || 0,
     total_refunded: totalRefunded,
+    exchange_rate_to_eur: exchangeRate,
     line_items: normalizeLineItems(payload.line_items || []),
     raw_payload: payload,
     shopify_created_at: payload.created_at,
@@ -160,6 +164,27 @@ function normalizeLineItems(items: ShopifyLineItem[]): NormalizedLineItem[] {
     price: parseFloat(item.price) || 0,
     sku: item.sku || null,
   }));
+}
+
+async function resolveExchangeRate(
+  currency: string,
+  createdAt: string,
+  storeId: string
+): Promise<number> {
+  if (currency === "EUR") return 1.0;
+  try {
+    return await getRateToEur(currency, new Date(createdAt));
+  } catch (err) {
+    // Don't lose the order over an FX failure — store with rate 1.0 and log.
+    // Backfill cron will correct it later.
+    logger.error("Exchange rate lookup failed; storing order with rate=1", {
+      storeId,
+      currency,
+      createdAt,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 1.0;
+  }
 }
 
 function calculateRefundTotal(payload: ShopifyOrderPayload): number {

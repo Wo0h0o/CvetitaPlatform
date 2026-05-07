@@ -5,6 +5,7 @@ import {
 } from "@/lib/store-config-loader";
 import { withRetry } from "@/lib/fetch-utils";
 import { logger } from "@/lib/logger";
+import { getRateToEur } from "@/lib/exchange-rates";
 import type {
   StoreConfig,
   NormalizedOrder,
@@ -103,7 +104,7 @@ export async function syncOrders(
     const orders: ShopifyOrderRaw[] = data.orders || [];
 
     if (orders.length > 0) {
-      const normalized = orders.map(normalizeOrder);
+      const normalized = await Promise.all(orders.map(normalizeOrderWithRate));
 
       const { error } = await supabaseAdmin
         .schema(schema)
@@ -160,7 +161,7 @@ export async function syncOrders(
 // Helpers
 // ============================================================
 
-function normalizeOrder(order: ShopifyOrderRaw): NormalizedOrder {
+async function normalizeOrderWithRate(order: ShopifyOrderRaw): Promise<NormalizedOrder> {
   const refundTotal = (order.refunds || []).reduce((sum, refund) => {
     const txTotal = (refund.transactions || []).reduce(
       (txSum, tx) => txSum + (parseFloat(tx.amount) || 0),
@@ -181,6 +182,20 @@ function normalizeOrder(order: ShopifyOrderRaw): NormalizedOrder {
     })
   );
 
+  const currency = order.currency || "EUR";
+  let exchangeRate = 1.0;
+  if (currency !== "EUR") {
+    try {
+      exchangeRate = await getRateToEur(currency, new Date(order.created_at));
+    } catch (err) {
+      logger.error("Sync: rate lookup failed; using 1.0", {
+        orderId: order.id,
+        currency,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return {
     shopify_order_id: order.id,
     shopify_order_number: order.name || `#${order.order_number}`,
@@ -189,12 +204,13 @@ function normalizeOrder(order: ShopifyOrderRaw): NormalizedOrder {
     email: order.email || null,
     financial_status: order.financial_status,
     fulfillment_status: order.fulfillment_status || null,
-    currency: order.currency || "EUR",
+    currency,
     total_price: parseFloat(order.total_price) || 0,
     subtotal_price: parseFloat(order.subtotal_price) || 0,
     total_tax: parseFloat(order.total_tax) || 0,
     total_discounts: parseFloat(order.total_discounts) || 0,
     total_refunded: refundTotal,
+    exchange_rate_to_eur: exchangeRate,
     line_items: lineItems,
     raw_payload: order,
     shopify_created_at: order.created_at,

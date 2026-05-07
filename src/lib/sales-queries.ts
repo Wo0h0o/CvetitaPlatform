@@ -420,9 +420,15 @@ export interface OrderRow {
   email: string | null;
   financial_status: string;
   fulfillment_status: string | null;
-  total_price: number;
-  total_refunded: number;
+  total_price: number;          // EUR (normalised)
+  total_refunded: number;       // EUR (normalised)
   shopify_created_at: string;
+  // Original shop-currency values + rate, for the per-row tooltip on
+  // non-EUR stores (RO/RON today). Always present, but UI only surfaces
+  // them when currency !== 'EUR'.
+  currency: string;
+  total_price_shop: number;
+  exchange_rate_to_eur: number;
 }
 
 export async function fetchStoreOrders(
@@ -432,14 +438,11 @@ export async function fetchStoreOrders(
   limit: number = 50,
   offset: number = 0
 ): Promise<{ orders: OrderRow[]; total: number }> {
-  // Count total orders in range (latest state only, non-cancelled)
-  // We use a raw RPC approach since DISTINCT ON isn't directly supported by PostgREST.
-  // Instead we fetch orders ordered by received_at DESC and deduplicate client-side.
   const { data: rawOrders, error } = await supabaseAdmin
     .schema(schema.schemaName)
     .from("orders")
     .select(
-      "shopify_order_id, shopify_order_number, email, financial_status, fulfillment_status, total_price, total_refunded, shopify_created_at, received_at"
+      "shopify_order_id, shopify_order_number, email, financial_status, fulfillment_status, total_price, total_price_eur, total_refunded_eur, currency, exchange_rate_to_eur, shopify_created_at, received_at"
     )
     .gte("shopify_created_at", `${from}T00:00:00`)
     .lte("shopify_created_at", `${to}T23:59:59`)
@@ -457,7 +460,20 @@ export async function fetchStoreOrders(
   const seen = new Set<number>();
   const deduped: OrderRow[] = [];
   for (const row of rawOrders ?? []) {
-    const r = row as OrderRow & { received_at: string };
+    const r = row as {
+      shopify_order_id: number;
+      shopify_order_number: string;
+      email: string | null;
+      financial_status: string;
+      fulfillment_status: string | null;
+      total_price: string | number;
+      total_price_eur: string | number;
+      total_refunded_eur: string | number;
+      currency: string;
+      exchange_rate_to_eur: string | number;
+      shopify_created_at: string;
+      received_at: string;
+    };
     if (seen.has(r.shopify_order_id)) continue;
     seen.add(r.shopify_order_id);
     deduped.push({
@@ -466,9 +482,12 @@ export async function fetchStoreOrders(
       email: r.email,
       financial_status: r.financial_status,
       fulfillment_status: r.fulfillment_status,
-      total_price: Number(r.total_price),
-      total_refunded: Number(r.total_refunded),
+      total_price: Number(r.total_price_eur),
+      total_refunded: Number(r.total_refunded_eur),
       shopify_created_at: r.shopify_created_at,
+      currency: r.currency,
+      total_price_shop: Number(r.total_price),
+      exchange_rate_to_eur: Number(r.exchange_rate_to_eur),
     });
   }
 

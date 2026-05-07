@@ -57,10 +57,15 @@ interface LineItem {
 interface OrderRow {
   shopify_order_id: number;
   shopify_order_number: string;
-  total_price: string;
+  total_price: string;            // shop currency (RON for RO)
+  total_price_eur: string;        // normalised
   subtotal_price: string;
+  subtotal_price_eur: string;
   total_discounts: string;
+  total_discounts_eur: string;
   total_refunded: string;
+  total_refunded_eur: string;
+  exchange_rate_to_eur: string | number;
   currency: string;
   financial_status: string;
   fulfillment_status: string | null;
@@ -490,7 +495,18 @@ export default function CustomerProfilePage({
                           <ShippingLine title={o.shipping_title} address={o.shipping_address} />
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="font-medium tabular-nums text-text">{formatEUR(o.total_price, o.currency)}</div>
+                          <div
+                            className={`font-medium tabular-nums text-text ${
+                              o.currency !== "EUR" ? "underline decoration-dotted decoration-text-3 underline-offset-2 cursor-help" : ""
+                            }`}
+                            title={
+                              o.currency !== "EUR"
+                                ? `${parseFloat(o.total_price).toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${o.currency} @ курс ${Number(o.exchange_rate_to_eur).toFixed(4)}`
+                                : undefined
+                            }
+                          >
+                            {formatEUR(o.total_price_eur)}
+                          </div>
                           <div className="text-[12px] text-text-3">{formatDate(o.shopify_created_at)}</div>
                         </div>
                       </div>
