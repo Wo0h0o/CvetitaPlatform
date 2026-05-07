@@ -10,11 +10,12 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import {
   ArrowLeft, Phone, Mail, MapPin, Package, Euro, Calendar, PhoneCall,
   StickyNote, AlertCircle, PhoneOff, Clock, CheckCircle2, XCircle,
-  ArrowDownNarrowWide, ArrowUpNarrowWide, X, Truck, Home,
+  ArrowDownNarrowWide, ArrowUpNarrowWide, X, Truck, Home, Target,
   type LucideIcon,
 } from "lucide-react";
 import { LogEntryForm } from "../_components/LogEntryForm";
 import { ProfileSettings } from "../_components/ProfileSettings";
+import { UpsellWidget } from "../_components/UpsellWidget";
 
 const fetcher = (url: string) => fetch(url).then(async (r) => {
   const json = await r.json();
@@ -38,6 +39,9 @@ interface Customer {
   notes: string | null;
   preferred_call_hour: string | null;
   do_not_call: boolean;
+  pending_upsell_agent_id: string | null;
+  pending_upsell_at: string | null;
+  pending_upsell_expires_at: string | null;
   created_at: string;
 }
 
@@ -65,6 +69,9 @@ interface OrderRow {
   shopify_created_at: string;
   shipping_title: string | null;
   shipping_address: string | null;
+  attributed_agent_id: string | null;
+  attribution_source: string | null;
+  attribution_revoked: boolean;
 }
 
 interface CallLogEntry {
@@ -79,10 +86,16 @@ interface CallLogEntry {
   created_at: string;
 }
 
+interface AgentInfo {
+  name: string;
+  email: string | null;
+}
+
 interface ProfileData {
   customer: Customer;
   orders: OrderRow[];
   call_log: CallLogEntry[];
+  agents: Record<string, AgentInfo>;
 }
 
 const OUTCOME_LABEL: Record<string, string> = {
@@ -276,8 +289,9 @@ export default function CustomerProfilePage({
     );
   }
 
-  const { customer, call_log } = data;
+  const { customer, call_log, agents } = data;
   const totalOrders = data.orders.length;
+  const agentName = (id: string | null) => (id && agents[id]?.name) || null;
 
   return (
     <>
@@ -343,6 +357,26 @@ export default function CustomerProfilePage({
         </div>
       )}
 
+      {/* Upsell tracking */}
+      <div className="mb-3">
+        <UpsellWidget
+          phone={phone}
+          pendingAgentId={customer.pending_upsell_agent_id}
+          pendingAt={customer.pending_upsell_at}
+          pendingExpiresAt={customer.pending_upsell_expires_at}
+          agentName={agentName(customer.pending_upsell_agent_id)}
+          onSuccess={() => {
+            setFeedback({ kind: "success", text: "Upsell статусът е обновен." });
+            mutate();
+            setTimeout(() => setFeedback(null), 3000);
+          }}
+          onError={(msg) => {
+            setFeedback({ kind: "error", text: msg });
+            setTimeout(() => setFeedback(null), 4500);
+          }}
+        />
+      </div>
+
       {/* Log entry form */}
       <LogEntryForm
         phone={phone}
@@ -388,6 +422,9 @@ export default function CustomerProfilePage({
                               </Badge>
                             )}
                             {dur && <span className="text-[12px] text-text-3">· {dur}</span>}
+                            {agentName(e.agent_user_id) && (
+                              <span className="text-[12px] text-text-3">· {agentName(e.agent_user_id)}</span>
+                            )}
                             <span className="text-[12px] text-text-3 ml-auto">{formatDate(e.created_at, true)}</span>
                           </div>
                           {e.body && (
@@ -474,6 +511,15 @@ export default function CustomerProfilePage({
                               {FIN_LABEL[o.financial_status] || o.financial_status}
                             </Badge>
                             {o.event_type === "cancelled" && <Badge variant="red">Отменена</Badge>}
+                            {o.attributed_agent_id && !o.attribution_revoked && (
+                              <Badge variant="blue">
+                                <Target size={11} />
+                                Upsell{agentName(o.attributed_agent_id) ? ` · ${agentName(o.attributed_agent_id)}` : ""}
+                              </Badge>
+                            )}
+                            {o.attributed_agent_id && o.attribution_revoked && (
+                              <Badge variant="neutral">Upsell отменен</Badge>
+                            )}
                           </div>
                           {Array.isArray(o.line_items) && o.line_items.length > 0 ? (
                             <ul className="space-y-0.5">

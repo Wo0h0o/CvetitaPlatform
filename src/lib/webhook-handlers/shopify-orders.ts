@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { upsertCustomerFromOrder } from "@/lib/sync/customer-upsert";
+import { claimUpsellAttribution, revokeUpsellAttribution } from "@/lib/sync/upsell-attribution";
 import type {
   WebhookEvent,
   StoreConfig,
@@ -110,6 +111,14 @@ export async function handleOrderWebhook(
       orderId: payload.id,
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  // Upsell attribution side-effects (fail-soft, both idempotent on retry).
+  // Run only on the first 'created' event to keep duplicate webhooks cheap.
+  if (eventType === "created" && !isDuplicate) {
+    await claimUpsellAttribution(payload, config.schemaName, payload.id);
+  } else if (eventType === "cancelled") {
+    await revokeUpsellAttribution(config.schemaName, payload.id, "cancelled");
   }
 
   logger.info("Order webhook processed", {

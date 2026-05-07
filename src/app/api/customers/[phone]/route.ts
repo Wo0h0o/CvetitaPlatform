@@ -54,10 +54,56 @@ export async function GET(
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
 
+    // Resolve agent names for any user IDs that appear in this profile
+    // (call_log.agent_user_id, orders.attributed_agent_id, customer.pending_upsell_agent_id).
+    const agentIds = new Set<string>();
+    const customer = customerRes.data as Record<string, unknown>;
+    if (typeof customer.pending_upsell_agent_id === "string") {
+      agentIds.add(customer.pending_upsell_agent_id);
+    }
+    for (const e of (callLogRes.data ?? []) as Array<{ agent_user_id: string | null }>) {
+      if (e.agent_user_id) agentIds.add(e.agent_user_id);
+    }
+    for (const o of (ordersRes.data ?? []) as Array<{ attributed_agent_id: string | null }>) {
+      if (o.attributed_agent_id) agentIds.add(o.attributed_agent_id);
+    }
+
+    const agents: Record<string, { name: string; email: string | null }> = {};
+    if (agentIds.size > 0) {
+      try {
+        // Small team — single page is enough; safety cap below.
+        let page = 1;
+        const perPage = 200;
+        while (agentIds.size > 0) {
+          const { data: users, error: usrErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+          if (usrErr) {
+            logger.error("listUsers failed in customer profile", { error: usrErr.message });
+            break;
+          }
+          for (const u of users.users) {
+            if (!agentIds.has(u.id)) continue;
+            const meta = (u.user_metadata || {}) as Record<string, unknown>;
+            const fullName = typeof meta.full_name === "string" ? meta.full_name.trim() : "";
+            agents[u.id] = {
+              name: fullName || u.email || u.id.slice(0, 8),
+              email: u.email ?? null,
+            };
+            agentIds.delete(u.id);
+          }
+          if (users.users.length < perPage) break;
+          page++;
+          if (page > 10) break;
+        }
+      } catch (e) {
+        logger.error("agent name lookup failed", { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
     return NextResponse.json({
       customer: customerRes.data,
       orders: ordersRes.data || [],
       call_log: callLogRes.data || [],
+      agents,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

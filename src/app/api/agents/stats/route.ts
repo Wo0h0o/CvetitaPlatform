@@ -28,6 +28,14 @@ interface AgentBucket {
   total_duration_seconds: number;
   calls_with_duration_30d: number;
   active_followups: number;
+  upsells_30d: number;
+  upsell_revenue_30d: number;
+}
+
+interface UpsellStatsRow {
+  agent_user_id: string;
+  upsells: number;
+  upsell_revenue: number | string;
 }
 
 export async function GET(req: NextRequest) {
@@ -68,6 +76,8 @@ export async function GET(req: NextRequest) {
           total_duration_seconds: 0,
           calls_with_duration_30d: 0,
           active_followups: 0,
+          upsells_30d: 0,
+          upsell_revenue_30d: 0,
         };
         agents.set(id, b);
       }
@@ -93,6 +103,23 @@ export async function GET(req: NextRequest) {
 
       if (r.follow_up_at && r.follow_up_at >= futureCutoffISO) {
         b.active_followups++;
+      }
+    }
+
+    // Layer in upsell attributions (one query, may add agents not yet in the map)
+    const { data: upsellRows, error: upsellErr } = await supabaseAdmin.rpc(
+      "agent_upsell_stats",
+      { p_schema: SCHEMA, p_since: sinceISO }
+    );
+    if (upsellErr) {
+      logger.error("agent_upsell_stats failed", { error: upsellErr.message });
+    } else if (Array.isArray(upsellRows)) {
+      for (const r of upsellRows as UpsellStatsRow[]) {
+        if (!r.agent_user_id) continue;
+        const b = ensure(r.agent_user_id);
+        b.upsells_30d = r.upsells || 0;
+        b.upsell_revenue_30d =
+          typeof r.upsell_revenue === "string" ? parseFloat(r.upsell_revenue) : r.upsell_revenue || 0;
       }
     }
 
@@ -130,9 +157,11 @@ export async function GET(req: NextRequest) {
         acc.calls_today += b.calls_today;
         acc.calls_30d += b.calls_30d;
         acc.active_followups += b.active_followups;
+        acc.upsells_30d += b.upsells_30d;
+        acc.upsell_revenue_30d += b.upsell_revenue_30d;
         return acc;
       },
-      { calls_today: 0, calls_30d: 0, active_followups: 0 }
+      { calls_today: 0, calls_30d: 0, active_followups: 0, upsells_30d: 0, upsell_revenue_30d: 0 }
     );
 
     return NextResponse.json({ agents: list, totals, window_days: WINDOW_DAYS });

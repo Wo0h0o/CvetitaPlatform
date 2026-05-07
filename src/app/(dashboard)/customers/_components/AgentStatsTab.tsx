@@ -5,7 +5,7 @@ import { Card, CardBody, CardHeader } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { Badge } from "@/components/shared/Badge";
 import { MiniKpi } from "@/components/shared/MiniKpi";
-import { PhoneCall, AlertCircle, Clock, StickyNote, Users, type LucideIcon } from "lucide-react";
+import { PhoneCall, AlertCircle, Clock, StickyNote, Users, Target, Euro, type LucideIcon } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -21,6 +21,8 @@ interface Agent {
   total_duration_seconds: number;
   calls_with_duration_30d: number;
   active_followups: number;
+  upsells_30d: number;
+  upsell_revenue_30d: number;
 }
 
 interface StatsResponse {
@@ -29,8 +31,14 @@ interface StatsResponse {
     calls_today: number;
     calls_30d: number;
     active_followups: number;
+    upsells_30d: number;
+    upsell_revenue_30d: number;
   };
   window_days: number;
+}
+
+function formatEUR(n: number): string {
+  return `€${(n || 0).toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const OUTCOME_LABEL: Record<string, string> = {
@@ -132,15 +140,19 @@ export function AgentStatsTab() {
   }
 
   const agents = data?.agents ?? [];
-  const totals = data?.totals ?? { calls_today: 0, calls_30d: 0, active_followups: 0 };
+  const totals = data?.totals ?? {
+    calls_today: 0, calls_30d: 0, active_followups: 0, upsells_30d: 0, upsell_revenue_30d: 0,
+  };
   const windowDays = data?.window_days ?? 30;
 
   return (
     <>
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-4">
         <MiniKpi icon={PhoneCall} label="Обаждания днес" value={String(totals.calls_today)} />
         <MiniKpi icon={PhoneCall} label={`Обаждания ${windowDays}д`} value={String(totals.calls_30d)} />
         <MiniKpi icon={Clock} label="Активни follow-up" value={String(totals.active_followups)} />
+        <MiniKpi icon={Target} label={`Upsells ${windowDays}д`} value={String(totals.upsells_30d)} />
+        <MiniKpi icon={Euro} label={`Upsell приход ${windowDays}д`} value={formatEUR(totals.upsell_revenue_30d)} />
       </div>
 
       {agents.length === 0 ? (
@@ -175,12 +187,18 @@ export function AgentStatsTab() {
                 </span>
               </CardHeader>
               <CardBody className="space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <Stat label="Днес" value={a.calls_today} />
                   <Stat label="7 дни" value={a.calls_7d} />
                   <Stat label={`${windowDays} дни`} value={a.calls_30d} />
                   <Stat label="Средно" value={avgCallDuration(a)} hint={`от ${a.calls_with_duration_30d} обаждания`} />
                   <Stat label="Бележки" value={a.notes_30d} icon={StickyNote} />
+                  <Stat
+                    label="Upsells"
+                    value={a.upsells_30d}
+                    hint={a.upsell_revenue_30d > 0 ? formatEUR(a.upsell_revenue_30d) : undefined}
+                    icon={Target}
+                  />
                 </div>
 
                 <div>
