@@ -40,6 +40,15 @@ interface Customer {
   created_at: string;
 }
 
+interface LineItem {
+  title?: string;
+  name?: string;
+  quantity?: number;
+  variant_title?: string | null;
+  sku?: string | null;
+  price?: string | number;
+}
+
 interface OrderRow {
   shopify_order_id: number;
   shopify_order_number: string;
@@ -51,7 +60,7 @@ interface OrderRow {
   financial_status: string;
   fulfillment_status: string | null;
   event_type: string;
-  line_items: Array<{ title?: string; quantity?: number }>;
+  line_items: LineItem[];
   shopify_created_at: string;
 }
 
@@ -145,13 +154,9 @@ function customerName(c: Customer): string {
   return full || c.email || c.phone_e164;
 }
 
-function lineItemSummary(items: OrderRow["line_items"]): string {
-  if (!Array.isArray(items) || items.length === 0) return "—";
-  const totalQty = items.reduce((acc, i) => acc + (i.quantity || 0), 0);
-  if (items.length === 1) {
-    return `${items[0].title || "Артикул"} × ${items[0].quantity || 1}`;
-  }
-  return `${items.length} артикула (${totalQty} бр.)`;
+function itemTitle(item: LineItem): string {
+  const base = item.title || item.name || "Артикул";
+  return item.variant_title ? `${base} — ${item.variant_title}` : base;
 }
 
 export default function CustomerProfilePage({
@@ -340,20 +345,33 @@ export default function CustomerProfilePage({
               ) : (
                 <ol className="divide-y divide-border">
                   {orders.map((o) => (
-                    <li key={o.shopify_order_id} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                          <span className="text-[13px] font-medium text-text">{o.shopify_order_number || `#${o.shopify_order_id}`}</span>
-                          <Badge variant={FIN_VARIANT[o.financial_status] || "neutral"}>
-                            {FIN_LABEL[o.financial_status] || o.financial_status}
-                          </Badge>
-                          {o.event_type === "cancelled" && <Badge variant="red">Отменена</Badge>}
+                    <li key={o.shopify_order_id} className="px-5 py-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                            <span className="text-[13px] font-medium text-text">{o.shopify_order_number || `#${o.shopify_order_id}`}</span>
+                            <Badge variant={FIN_VARIANT[o.financial_status] || "neutral"}>
+                              {FIN_LABEL[o.financial_status] || o.financial_status}
+                            </Badge>
+                            {o.event_type === "cancelled" && <Badge variant="red">Отменена</Badge>}
+                          </div>
+                          {Array.isArray(o.line_items) && o.line_items.length > 0 ? (
+                            <ul className="space-y-0.5">
+                              {o.line_items.map((item, idx) => (
+                                <li key={idx} className="text-[12.5px] text-text-2 flex items-baseline gap-2">
+                                  <span className="text-text-3 tabular-nums shrink-0">{item.quantity || 1}×</span>
+                                  <span className="min-w-0 break-words">{itemTitle(item)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-[12px] text-text-3">Няма данни за артикулите.</p>
+                          )}
                         </div>
-                        <p className="text-[12px] text-text-3 truncate">{lineItemSummary(o.line_items)}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-medium tabular-nums text-text">{formatEUR(o.total_price, o.currency)}</div>
-                        <div className="text-[12px] text-text-3">{formatDate(o.shopify_created_at)}</div>
+                        <div className="text-right shrink-0">
+                          <div className="font-medium tabular-nums text-text">{formatEUR(o.total_price, o.currency)}</div>
+                          <div className="text-[12px] text-text-3">{formatDate(o.shopify_created_at)}</div>
+                        </div>
                       </div>
                     </li>
                   ))}
