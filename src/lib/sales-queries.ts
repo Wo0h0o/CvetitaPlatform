@@ -285,39 +285,43 @@ export async function fetchTopProducts(
   to: string,
   limit: number = 10
 ): Promise<TopProduct[]> {
+  // Reads orders directly via top_products_for_period RPC. We previously
+  // summed daily_aggregates.top_products, but that JSONB only retains the
+  // top 5 products per day — long-tail products that never enter a daily
+  // top-5 leak out, undercounting them across multi-day windows.
+  // Per-store fetch limit is widened (limit * 5, min 50) so cross-store
+  // merging has enough headroom before the final ranking + slice.
+  const perSchemaLimit = Math.max(50, limit * 5);
+
   const allResults = await Promise.all(
     schemas.map(async (s) => {
-      const { data, error } = await supabaseAdmin
-        .schema(s.schemaName)
-        .from("daily_aggregates")
-        .select("top_products")
-        .gte("order_date", from)
-        .lte("order_date", to);
+      const { data, error } = await supabaseAdmin.rpc("top_products_for_period", {
+        p_schema: s.schemaName,
+        p_from: from,
+        p_to: to,
+        p_limit: perSchemaLimit,
+      });
 
       if (error) {
         logger.error("Failed to fetch top products", {
           schema: s.schemaName,
           error: error.message,
         });
-        return [];
+        return [] as TopProduct[];
       }
 
-      return (data ?? []) as { top_products: TopProduct[] | null }[];
+      return (data ?? []) as TopProduct[];
     })
   );
 
-  // Merge by title across all days and stores
+  // Merge by title across stores
   const byTitle = new Map<string, { quantity: number; revenue: number }>();
-
   for (const rows of allResults) {
-    for (const row of rows) {
-      if (!row.top_products) continue;
-      for (const p of row.top_products) {
-        const existing = byTitle.get(p.title) ?? { quantity: 0, revenue: 0 };
-        existing.quantity += Number(p.quantity);
-        existing.revenue += Number(p.revenue);
-        byTitle.set(p.title, existing);
-      }
+    for (const p of rows) {
+      const existing = byTitle.get(p.title) ?? { quantity: 0, revenue: 0 };
+      existing.quantity += Number(p.quantity);
+      existing.revenue += Number(p.revenue);
+      byTitle.set(p.title, existing);
     }
   }
 
