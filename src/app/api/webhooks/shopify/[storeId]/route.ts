@@ -79,22 +79,22 @@ export async function POST(
   const { data: existing } = await supabaseAdmin
     .schema(schema)
     .from("webhook_log")
-    .select("processed")
-    .eq("webhook_id", webhookId)
+    .select("status")
+    .eq("webhook_event_id", webhookId)
     .maybeSingle();
 
-  if (existing?.processed) {
+  if (existing?.status === "processed") {
     return NextResponse.json({ ok: true, duplicate: true });
   }
 
   // 6. Insert into webhook_log (upsert for retry safety)
   await supabaseAdmin.schema(schema).from("webhook_log").upsert(
     {
-      webhook_id: webhookId,
+      webhook_event_id: webhookId,
       topic,
-      processed: false,
+      status: "received",
     },
-    { onConflict: "webhook_id" }
+    { onConflict: "webhook_event_id" }
   );
 
   // 7. Parse payload
@@ -122,8 +122,8 @@ export async function POST(
     await supabaseAdmin
       .schema(schema)
       .from("webhook_log")
-      .update({ processed: true, processed_at: new Date().toISOString() })
-      .eq("webhook_id", webhookId);
+      .update({ status: "processed", processed_at: new Date().toISOString() })
+      .eq("webhook_event_id", webhookId);
 
     // 9. Refresh daily aggregates after order events (real-time, no cron needed)
     if (ORDER_TOPICS.has(event.topic)) {
@@ -143,8 +143,8 @@ export async function POST(
     await supabaseAdmin
       .schema(schema)
       .from("webhook_log")
-      .update({ error_message: message })
-      .eq("webhook_id", webhookId);
+      .update({ status: "failed", error: message })
+      .eq("webhook_event_id", webhookId);
   }
 
   // Always return 200 to prevent Shopify retry storms
