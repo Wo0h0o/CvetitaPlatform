@@ -41,6 +41,13 @@ export async function GET(req: NextRequest) {
     const sort = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "last_order_at";
     const order = ALLOWED_ORDERS.has(orderRaw) ? orderRaw : "desc";
 
+    // Date range on last_order_at. 'from' is interpreted as start-of-day,
+    // 'to' as end-of-day so a one-day range catches a full 24h.
+    const fromParam = sp.get("from");
+    const toParam = sp.get("to");
+    const fromISO = fromParam ? new Date(`${fromParam}T00:00:00`).toISOString() : null;
+    const toISO = toParam ? new Date(`${toParam}T23:59:59.999`).toISOString() : null;
+
     const [rowsRes, countRes] = await Promise.all([
       supabaseAdmin.rpc("customer_list_filtered", {
         p_schema: SCHEMA,
@@ -50,11 +57,15 @@ export async function GET(req: NextRequest) {
         p_order: order,
         p_limit: limit,
         p_offset: offset,
+        p_from: fromISO,
+        p_to: toISO,
       }),
       supabaseAdmin.rpc("customer_list_count", {
         p_schema: SCHEMA,
         p_search: q,
         p_filter: filter,
+        p_from: fromISO,
+        p_to: toISO,
       }),
     ]);
 
@@ -69,6 +80,8 @@ export async function GET(req: NextRequest) {
       filter,
       sort,
       order,
+      from: fromParam,
+      to: toParam,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

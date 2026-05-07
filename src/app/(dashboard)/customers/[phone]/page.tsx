@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import {
   ArrowLeft, Phone, Mail, MapPin, Package, Euro, Calendar, PhoneCall,
   StickyNote, AlertCircle, PhoneOff, Clock, CheckCircle2, XCircle,
-  ArrowDownNarrowWide, ArrowUpNarrowWide, X, Truck, Home, Target,
+  ArrowDownNarrowWide, ArrowUpNarrowWide, Truck, Home, Target,
   type LucideIcon,
 } from "lucide-react";
 import { LogEntryForm } from "../_components/LogEntryForm";
@@ -230,32 +230,19 @@ export default function CustomerProfilePage({
 
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
-  // Order timeline filters (client-side; the API returns the full list)
-  const [orderFrom, setOrderFrom] = useState<string>("");
-  const [orderTo, setOrderTo] = useState<string>("");
+  // Order timeline sort direction (client-side; the API returns the full list)
   const [orderAsc, setOrderAsc] = useState<boolean>(false); // false = newest first
 
-  const filteredOrders = useMemo<OrderRow[]>(() => {
+  const sortedOrders = useMemo<OrderRow[]>(() => {
     if (!data?.orders) return [];
-    const from = orderFrom ? new Date(`${orderFrom}T00:00:00`).getTime() : null;
-    const to = orderTo ? new Date(`${orderTo}T23:59:59.999`).getTime() : null;
-    const filtered = data.orders.filter((o) => {
-      const t = new Date(o.shopify_created_at).getTime();
-      if (Number.isNaN(t)) return false;
-      if (from !== null && t < from) return false;
-      if (to !== null && t > to) return false;
-      return true;
-    });
-    filtered.sort((a, b) => {
+    const arr = [...data.orders];
+    arr.sort((a, b) => {
       const at = new Date(a.shopify_created_at).getTime();
       const bt = new Date(b.shopify_created_at).getTime();
       return orderAsc ? at - bt : bt - at;
     });
-    return filtered;
-  }, [data?.orders, orderFrom, orderTo, orderAsc]);
-
-  const hasOrderFilters = !!(orderFrom || orderTo);
-  const clearOrderFilters = () => { setOrderFrom(""); setOrderTo(""); };
+    return arr;
+  }, [data?.orders, orderAsc]);
 
   if (isLoading) {
     return (
@@ -446,62 +433,29 @@ export default function CustomerProfilePage({
 
           {/* Orders timeline */}
           <Card>
-            <CardHeader>
-              Поръчки ({hasOrderFilters ? `${filteredOrders.length} от ${totalOrders}` : totalOrders})
+            <CardHeader
+              action={
+                totalOrders > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setOrderAsc((v) => !v)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] text-text-2 hover:text-text bg-surface-2 border border-border rounded-md transition-colors"
+                    title={orderAsc ? "Най-стари → Най-нови" : "Най-нови → Най-стари"}
+                  >
+                    {orderAsc ? <ArrowUpNarrowWide size={12} /> : <ArrowDownNarrowWide size={12} />}
+                    {orderAsc ? "Най-стари" : "Най-нови"}
+                  </button>
+                ) : null
+              }
+            >
+              Поръчки ({totalOrders})
             </CardHeader>
             <CardBody className="!p-0">
               {totalOrders === 0 ? (
                 <p className="text-[13px] text-text-3 text-center py-6">Няма поръчки.</p>
               ) : (
-                <>
-                  {/* Filter bar */}
-                  <div className="flex flex-wrap items-end gap-2 px-5 py-3 border-b border-border bg-surface-2/50">
-                    <label className="block">
-                      <span className="block text-[11px] uppercase tracking-wide text-text-3 mb-0.5">От</span>
-                      <input
-                        type="date"
-                        value={orderFrom}
-                        onChange={(e) => setOrderFrom(e.target.value)}
-                        max={orderTo || undefined}
-                        className="bg-surface border border-border rounded-md px-2 py-1.5 text-[12.5px] text-text focus:outline-none focus:border-accent"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-[11px] uppercase tracking-wide text-text-3 mb-0.5">До</span>
-                      <input
-                        type="date"
-                        value={orderTo}
-                        onChange={(e) => setOrderTo(e.target.value)}
-                        min={orderFrom || undefined}
-                        className="bg-surface border border-border rounded-md px-2 py-1.5 text-[12.5px] text-text focus:outline-none focus:border-accent"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setOrderAsc((v) => !v)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] text-text-2 hover:text-text bg-surface border border-border rounded-md transition-colors"
-                      title={orderAsc ? "Най-стари → Най-нови" : "Най-нови → Най-стари"}
-                    >
-                      {orderAsc ? <ArrowUpNarrowWide size={13} /> : <ArrowDownNarrowWide size={13} />}
-                      {orderAsc ? "Най-стари" : "Най-нови"}
-                    </button>
-                    {hasOrderFilters && (
-                      <button
-                        type="button"
-                        onClick={clearOrderFilters}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12.5px] text-text-3 hover:text-text transition-colors"
-                      >
-                        <X size={12} />Изчисти
-                      </button>
-                    )}
-                  </div>
-                  {filteredOrders.length === 0 ? (
-                    <p className="text-[13px] text-text-3 text-center py-6">
-                      Няма поръчки за избрания период.
-                    </p>
-                  ) : (
                 <ol className="divide-y divide-border">
-                  {filteredOrders.map((o) => (
+                  {sortedOrders.map((o) => (
                     <li key={o.shopify_order_id} className="px-5 py-3">
                       <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
                         <div className="min-w-0 flex-1">
@@ -543,8 +497,6 @@ export default function CustomerProfilePage({
                     </li>
                   ))}
                 </ol>
-                  )}
-                </>
               )}
             </CardBody>
           </Card>

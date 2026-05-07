@@ -9,7 +9,7 @@ import { Badge } from "@/components/shared/Badge";
 import { Button } from "@/components/shared/Button";
 import {
   Search, Phone, MapPin, ChevronLeft, ChevronRight, Users,
-  PhoneOff, AlertCircle,
+  PhoneOff, AlertCircle, X,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -102,6 +102,8 @@ export function CustomerListTab() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filter, setFilter] = useState<typeof FILTERS[number]["key"]>("all");
   const [sort, setSort] = useState<typeof SORTS[number]["key"]>("last_order_at");
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
   const [page, setPage] = useState(0);
 
   // Debounce search
@@ -110,10 +112,10 @@ export function CustomerListTab() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset to page 0 when filters/search/sort change
+  // Reset to page 0 when filters/search/sort/dates change
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, filter, sort]);
+  }, [debouncedSearch, filter, sort, from, to]);
 
   const url = useMemo(() => {
     const sp = new URLSearchParams();
@@ -123,8 +125,12 @@ export function CustomerListTab() {
     sp.set("order", "desc");
     sp.set("limit", String(PAGE_SIZE));
     sp.set("offset", String(page * PAGE_SIZE));
+    if (from) sp.set("from", from);
+    if (to) sp.set("to", to);
     return `/api/customers/list?${sp.toString()}`;
-  }, [debouncedSearch, filter, sort, page]);
+  }, [debouncedSearch, filter, sort, from, to, page]);
+
+  const hasDateFilter = !!(from || to);
 
   const { data, isLoading, error } = useSWR<ListResponse>(url, fetcher, {
     revalidateOnFocus: false,
@@ -170,6 +176,39 @@ export function CustomerListTab() {
                 {f.label}
               </button>
             ))}
+          </div>
+
+          {/* Date range — filters by last_order_at */}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block">
+              <span className="block text-[11px] uppercase tracking-wide text-text-3 mb-0.5">Поръчки от</span>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                max={to || undefined}
+                className="bg-surface-2 border border-border rounded-md px-2 py-1.5 text-[12.5px] text-text focus:outline-none focus:border-accent"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] uppercase tracking-wide text-text-3 mb-0.5">До</span>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                min={from || undefined}
+                className="bg-surface-2 border border-border rounded-md px-2 py-1.5 text-[12.5px] text-text focus:outline-none focus:border-accent"
+              />
+            </label>
+            {hasDateFilter && (
+              <button
+                type="button"
+                onClick={() => { setFrom(""); setTo(""); }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12.5px] text-text-3 hover:text-text transition-colors"
+              >
+                <X size={12} />Изчисти период
+              </button>
+            )}
           </div>
 
           {/* Sort */}
