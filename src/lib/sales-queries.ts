@@ -123,21 +123,47 @@ function sumAggRows(rows: AggRow[]): {
   revenue: number;
   orders: number;
   refunded: number;
-  customers: number;
 } {
   let revenue = 0;
   let orders = 0;
   let refunded = 0;
-  let customers = 0;
 
   for (const r of rows) {
     revenue += Number(r.total_revenue);
     orders += Number(r.total_orders);
     refunded += Number(r.total_refunded);
-    customers += Number(r.unique_customers);
   }
 
-  return { revenue, orders, refunded, customers };
+  return { revenue, orders, refunded };
+}
+
+// Period-distinct unique customers — daily_aggregates.unique_customers is
+// per-day, so summing across N days double-counts repeat buyers. We call
+// period_unique_customers RPC per schema (a true COUNT(DISTINCT email)
+// over the whole window) and then add the per-store counts. Cross-store
+// double counting is not addressed here; for a single-store dashboard
+// this is exact, and the multi-store sum is a slight upper bound.
+async function sumPeriodCustomers(
+  schemas: StoreSchema[],
+  from: string,
+  to: string
+): Promise<number> {
+  let total = 0;
+  await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin.rpc("period_unique_customers", {
+        p_schema: s.schemaName,
+        p_from: from,
+        p_to: to,
+      });
+      if (error) {
+        logger.error("Failed period_unique_customers", { schema: s.schemaName, error: error.message });
+        return;
+      }
+      total += Number(data ?? 0);
+    })
+  );
+  return total;
 }
 
 function pctChange(current: number, previous: number): number | null {
@@ -152,10 +178,14 @@ export async function fetchSalesKpis(
   compFrom: string,
   compTo: string
 ): Promise<SalesKpis> {
-  // Fan-out: fetch current + comparison period for all schemas in parallel
-  const [currentRows, compRows] = await Promise.all([
+  // Fan-out: revenue/orders/refunded come from daily_aggregates (additive,
+  // exact); unique customers come from a period-distinct RPC (see comment
+  // on sumPeriodCustomers).
+  const [currentRows, compRows, currentCustomers, compCustomers] = await Promise.all([
     Promise.all(schemas.map((s) => fetchAggregatesForPeriod(s, from, to))),
     Promise.all(schemas.map((s) => fetchAggregatesForPeriod(s, compFrom, compTo))),
+    sumPeriodCustomers(schemas, from, to),
+    sumPeriodCustomers(schemas, compFrom, compTo),
   ]);
 
   const current = sumAggRows(currentRows.flat());
@@ -169,7 +199,7 @@ export async function fetchSalesKpis(
     orders: { value: current.orders, change: pctChange(current.orders, comp.orders) },
     aov: { value: currentAov, change: pctChange(currentAov, compAov) },
     refunded: { value: current.refunded, change: pctChange(current.refunded, comp.refunded) },
-    customers: { value: current.customers, change: pctChange(current.customers, comp.customers) },
+    customers: { value: currentCustomers, change: pctChange(currentCustomers, compCustomers) },
   };
 }
 
