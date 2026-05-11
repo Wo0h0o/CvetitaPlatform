@@ -309,6 +309,10 @@ export async function scanCompetitor(
   opts: ScanOptions = {}
 ): Promise<ScanResult> {
   const limit = opts.limit ?? 100;
+  // Soft time budget so the scan never out-runs Vercel's hard maxDuration.
+  // Stops fetching between batches once exceeded.
+  const startedAt = Date.now();
+  const deadlineMs = 75_000;
 
   // ---- Step 0: markets + URL discovery (parallel) ----
   const [marketsInfo, discoveredUrls] = await Promise.all([
@@ -318,8 +322,9 @@ export async function scanCompetitor(
 
   // ---- Step 1: relevance ranking ----
   const ranked = rankCandidates(discoveredUrls, opts.relevanceKeywords);
-  // Over-fetch 2× the limit so dedup losses don't starve the final list
-  const toFetch = ranked.slice(0, limit * 2);
+  // Over-fetch 1.5× the limit; hard cap at 60 URLs to keep within deadline.
+  // (60 URLs × 4s avg per batch of 5 = ~48s, fits comfortably.)
+  const toFetch = ranked.slice(0, Math.min(60, Math.ceil(limit * 1.5)));
 
   logger.info("Candidate URLs ranked", {
     domain,
@@ -334,11 +339,21 @@ export async function scanCompetitor(
     return { products: [], urlsFound: discoveredUrls.length, urlsScanned: 0, ...marketsInfo };
   }
 
-  // ---- Step 2: fetch + extract (parallel, batch of 5) ----
+  // ---- Step 2: fetch + extract (parallel, batch of 5, respects deadline) ----
   const products: ScannedProduct[] = [];
   const batchSize = 5;
+  let actuallyScanned = 0;
   for (let i = 0; i < toFetch.length; i += batchSize) {
+    if (Date.now() - startedAt > deadlineMs) {
+      logger.info("Scan deadline reached — stopping fetch loop", {
+        domain,
+        scannedSoFar: actuallyScanned,
+        remaining: toFetch.length - i,
+      });
+      break;
+    }
     const batch = toFetch.slice(i, i + batchSize);
+    actuallyScanned += batch.length;
     const results = await Promise.allSettled(
       batch.map(async (url) => {
         const res = await fetchWithTimeout(url, {
@@ -346,7 +361,7 @@ export async function scanCompetitor(
             "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)",
             "Accept": "text/html",
           },
-        }, 8000);
+        }, 6000);
         if (!res.ok) return null;
         const html = await res.text();
         return extractProductFromHtml(html, url);
@@ -379,7 +394,7 @@ export async function scanCompetitor(
   return {
     products: deduped,
     urlsFound: discoveredUrls.length,
-    urlsScanned: toFetch.length,
+    urlsScanned: actuallyScanned,
     ...marketsInfo,
   };
 }
