@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import useSWR, { mutate } from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
@@ -31,6 +32,7 @@ interface CompetitorPrice {
 
 interface Competitor {
   id: string;
+  slug: string;
   name: string;
   domain: string | null;
   facebook_page: string | null;
@@ -201,12 +203,13 @@ export default function CompetitorsPage() {
           {/* Competitor Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {competitors.map((comp) => (
-              <CompetitorCard
-                key={comp.id}
-                competitor={comp}
-                scanning={scanningId === comp.id}
-                onScan={() => handleScan(comp.id)}
-              />
+              <Link key={comp.id} href={`/competitors/${comp.slug}`} className="block group">
+                <CompetitorCard
+                  competitor={comp}
+                  scanning={scanningId === comp.id}
+                  onScan={() => handleScan(comp.id)}
+                />
+              </Link>
             ))}
           </div>
 
@@ -308,7 +311,13 @@ function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Co
             <div>
               <div className="text-[15px] font-semibold text-text">{comp.name}</div>
               {comp.domain && (
-                <a href={`https://${comp.domain}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[12px] text-text-2 hover:text-accent transition-colors">
+                <a
+                  href={`https://${comp.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1 text-[12px] text-text-2 hover:text-accent transition-colors"
+                >
                   <Globe size={10} />
                   {comp.domain}
                   <ExternalLink size={8} />
@@ -353,6 +362,7 @@ function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Co
             href={`https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=BG&q=${encodeURIComponent(comp.name)}`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-text-2 hover:bg-surface-2 border border-border transition-colors mb-2"
           >
             <Megaphone size={14} />
@@ -381,9 +391,13 @@ function CompetitorCard({ competitor: comp, scanning, onScan }: { competitor: Co
         {/* Scan button */}
         {comp.domain && (
           <button
-            onClick={onScan}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onScan();
+            }}
             disabled={scanning}
-            className="w-full mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium text-text-2 hover:bg-surface-2 border border-border transition-colors disabled:opacity-50"
+            className="w-full mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium text-text-2 hover:bg-surface-2 border border-border transition-colors disabled:opacity-50 cursor-pointer"
           >
             {scanning ? (
               <><Loader2 size={14} className="animate-spin" /> Сканиране...</>

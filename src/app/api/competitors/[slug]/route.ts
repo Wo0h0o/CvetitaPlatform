@@ -1,0 +1,115 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api-auth";
+import { createServerClient } from "@supabase/ssr";
+import { logger, requestMeta } from "@/lib/logger";
+
+function getSupabase(req: NextRequest) {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+  );
+}
+
+interface CompetitorSettings {
+  productUrls?: string[];
+  lastScanAt?: string;
+  lastScannedByUserId?: string;
+  markets?: string[];
+  sisterDomains?: string[];
+}
+
+// GET /api/competitors/[slug] — competitor detail + enriched scan summary
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
+  try {
+    const { slug } = await params;
+    const supabase = getSupabase(req);
+
+    const { data: comp, error } = await supabase
+      .from("competitors")
+      .select("*")
+      .eq("slug", slug)
+      .single();
+
+    if (error || !comp) {
+      return NextResponse.json({ error: "Competitor not found" }, { status: 404 });
+    }
+
+    // Latest prices (latest per product_url)
+    const { data: prices } = await supabase
+      .from("competitor_prices")
+      .select("product_name, product_url, price, currency, in_stock, scraped_at")
+      .eq("competitor_id", comp.id)
+      .order("scraped_at", { ascending: false })
+      .limit(200);
+
+    // Dedup to latest-per-url
+    const latestByUrl = new Map<string, NonNullable<typeof prices>[number]>();
+    for (const p of prices || []) {
+      if (p.product_url && !latestByUrl.has(p.product_url)) {
+        latestByUrl.set(p.product_url, p);
+      }
+    }
+    const latestPrices = Array.from(latestByUrl.values());
+
+    // Last scanner display name
+    const settings = (comp.settings || {}) as CompetitorSettings;
+    let lastScannedBy: { email: string | null } | null = null;
+    if (settings.lastScannedByUserId) {
+      const { data: scanner } = await supabase
+        .from("organization_members")
+        .select("user_id")
+        .eq("user_id", settings.lastScannedByUserId)
+        .single();
+      if (scanner) {
+        // We don't expose other users' emails — leave email null in v1.
+        lastScannedBy = { email: null };
+      }
+    }
+
+    // Counts
+    const { count: alertsCount } = await supabase
+      .from("competitor_alerts")
+      .select("*", { count: "exact", head: true })
+      .eq("competitor_id", comp.id)
+      .eq("is_read", false);
+
+    const { count: mappedCount } = await supabase
+      .from("competitor_product_map")
+      .select("*", { count: "exact", head: true })
+      .eq("competitor_id", comp.id);
+
+    return NextResponse.json({
+      competitor: {
+        id: comp.id,
+        slug: comp.slug,
+        name: comp.name,
+        domain: comp.domain,
+        facebook_page: comp.facebook_page,
+        category: comp.category,
+        logo_url: comp.logo_url,
+        markets: settings.markets || [],
+        sisterDomains: settings.sisterDomains || [],
+        lastScanAt: settings.lastScanAt || null,
+        lastScannedBy,
+        created_at: comp.created_at,
+      },
+      latestPrices,
+      stats: {
+        productsTracked: latestPrices.length,
+        inStock: latestPrices.filter((p) => p.in_stock).length,
+        unreadAlerts: alertsCount || 0,
+        mappedProducts: mappedCount || 0,
+      },
+    });
+  } catch (err) {
+    logger.error("Competitor detail GET failed", { ...requestMeta(req), error: String(err) });
+    return NextResponse.json({ error: "Failed to load competitor" }, { status: 500 });
+  }
+}

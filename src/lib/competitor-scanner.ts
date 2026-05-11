@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from "./fetch-utils";
 import { logger } from "./logger";
+import { extractMarketsFromHtml } from "./competitor-markets";
 
 // ---------- Types ----------
 
@@ -9,6 +10,14 @@ export interface ScannedProduct {
   currency: string;
   inStock: boolean;
   url: string;
+}
+
+export interface ScanResult {
+  products: ScannedProduct[];
+  urlsFound: number;
+  urlsScanned: number;
+  markets: string[];
+  sisterDomains: string[];
 }
 
 // ---------- Gemini Text Call ----------
@@ -231,16 +240,37 @@ async function extractWithGemini(html: string, url: string): Promise<ScannedProd
 
 // ---------- Full Scan Pipeline ----------
 
+async function detectMarkets(domain: string): Promise<{ markets: string[]; sisterDomains: string[] }> {
+  const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
+  try {
+    const res = await fetchWithTimeout(baseUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)",
+        "Accept": "text/html",
+      },
+    }, 8000);
+    if (!res.ok) return { markets: [], sisterDomains: [] };
+    const html = await res.text();
+    return extractMarketsFromHtml(html, domain);
+  } catch (err) {
+    logger.error("Market detection failed", { domain, error: String(err) });
+    return { markets: [], sisterDomains: [] };
+  }
+}
+
 export async function scanCompetitor(
   domain: string,
   limit = 30
-): Promise<{ products: ScannedProduct[]; urlsFound: number; urlsScanned: number }> {
-  // Step 1: Discover URLs
-  const urls = await discoverProductUrls(domain, limit);
-  logger.info("Product URLs discovered", { domain, count: urls.length });
+): Promise<ScanResult> {
+  // Step 0: Detect markets from homepage (parallel-safe with URL discovery)
+  const [marketsInfo, urls] = await Promise.all([
+    detectMarkets(domain),
+    discoverProductUrls(domain, limit),
+  ]);
+  logger.info("Product URLs discovered", { domain, count: urls.length, markets: marketsInfo.markets });
 
   if (urls.length === 0) {
-    return { products: [], urlsFound: 0, urlsScanned: 0 };
+    return { products: [], urlsFound: 0, urlsScanned: 0, ...marketsInfo };
   }
 
   // Step 2: Fetch & extract products (parallel, max 5 at a time)
@@ -271,5 +301,5 @@ export async function scanCompetitor(
     }
   }
 
-  return { products, urlsFound: urls.length, urlsScanned: urls.length };
+  return { products, urlsFound: urls.length, urlsScanned: urls.length, ...marketsInfo };
 }

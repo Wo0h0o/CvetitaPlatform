@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import { scanCompetitor } from "@/lib/competitor-scanner";
 import { searchCompetitorIntel } from "@/lib/competitor-scraper";
 import { logger, requestMeta } from "@/lib/logger";
@@ -12,6 +13,16 @@ function getAdminSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+}
+
+async function getCurrentUserId(req: NextRequest): Promise<string | null> {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id || null;
 }
 
 // POST /api/competitors/scan — product scan with price history + alerts
@@ -151,12 +162,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Update product URLs in settings
+      // Update product URLs + markets + audit trail in settings
       const productUrls = result.products.map((p) => p.url);
+      const scannedByUserId = await getCurrentUserId(req);
       await supabase
         .from("competitors")
         .update({
-          settings: { ...(comp.settings || {}), productUrls, lastScanAt: new Date().toISOString() },
+          settings: {
+            ...(comp.settings || {}),
+            productUrls,
+            lastScanAt: new Date().toISOString(),
+            lastScannedByUserId: scannedByUserId,
+            markets: result.markets,
+            sisterDomains: result.sisterDomains,
+          },
         })
         .eq("id", competitorId);
     }

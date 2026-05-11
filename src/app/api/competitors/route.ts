@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const supabase = getSupabase(req);
     const { data: competitors, error } = await supabase
       .from("competitors")
-      .select("*")
+      .select("id, organization_id, name, slug, domain, logo_url, facebook_page, category, is_active, settings, created_at, updated_at")
       .eq("is_active", true)
       .order("name");
 
