@@ -108,20 +108,26 @@ export async function pollShopifyOrders(
       if (!result.latestUpdatedAt || o.updated_at > result.latestUpdatedAt) {
         result.latestUpdatedAt = o.updated_at;
       }
-      const { error } = await supabaseAdmin.schema(schema).from("orders").insert(normalized);
+      // Insert through the public RPC wrapper so writes don't depend on
+      // PostgREST's exposed-schemas cache being current. RPC returns the
+      // new id on insert, NULL on duplicate (ON CONFLICT DO NOTHING).
+      // See migration 026.
+      const { data: insertedId, error } = await supabaseAdmin.rpc(
+        "insert_store_order",
+        { p_schema: schema, p_row: normalized }
+      );
       if (error) {
-        if (error.code === "23505") {
-          result.skipped++;
-        } else {
-          result.errors++;
-          logger.error("poll-orders insert failed", {
-            schema,
-            orderId: o.id,
-            code: error.code,
-            error: error.message,
-          });
-          continue;
-        }
+        result.errors++;
+        logger.error("poll-orders insert failed", {
+          schema,
+          orderId: o.id,
+          code: error.code,
+          error: error.message,
+        });
+        continue;
+      }
+      if (insertedId === null || insertedId === undefined) {
+        result.skipped++;
       } else {
         result.inserted++;
       }
