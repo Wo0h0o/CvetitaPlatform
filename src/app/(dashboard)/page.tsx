@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { KpiStrip } from "@/components/dashboard/KpiStrip";
-import { StoreMultiples } from "@/components/dashboard/StoreMultiples";
+import { StoresTable } from "@/components/dashboard/StoresTable";
 import { ActionRow } from "@/components/dashboard/ActionRow";
 
 export default function DashboardPage() {
@@ -8,7 +8,7 @@ export default function DashboardPage() {
     <>
       <PageHeader title="Командно табло" />
       <KpiStrip />
-      <StoreMultiples />
+      <StoresTable />
       <ActionRow />
     </>
   );

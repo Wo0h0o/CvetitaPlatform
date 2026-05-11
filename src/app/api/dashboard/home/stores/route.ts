@@ -30,8 +30,15 @@ interface StoreCardPayload {
    * collapsed into a single amber "леко под нормата" label.
    */
   todaySpend: number;
-  /** Today's revenue in EUR. Used alongside todaySpend for the state split. */
+  /** Today's revenue in EUR (Meta-attributed). */
   todayRevenue: number;
+  /**
+   * Today's Shopify revenue for this store. Drives the "real revenue" column
+   * in StoresTable so the row composes with the top-strip business block.
+   */
+  shopifyTodayRevenue: number;
+  /** Today's Shopify orders count for this store. */
+  shopifyTodayOrders: number;
   /** Today's ROAS (revenue / spend). 0 when spend is 0 or no data yet. */
   roasLast24h: number;
   /** Median of the prior 13 days' daily ROAS. Days with spend=0 are skipped. */
@@ -93,9 +100,13 @@ async function buildStoreCard(
   const dates14 = lastNDates(14, todayIso);
   const oldest = dates14[0];
 
-  // Parallel: 14-day insights (level=account, pre-blended by the view) and
-  // last_synced_at across all bound integration_accounts.
-  const [insightsRes, accountsRes] = await Promise.all([
+  // Parallel: 14-day Meta insights + last_synced_at + today's Shopify
+  // daily_aggregates for this specific store's schema (store_bg /
+  // store_gr / store_ro). The Shopify row gives the row in StoresTable
+  // a real "приходи днес" column that composes with the top-strip
+  // business block.
+  const storeSchema = `store_${market.marketCode}`;
+  const [insightsRes, accountsRes, shopifyTodayRes] = await Promise.all([
     supabaseAdmin
       .from("meta_insights_by_store")
       .select("date, spend, revenue")
@@ -107,10 +118,24 @@ async function buildStoreCard(
       .from("integration_accounts")
       .select("last_synced_at, created_at")
       .in("id", market.allIntegrationAccountIds),
+    supabaseAdmin
+      .schema(storeSchema)
+      .from("daily_aggregates")
+      .select("total_revenue, total_orders")
+      .eq("order_date", todayIso)
+      .maybeSingle(),
   ]);
 
   if (insightsRes.error) throw new Error(insightsRes.error.message);
   if (accountsRes.error) throw new Error(accountsRes.error.message);
+  // Don't throw on Shopify miss — a brand-new store with no daily_aggregates
+  // row yet shouldn't break the whole stores endpoint.
+  if (shopifyTodayRes.error) {
+    logger.error("stores: shopify daily_aggregates fetch failed", {
+      storeSchema,
+      error: shopifyTodayRes.error.message,
+    });
+  }
 
   const rows = (insightsRes.data ?? []) as InsightRow[];
   const byDate = new Map<string, { spend: number; revenue: number }>();
@@ -135,6 +160,13 @@ async function buildStoreCard(
   const todayRow = byDate.get(todayIso);
   const todaySpend = Number((todayRow?.spend ?? 0).toFixed(2));
   const todayRevenue = Number((todayRow?.revenue ?? 0).toFixed(2));
+
+  const shopifyToday = shopifyTodayRes.data as {
+    total_revenue: number | string | null;
+    total_orders: number | string | null;
+  } | null;
+  const shopifyTodayRevenue = Number(num(shopifyToday?.total_revenue).toFixed(2));
+  const shopifyTodayOrders = num(shopifyToday?.total_orders);
   const roasLast24h =
     todayRow && todayRow.spend > 0 ? Number((todayRow.revenue / todayRow.spend).toFixed(2)) : 0;
 
@@ -177,6 +209,8 @@ async function buildStoreCard(
     sparkline14d,
     todaySpend,
     todayRevenue,
+    shopifyTodayRevenue,
+    shopifyTodayOrders,
     roasLast24h,
     roasMedian14d,
     borderLevel,

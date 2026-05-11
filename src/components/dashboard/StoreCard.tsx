@@ -13,7 +13,7 @@ import { ArrowRight } from "lucide-react";
 // Partial-day ROAS swings hard in the morning — a half-day value vs a
 // 14-day full-day median is unfair before lunch. Below this threshold we
 // suppress the red signal and tell the operator the day is still measuring.
-const EARLY_DAY_THRESHOLD_HOURS = 14;
+export const EARLY_DAY_THRESHOLD_HOURS = 14;
 
 // ============================================================
 // Types
@@ -28,7 +28,13 @@ export type BorderLevel = "red" | "amber" | "green";
  * really read "paused" instead of "underperforming" — that decision lives
  * here so the UI stays in charge of phrasing.
  */
-type DisplayState = "green" | "amber" | "red" | "measuring" | "paused" | "early";
+export type DisplayState =
+  | "green"
+  | "amber"
+  | "red"
+  | "measuring"
+  | "paused"
+  | "early";
 
 export interface StoreCardData {
   /** Store UUID — used for the card-wide tap target. */
@@ -38,8 +44,12 @@ export interface StoreCardData {
   sparkline14d: number[];
   /** Today's spend (EUR). Drives the paused vs measuring vs ratio decision. */
   todaySpend: number;
-  /** Today's revenue (EUR). Drives the "measuring" state (spend>0, rev=0). */
+  /** Today's Meta-attributed revenue (EUR). */
   todayRevenue: number;
+  /** Today's real Shopify revenue for this store (EUR). */
+  shopifyTodayRevenue: number;
+  /** Today's real Shopify order count for this store. */
+  shopifyTodayOrders: number;
   roasLast24h: number;
   roasMedian14d: number;
   borderLevel: BorderLevel;
@@ -62,7 +72,7 @@ const STATE_BORDER_CLASS: Record<DisplayState, string> = {
   early: "border-l-4 border-l-transparent",
 };
 
-const STATE_LABEL: Record<DisplayState, string> = {
+export const STATE_LABEL: Record<DisplayState, string> = {
   green: "над нормата",
   amber: "леко под нормата",
   red: "под нормата",
@@ -71,7 +81,10 @@ const STATE_LABEL: Record<DisplayState, string> = {
   early: "още рано за оценка",
 };
 
-function deriveDisplayState(data: StoreCardData, isEarly: boolean): DisplayState {
+export function deriveDisplayState(
+  data: Pick<StoreCardData, "todaySpend" | "todayRevenue" | "borderLevel">,
+  isEarly: boolean
+): DisplayState {
   // Order matters: activity gates ratio. A store with todaySpend=0 is
   // "paused", not "under normata", regardless of what borderLevel says.
   if (data.todaySpend === 0) return "paused";
@@ -79,6 +92,7 @@ function deriveDisplayState(data: StoreCardData, isEarly: boolean): DisplayState
   if (data.borderLevel === "red" && isEarly) return "early";
   return data.borderLevel;
 }
+
 
 // ============================================================
 // Formatting
