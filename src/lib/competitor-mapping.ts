@@ -87,9 +87,9 @@ export async function suggestProductMappings(
   competitorProduct: { name: string; url: string },
   catalog: ShopifyProduct[]
 ): Promise<MappingSuggestion[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY not configured");
+    throw new Error("CLAUDE_API_KEY not configured");
   }
 
   const compact = compactCatalog(catalog);
