@@ -23,6 +23,15 @@ interface StoreCardPayload {
   name: string;
   /** 14 values, oldest first, one per day. Zero-filled for missing days. */
   sparkline14d: number[];
+  /**
+   * Today's spend in EUR. Frontend uses this to distinguish "campaigns
+   * paused" (todaySpend === 0) from "spend going but no conversions yet"
+   * (todaySpend > 0, roasLast24h === 0) — two states that previously
+   * collapsed into a single amber "леко под нормата" label.
+   */
+  todaySpend: number;
+  /** Today's revenue in EUR. Used alongside todaySpend for the state split. */
+  todayRevenue: number;
   /** Today's ROAS (revenue / spend). 0 when spend is 0 or no data yet. */
   roasLast24h: number;
   /** Median of the prior 13 days' daily ROAS. Days with spend=0 are skipped. */
@@ -124,6 +133,8 @@ async function buildStoreCard(
   const sparkline14d = dates14.map((d) => byDate.get(d)?.revenue ?? 0);
 
   const todayRow = byDate.get(todayIso);
+  const todaySpend = Number((todayRow?.spend ?? 0).toFixed(2));
+  const todayRevenue = Number((todayRow?.revenue ?? 0).toFixed(2));
   const roasLast24h =
     todayRow && todayRow.spend > 0 ? Number((todayRow.revenue / todayRow.spend).toFixed(2)) : 0;
 
@@ -164,6 +175,8 @@ async function buildStoreCard(
     marketCode: market.marketCode,
     name: market.storeName,
     sparkline14d,
+    todaySpend,
+    todayRevenue,
     roasLast24h,
     roasMedian14d,
     borderLevel,

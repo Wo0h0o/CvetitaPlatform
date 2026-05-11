@@ -7,13 +7,28 @@ import { SparkLine } from "@/components/charts/SparkLine";
 import { useChartColors } from "@/components/charts/ChartContainer";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
 import { MarketFlag } from "@/components/shared/MarketFlag";
+import { sofiaHoursElapsed } from "@/lib/sofia-date";
 import { ArrowRight } from "lucide-react";
+
+// Partial-day ROAS swings hard in the morning — a half-day value vs a
+// 14-day full-day median is unfair before lunch. Below this threshold we
+// suppress the red signal and tell the operator the day is still measuring.
+const EARLY_DAY_THRESHOLD_HOURS = 14;
 
 // ============================================================
 // Types
 // ============================================================
 
+/** Raw level emitted by the server — strictly from today_roas / median_14d. */
 export type BorderLevel = "red" | "amber" | "green";
+
+/**
+ * Display state after the frontend folds in todaySpend/todayRevenue and the
+ * time-of-day guard. The server can't know that "amber + spend=0" should
+ * really read "paused" instead of "underperforming" — that decision lives
+ * here so the UI stays in charge of phrasing.
+ */
+type DisplayState = "green" | "amber" | "red" | "measuring" | "paused" | "early";
 
 export interface StoreCardData {
   /** Store UUID — used for the card-wide tap target. */
@@ -21,6 +36,10 @@ export interface StoreCardData {
   marketCode: string;
   name: string;
   sparkline14d: number[];
+  /** Today's spend (EUR). Drives the paused vs measuring vs ratio decision. */
+  todaySpend: number;
+  /** Today's revenue (EUR). Drives the "measuring" state (spend>0, rev=0). */
+  todayRevenue: number;
   roasLast24h: number;
   roasMedian14d: number;
   borderLevel: BorderLevel;
@@ -30,22 +49,36 @@ export interface StoreCardData {
 }
 
 // ============================================================
-// Styling maps
+// Styling maps — keyed by DisplayState (not BorderLevel) so paused/measuring
+// /early have distinct treatments instead of collapsing into amber.
 // ============================================================
 
-// Left-border accent for the whole card, by borderLevel.
-const BORDER_CLASS: Record<BorderLevel, string> = {
-  red: "border-l-4 border-l-red",
-  amber: "border-l-4 border-l-orange",
+const STATE_BORDER_CLASS: Record<DisplayState, string> = {
   green: "border-l-4 border-l-accent",
+  amber: "border-l-4 border-l-orange",
+  red: "border-l-4 border-l-red",
+  measuring: "border-l-4 border-l-orange",
+  paused: "border-l-4 border-l-transparent",
+  early: "border-l-4 border-l-transparent",
 };
 
-// Short Bulgarian label for the border level — for screen readers / tooltips.
-const LEVEL_LABEL: Record<BorderLevel, string> = {
-  red: "под нормата",
-  amber: "леко под нормата",
+const STATE_LABEL: Record<DisplayState, string> = {
   green: "над нормата",
+  amber: "леко под нормата",
+  red: "под нормата",
+  measuring: "още няма конверсии",
+  paused: "кампании спрени",
+  early: "още рано за оценка",
 };
+
+function deriveDisplayState(data: StoreCardData, isEarly: boolean): DisplayState {
+  // Order matters: activity gates ratio. A store with todaySpend=0 is
+  // "paused", not "under normata", regardless of what borderLevel says.
+  if (data.todaySpend === 0) return "paused";
+  if (data.todayRevenue === 0) return "measuring";
+  if (data.borderLevel === "red" && isEarly) return "early";
+  return data.borderLevel;
+}
 
 // ============================================================
 // Formatting
@@ -68,16 +101,25 @@ export function StoreCard({ data }: StoreCardProps) {
   const router = useRouter();
   const colors = useChartColors();
 
+  // Folds todaySpend / todayRevenue / time-of-day on top of the server's
+  // raw borderLevel. See deriveDisplayState for the order of precedence.
+  const isEarly = sofiaHoursElapsed() < EARLY_DAY_THRESHOLD_HOURS;
+  const displayState = deriveDisplayState(data, isEarly);
+
   const sparkColor = useMemo(() => {
-    switch (data.borderLevel) {
+    switch (displayState) {
       case "red":
         return colors.red;
       case "amber":
+      case "measuring":
         return colors.orange;
       case "green":
         return colors.accent;
+      case "paused":
+      case "early":
+        return colors.text3;
     }
-  }, [data.borderLevel, colors]);
+  }, [displayState, colors]);
 
   const goToSales = () => router.push(`/sales/store/${data.storeId}`);
   const handleKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -101,7 +143,7 @@ export function StoreCard({ data }: StoreCardProps) {
         relative bg-surface rounded-xl shadow-sm p-5
         transition-all duration-200 hover:shadow-md hover:-translate-y-0.5
         cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/50
-        ${BORDER_CLASS[data.borderLevel]}
+        ${STATE_BORDER_CLASS[displayState]}
       `}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
@@ -114,9 +156,9 @@ export function StoreCard({ data }: StoreCardProps) {
           </div>
           <span
             className="text-[11px] text-text-3"
-            aria-label={`Ниво: ${LEVEL_LABEL[data.borderLevel]}`}
+            aria-label={`Ниво: ${STATE_LABEL[displayState]}`}
           >
-            {LEVEL_LABEL[data.borderLevel]}
+            {STATE_LABEL[displayState]}
           </span>
         </div>
 
