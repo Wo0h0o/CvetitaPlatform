@@ -10,7 +10,6 @@ import { Skeleton } from "@/components/shared/Skeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { useToast } from "@/providers/ToastProvider";
-import { BarChartCard } from "@/components/charts";
 import {
   Shield, Plus, Globe, ExternalLink, TrendingUp, TrendingDown,
   Minus, X, Scan, Loader2, Package, ArrowDownRight,
@@ -173,7 +172,20 @@ export default function CompetitorsPage() {
         />
       ) : (
         <>
-          {/* Alerts Feed — top of page */}
+          {/* Competitor Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {competitors.map((comp) => (
+              <Link key={comp.id} href={`/competitors/${comp.slug}`} className="block group">
+                <CompetitorCard
+                  competitor={comp}
+                  scanning={scanningId === comp.id}
+                  onScan={() => handleScan(comp.id)}
+                />
+              </Link>
+            ))}
+          </div>
+
+          {/* Alerts Feed — under cards */}
           {unreadAlerts.length > 0 && (
             <Card className="mb-6">
               <CardHeader action={<Badge variant="red">{unreadAlerts.length} нови</Badge>}>
@@ -189,7 +201,7 @@ export default function CompetitorsPage() {
 
           {/* No changes state */}
           {unreadAlerts.length === 0 && competitors.some((c) => c.settings?.lastScanAt) && (
-            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-surface-2 text-[13px] text-text-2">
+            <div className="flex items-center gap-2 mb-6 px-3 py-2 rounded-lg bg-surface-2 text-[13px] text-text-2">
               <AlertCircle size={14} className="text-text-3" />
               Няма нови промени. Последен scan: {formatTimeAgo(
                 competitors.reduce((latest, c) => {
@@ -198,38 +210,6 @@ export default function CompetitorsPage() {
                 }, "")
               )}
             </div>
-          )}
-
-          {/* Competitor Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {competitors.map((comp) => (
-              <Link key={comp.id} href={`/competitors/${comp.slug}`} className="block group">
-                <CompetitorCard
-                  competitor={comp}
-                  scanning={scanningId === comp.id}
-                  onScan={() => handleScan(comp.id)}
-                />
-              </Link>
-            ))}
-          </div>
-
-          {/* Price Comparison Chart */}
-          {competitors.filter((c) => c.latestPrices.length > 0).length >= 1 && (
-            <BarChartCard
-              data={competitors
-                .filter((c) => c.latestPrices.length > 0)
-                .map((c) => ({
-                  name: c.name,
-                  avgPrice: Number((c.latestPrices.reduce((s, p) => s + p.price, 0) / c.latestPrices.length).toFixed(2)),
-                }))}
-              xKey="name"
-              yKey="avgPrice"
-              title="Сравнение на средни цени"
-              height={200}
-              formatValue={(v) => `${v.toFixed(2)}`}
-              colors={["#ff3b30", "#ff9500", "#8b5cf6", "#007aff", "#06b6d4"]}
-              className="mb-6"
-            />
           )}
 
           {/* Intel Feed */}
