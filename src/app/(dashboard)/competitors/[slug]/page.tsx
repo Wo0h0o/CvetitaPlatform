@@ -72,7 +72,18 @@ export default function CompetitorDetailPage({ params }: { params: Promise<{ slu
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Scan failed");
-      toast(`Сканирани ${result.productsExtracted} продукта`, "success");
+      const { urlsFound = 0, urlsScanned = 0, productsExtracted = 0 } = result;
+      if (productsExtracted === 0) {
+        toast(
+          `Намерени ${urlsFound} URL-а, опитани ${urlsScanned} — 0 валидни продукта. Провери seed URL.`,
+          "error"
+        );
+      } else {
+        toast(
+          `Сканирани ${productsExtracted} продукта от ${urlsScanned} опитани URL-а`,
+          "success"
+        );
+      }
       mutate(`/api/competitors/${slug}`);
       mutate(`/api/competitors/${slug}/mappings`);
     } catch (err) {

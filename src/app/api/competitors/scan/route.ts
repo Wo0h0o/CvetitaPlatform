@@ -81,12 +81,37 @@ export async function POST(req: NextRequest) {
 
     // Run scan with admin-curated seed URLs (if any) + relevance filter
     const seedUrls = Array.isArray(comp.seed_urls) ? (comp.seed_urls as string[]) : [];
+    const scannedByUserId = await getCurrentUserId(req);
+    const scanStartedAt = new Date().toISOString();
     const result = await scanCompetitor(comp.domain, {
       limit: 100,
       seedUrls: seedUrls.length > 0 ? seedUrls : undefined,
       relevanceKeywords,
     });
     const alerts: { type: string; title: string; data: Record<string, unknown> }[] = [];
+
+    // Always persist scan diagnostics — even on 0 products. Otherwise the user
+    // sees the SAME stale rows after every silent fail and has no feedback.
+    await supabase
+      .from("competitors")
+      .update({
+        settings: {
+          ...(comp.settings || {}),
+          lastScanAt: scanStartedAt,
+          lastScannedByUserId: scannedByUserId,
+          lastScanUrlsFound: result.urlsFound,
+          lastScanUrlsScanned: result.urlsScanned,
+          lastScanProducts: result.products.length,
+          markets: result.markets.length > 0 ? result.markets : comp.settings?.markets || [],
+          sisterDomains: result.sisterDomains.length > 0 ? result.sisterDomains : comp.settings?.sisterDomains || [],
+          // Only overwrite productUrls when scan was successful — otherwise
+          // keep the previous list so the UI still shows something.
+          productUrls: result.products.length > 0
+            ? result.products.map((p) => p.url)
+            : comp.settings?.productUrls || [],
+        },
+      })
+      .eq("id", competitorId);
 
     if (result.products.length > 0) {
       // APPEND new prices (never delete old ones — we keep history)
@@ -178,22 +203,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Update product URLs + markets + audit trail in settings
-      const productUrls = result.products.map((p) => p.url);
-      const scannedByUserId = await getCurrentUserId(req);
-      await supabase
-        .from("competitors")
-        .update({
-          settings: {
-            ...(comp.settings || {}),
-            productUrls,
-            lastScanAt: new Date().toISOString(),
-            lastScannedByUserId: scannedByUserId,
-            markets: result.markets,
-            sisterDomains: result.sisterDomains,
-          },
-        })
-        .eq("id", competitorId);
+      // Persist alerts only — settings already updated above with diagnostics
     }
 
     // Search for competitor intel (non-blocking — failure doesn't break scan)
