@@ -140,9 +140,16 @@ export function KpiStrip() {
   if (isLoading || !data) {
     return (
       <section className="mb-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1">
           <h2 className="text-[15px] font-semibold text-text">Днешен ритъм</h2>
         </div>
+        <p className="text-[12px] text-text-3 mb-3">
+          Числата идват от Meta attribution. Реалните Shopify-приходи виж в{" "}
+          <a href="/sales" className="underline hover:text-text-2 transition-colors">
+            Продажби
+          </a>
+          .
+        </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <TileSkeleton key={i} />
@@ -164,7 +171,7 @@ export function KpiStrip() {
 
   return (
     <section className="mb-6">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <h2 className="text-[15px] font-semibold text-text">Днешен ритъм</h2>
         <div className="flex items-center gap-3">
           {data.anomalyCount > 0 && (
@@ -179,6 +186,13 @@ export function KpiStrip() {
           <FreshnessDot lastSyncedAt={data.freshAsOf} showLabel />
         </div>
       </div>
+      <p className="text-[12px] text-text-3 mb-3">
+        Числата идват от Meta attribution. Реалните Shopify-приходи виж в{" "}
+        <a href="/sales" className="underline hover:text-text-2 transition-colors">
+          Продажби
+        </a>
+        .
+      </p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Tile
