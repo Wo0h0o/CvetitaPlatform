@@ -73,7 +73,12 @@ interface DailyAggRow {
 /**
  * Fetch daily aggregates across all bound Shopify schemas (`store_${marketCode}`),
  * summed by date. Schemas are resolved dynamically via the market resolver
- * (cached, 60s TTL) so opening a 4th market never needs a code edit here.
+ * (cached, 60s TTL) so opening a new market never needs a code edit here.
+ *
+ * Goes through the public `read_store_daily_aggregates` RPC rather than the
+ * schema-mounted `.schema(s).from(...)` path so the read survives PostgREST's
+ * exposed-schemas cache being stale (which happens when a new per-store schema
+ * has just been provisioned). See migration 025.
  *
  * Used for today and the 4 prior same-weekdays — daily_aggregates is
  * continuously refreshed (~minute-level lag against raw orders), acceptable
@@ -87,11 +92,10 @@ async function fetchShopifyByDate(
 
   const perSchema = await Promise.all(
     schemas.map(async (schema) => {
-      const { data, error } = await supabaseAdmin
-        .schema(schema)
-        .from("daily_aggregates")
-        .select("order_date, total_revenue, total_orders")
-        .in("order_date", dates);
+      const { data, error } = await supabaseAdmin.rpc(
+        "read_store_daily_aggregates",
+        { p_schema: schema, p_dates: dates }
+      );
       if (error) {
         logger.error("top-strip: shopify daily_aggregates fetch failed", {
           schema,

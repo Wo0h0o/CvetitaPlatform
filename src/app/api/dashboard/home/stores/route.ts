@@ -101,10 +101,15 @@ async function buildStoreCard(
   const oldest = dates14[0];
 
   // Parallel: 14-day Meta insights + last_synced_at + today's Shopify
-  // daily_aggregates for this specific store's schema (store_bg /
-  // store_gr / store_ro). The Shopify row gives the row in StoresTable
-  // a real "приходи днес" column that composes with the top-strip
-  // business block.
+  // daily_aggregates for this specific store's schema. The Shopify row
+  // gives the row in StoresTable a real "приходи днес" column that
+  // composes with the top-strip business block.
+  //
+  // We call the public `read_store_daily_aggregates` RPC instead of the
+  // schema-mounted `.schema(s).from('daily_aggregates')` path because
+  // PostgREST's exposed-schemas cache doesn't always reload promptly when
+  // new per-store schemas are seeded. Going through a public function
+  // bypasses that cache entirely. See migration 025.
   const storeSchema = `store_${market.marketCode}`;
   const [insightsRes, accountsRes, shopifyTodayRes] = await Promise.all([
     supabaseAdmin
@@ -118,12 +123,10 @@ async function buildStoreCard(
       .from("integration_accounts")
       .select("last_synced_at, created_at")
       .in("id", market.allIntegrationAccountIds),
-    supabaseAdmin
-      .schema(storeSchema)
-      .from("daily_aggregates")
-      .select("total_revenue, total_orders")
-      .eq("order_date", todayIso)
-      .maybeSingle(),
+    supabaseAdmin.rpc("read_store_daily_aggregates", {
+      p_schema: storeSchema,
+      p_dates: [todayIso],
+    }),
   ]);
 
   if (insightsRes.error) throw new Error(insightsRes.error.message);
@@ -161,10 +164,14 @@ async function buildStoreCard(
   const todaySpend = Number((todayRow?.spend ?? 0).toFixed(2));
   const todayRevenue = Number((todayRow?.revenue ?? 0).toFixed(2));
 
-  const shopifyToday = shopifyTodayRes.data as {
+  // RPC returns array of rows for the requested dates. We asked for one date,
+  // so 0 or 1 row.
+  const shopifyTodayRows = (shopifyTodayRes.data ?? []) as Array<{
+    order_date: string;
     total_revenue: number | string | null;
     total_orders: number | string | null;
-  } | null;
+  }>;
+  const shopifyToday = shopifyTodayRows[0] ?? null;
   const shopifyTodayRevenue = Number(num(shopifyToday?.total_revenue).toFixed(2));
   const shopifyTodayOrders = num(shopifyToday?.total_orders);
   const roasLast24h =
