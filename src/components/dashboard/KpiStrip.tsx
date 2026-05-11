@@ -238,12 +238,29 @@ export function KpiStrip() {
       ? `${fmtEur(ads.attribution.metaRevenue)} / ${fmtEur(ads.spend.value)}`
       : "няма spend днес";
 
-  // Attribution sub-text grounds the % in the absolute numbers it
-  // came from. Bridges to business.revenue.
+  // Attribution sub-text grounds the % in the absolute numbers it came
+  // from. Bridges to business.revenue.
+  //
+  // Edge case: Meta credits a purchase before the Shopify webhook lands,
+  // so metaRevenue can briefly exceed shopifyRevenue. Server clamps pct to
+  // 100; we surface that with a "+" suffix and a short reason in subText
+  // so the operator doesn't see "100% · 850 EUR от 794 EUR" — a number
+  // pair that on its face contradicts the clamped pct.
+  const overAttributed =
+    ads.attribution.shopifyRevenue > 0 &&
+    ads.attribution.metaRevenue > ads.attribution.shopifyRevenue;
+  const attributionValue =
+    ads.attribution.pct === null
+      ? "—"
+      : overAttributed
+        ? `${ads.attribution.pct}%+`
+        : `${ads.attribution.pct}%`;
   const attributionSub =
     ads.attribution.pct === null
       ? "няма Shopify приходи още"
-      : `${fmtEur(ads.attribution.metaRevenue)} от ${fmtEur(ads.attribution.shopifyRevenue)} Shopify`;
+      : overAttributed
+        ? `${fmtEur(ads.attribution.metaRevenue)} vs ${fmtEur(ads.attribution.shopifyRevenue)} Shopify · Meta изпреварва`
+        : `${fmtEur(ads.attribution.metaRevenue)} от ${fmtEur(ads.attribution.shopifyRevenue)} Shopify`;
 
   return (
     <>
@@ -319,9 +336,7 @@ export function KpiStrip() {
         />
         <Tile
           label="Атрибуция"
-          value={
-            ads.attribution.pct !== null ? `${ads.attribution.pct}%` : "—"
-          }
+          value={attributionValue}
           subText={attributionSub}
           vsTypical={null}
           projected={null}
