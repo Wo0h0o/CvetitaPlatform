@@ -222,6 +222,14 @@ const MARKET_THRESHOLDS: Record<string, MarketThresholds> = {
   // RO: smallest market (€5-15/day). Too strict = nothing ever flags.
   // Lower purchase gate; keep spend floor modest.
   ro: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
+  // DE: ramp-up market (~€30/day at seed time). Permissive floor so the LLM
+  // sees early signal; raise once daily spend stabilises.
+  de: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
+  // IT: largest of the three new markets (~€45/day). Same ramp-up posture as DE.
+  it: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
+  // UK: smallest at launch (~€4/day). Lowest floor — anything under €15 over
+  // 14d genuinely has no signal; tune up once spend grows.
+  uk: { noiseFloorSpend14d: 15, minPurchases14d: 2 },
 };
 
 function thresholdsFor(marketCode: string | null): MarketThresholds {
