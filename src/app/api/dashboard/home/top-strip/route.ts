@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { sofiaDate, sofiaHoursElapsed, shiftDate } from "@/lib/sofia-date";
 import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
+import { EARLY_DAY_THRESHOLD_HOURS } from "@/components/dashboard/store-state";
 
 // ============================================================
 // Types
@@ -120,9 +121,9 @@ async function fetchShopifyByDate(
  * share exactly the same arithmetic + clamps.
  *
  * Returns nulls (no signal) when:
- *   - It's too early in the Sofia day (< 3h elapsed). At hoursElapsed≈1 the
- *     denominator matchedSoFar is ~4% of typ, so a single late-attribution
- *     prior row can push vsTypical into the thousands of percent.
+ *   - It's too early in the Sofia day (< EARLY_DAY_THRESHOLD_HOURS elapsed).
+ *     The threshold is shared with StoresTable so server + client agree on
+ *     when a number is trustworthy.
  *   - No prior data at all.
  *   - Prior average is 0 (no comparable activity).
  */
@@ -132,7 +133,7 @@ function buildTempoMetric<F extends string>(
   field: F,
   hoursElapsed: number
 ): TempoMetric {
-  if (hoursElapsed < 3 || priors.length === 0) {
+  if (hoursElapsed < EARLY_DAY_THRESHOLD_HOURS || priors.length === 0) {
     return { value: todayValue, vsTypical: null, projected: null };
   }
   const typ = priors.reduce((acc, p) => acc + p[field], 0) / priors.length;

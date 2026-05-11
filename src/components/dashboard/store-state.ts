@@ -57,11 +57,17 @@ export const STATE_LABEL: Record<DisplayState, string> = {
 };
 
 /**
- * Partial-day ROAS swings hard in the morning — a half-day value vs a
- * 14-day full-day median is unfair before lunch. Below this threshold we
- * suppress the red signal and tell the operator the day is still measuring.
+ * Below this many Sofia hours elapsed, intraday signals are too noisy to
+ * trust: matchedSoFar denominators are tiny, partial-day ROAS swings hard,
+ * and any single late-attribution prior row can push vsTypical into the
+ * thousands of percent. The top-strip route uses this to gate tempo math;
+ * StoresTable uses it to demote red borders to "още рано за оценка".
+ *
+ * Unified at 3h across server + client — same threshold means an operator
+ * never sees one section call something "под нормата" while another says
+ * "още рано". Was previously 3h server-side, 14h client-side.
  */
-export const EARLY_DAY_THRESHOLD_HOURS = 14;
+export const EARLY_DAY_THRESHOLD_HOURS = 3;
 
 export function deriveDisplayState(
   data: Pick<StoreCardData, "todaySpend" | "todayRevenue" | "borderLevel">,
