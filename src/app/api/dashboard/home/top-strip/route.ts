@@ -24,13 +24,78 @@ interface TempoMetric {
   projected: number | null;
 }
 
+/**
+ * Revenue / orders surface two values: the real Shopify total (primary,
+ * what actually happened on the store) and the Meta-attributed slice
+ * (secondary, what Meta claims credit for). The gap is the organic /
+ * email / direct / non-Meta-paid contribution.
+ */
+interface DualSourceMetric {
+  /** Shopify totals — primary truth. Drives vsTypical + projected. */
+  shopify: TempoMetric;
+  /** Meta-attributed absolute value. No tempo math — kept as a sub-figure. */
+  metaValue: number;
+}
+
 interface TopStripResponse {
-  revenue: TempoMetric;
+  revenue: DualSourceMetric;
+  orders: DualSourceMetric;
+  /** Spend is Meta-only by definition — Shopify has no ad-spend concept. */
   spend: TempoMetric;
-  orders: TempoMetric;
+  /** ROAS = Meta revenue / Meta spend. Mixing Shopify revenue with Meta
+   *  spend would be misleading (not all Shopify revenue is ad-attributable). */
   roas: { value: number };
   anomalyCount: number;
   freshAsOf: string;
+}
+
+// Shopify schemas — one per market. Hard-coded for now; matches the three
+// active stores. If a 4th market opens we'll resolve via stores table.
+const SHOPIFY_SCHEMAS = ["store_bg", "store_gr", "store_ro"] as const;
+
+interface DailyAggRow {
+  order_date: string;
+  total_revenue: number | string | null;
+  total_orders: number | string | null;
+}
+
+/**
+ * Fetch daily aggregates across all three Shopify schemas, summed by date.
+ * Used for both today and the prior same-weekdays — daily_aggregates is
+ * continuously refreshed (~minute-level lag against raw orders), which is
+ * acceptable for the 60s-refresh dashboard.
+ */
+async function fetchShopifyByDate(
+  dates: string[]
+): Promise<Map<string, { revenue: number; orders: number }>> {
+  const perSchema = await Promise.all(
+    SHOPIFY_SCHEMAS.map(async (schema) => {
+      const { data, error } = await supabaseAdmin
+        .schema(schema)
+        .from("daily_aggregates")
+        .select("order_date, total_revenue, total_orders")
+        .in("order_date", dates);
+      if (error) {
+        logger.error("top-strip: shopify daily_aggregates fetch failed", {
+          schema,
+          error: error.message,
+        });
+        return [] as DailyAggRow[];
+      }
+      return (data ?? []) as DailyAggRow[];
+    })
+  );
+
+  const byDate = new Map<string, { revenue: number; orders: number }>();
+  for (const rows of perSchema) {
+    for (const r of rows) {
+      const bucket = byDate.get(r.order_date) ?? { revenue: 0, orders: 0 };
+      bucket.revenue += Number(r.total_revenue ?? 0);
+      bucket.orders += Number(r.total_orders ?? 0);
+      byDate.set(r.order_date, bucket);
+    }
+  }
+  return byDate;
 }
 
 // ============================================================
@@ -55,7 +120,11 @@ export async function GET(req: NextRequest) {
     //
     // Anomaly count: pending red/amber briefs for today — drives the alert
     // pill in KpiStrip. Runs in parallel with the insights query.
-    const [{ data, error }, { count: anomalyRaw }] = await Promise.all([
+    //
+    // Shopify daily totals fetched in parallel — same date set so we can
+    // compute vsTypical / projected against Shopify-actual instead of
+    // Meta-attributed (the latter misses ~30% of activity per audit).
+    const [{ data, error }, { count: anomalyRaw }, shopifyByDate] = await Promise.all([
       supabaseAdmin
         .from("meta_insights_by_store")
         .select("date, spend, revenue, purchases, fetched_at")
@@ -67,6 +136,7 @@ export async function GET(req: NextRequest) {
         .eq("for_date", todayIso)
         .in("severity", ["red", "amber"])
         .eq("status", "pending"),
+      fetchShopifyByDate([todayIso, ...comparisonDates]),
     ]);
 
     if (error) {
@@ -134,22 +204,52 @@ export async function GET(req: NextRequest) {
       return { value, vsTypical, projected };
     };
 
-    const revenue = tempoMetric("revenue");
-    const spend = tempoMetric("spend");
-    const orders = tempoMetric("purchases");
-    // Cap displayed ROAS at 99.99x — an early-day row with €1 spend and
-    // €500 revenue would otherwise render "500.00x" and swamp the tile.
+    // Meta tempo metrics (revenue & orders kept for the secondary "от Meta"
+    // sub-figure; spend & roas stay Meta-only as primary).
+    const metaRevenue = tempoMetric("revenue");
+    const metaSpend = tempoMetric("spend");
+    const metaOrders = tempoMetric("purchases");
+    // ROAS = Meta revenue / Meta spend. Cap at 99.99x — an early-day row
+    // with €1 spend and €500 revenue would otherwise render "500.00x".
     const roas = {
       value:
-        spend.value > 0
-          ? Math.min(99.99, Number((revenue.value / spend.value).toFixed(2)))
+        metaSpend.value > 0
+          ? Math.min(99.99, Number((metaRevenue.value / metaSpend.value).toFixed(2)))
           : 0,
     };
 
+    // Shopify tempo metrics — same matched-hour math, but against the
+    // (real) Shopify priors. Sums daily_aggregates per store + date.
+    const shopifyToday = shopifyByDate.get(todayIso) ?? { revenue: 0, orders: 0 };
+    const shopifyPriors = comparisonDates
+      .map((d) => shopifyByDate.get(d))
+      .filter((x): x is NonNullable<typeof x> => !!x);
+    const tooEarlyShopify = hoursElapsed < 3 || shopifyPriors.length === 0;
+    const shopifyTempo = (
+      field: "revenue" | "orders"
+    ): TempoMetric => {
+      const value = shopifyToday[field];
+      if (tooEarlyShopify) return { value, vsTypical: null, projected: null };
+      const sum = shopifyPriors.reduce((acc, p) => acc + p[field], 0);
+      const typ = sum / shopifyPriors.length;
+      if (typ === 0) return { value, vsTypical: null, projected: null };
+      const matchedSoFar = typ * (hoursElapsed / 24);
+      const vsTypicalRaw = Math.round(((value - matchedSoFar) / matchedSoFar) * 100);
+      const vsTypical = Math.max(-999, Math.min(999, vsTypicalRaw));
+      const projected = Math.round(value / (hoursElapsed / 24));
+      return { value, vsTypical, projected };
+    };
+
     const response: TopStripResponse = {
-      revenue,
-      spend,
-      orders,
+      revenue: {
+        shopify: shopifyTempo("revenue"),
+        metaValue: metaRevenue.value,
+      },
+      orders: {
+        shopify: shopifyTempo("orders"),
+        metaValue: metaOrders.value,
+      },
+      spend: metaSpend,
       roas,
       anomalyCount: anomalyRaw ?? 0,
       freshAsOf: latestFetched ?? now.toISOString(),

@@ -14,10 +14,17 @@ interface TempoMetric {
   projected: number | null;
 }
 
+interface DualSourceMetric {
+  /** Shopify totals — primary value displayed on the tile. */
+  shopify: TempoMetric;
+  /** Meta-attributed absolute value — rendered as a sub-figure. */
+  metaValue: number;
+}
+
 interface TopStripResponse {
-  revenue: TempoMetric;
+  revenue: DualSourceMetric;
+  orders: DualSourceMetric;
   spend: TempoMetric;
-  orders: TempoMetric;
   roas: { value: number };
   anomalyCount: number;
   freshAsOf: string;
@@ -71,9 +78,30 @@ interface TileProps {
   typicalLabel: string;
   /** Hide the delta/projected row entirely (e.g. ROAS — ratio, not cumulative). */
   hideDelta?: boolean;
+  /**
+   * Optional secondary value, rendered as small "X от Meta" under the primary.
+   * Used on Приходи/Поръчки to surface the Meta-attributed slice next to
+   * the Shopify total. Omit on Разход/ROAS (they're already Meta-only —
+   * use `sourceTag` instead).
+   */
+  metaValue?: string;
+  /**
+   * Inline source qualifier shown next to the label (e.g. "(Meta)"). For
+   * single-source tiles where there's no `metaValue` line to disambiguate.
+   */
+  sourceTag?: string;
 }
 
-function Tile({ label, value, vsTypical, projected, typicalLabel, hideDelta }: TileProps) {
+function Tile({
+  label,
+  value,
+  vsTypical,
+  projected,
+  typicalLabel,
+  hideDelta,
+  metaValue,
+  sourceTag,
+}: TileProps) {
   let deltaNode: React.ReactNode;
   if (hideDelta) {
     deltaNode = null;
@@ -97,10 +125,20 @@ function Tile({ label, value, vsTypical, projected, typicalLabel, hideDelta }: T
 
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col gap-2 min-h-[120px]">
-      <div className="text-[13px] font-semibold text-text">{label}</div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[13px] font-semibold text-text">{label}</span>
+        {sourceTag && (
+          <span className="text-[10px] text-text-3">{sourceTag}</span>
+        )}
+      </div>
       <div className="text-[28px] md:text-[32px] font-bold tracking-tight text-text leading-none">
         {value}
       </div>
+      {metaValue !== undefined && (
+        <div className="text-[11px] text-text-3 leading-none">
+          {metaValue} от Meta
+        </div>
+      )}
       <div className="text-[12px] mt-auto flex flex-col gap-0.5">
         {deltaNode}
         {projected && (
@@ -187,23 +225,26 @@ export function KpiStrip() {
         </div>
       </div>
       <p className="text-[12px] text-text-3 mb-3">
-        Числата идват от Meta attribution. Реалните Shopify-приходи виж в{" "}
-        <a href="/sales" className="underline hover:text-text-2 transition-colors">
-          Продажби
-        </a>
-        .
+        Приходи и поръчки = реален Shopify. Разход и ROAS = Meta. Малкият
+        ред под всяка цифра показва Meta-attributed дела.
       </p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Tile
           label="Приходи"
-          value={fmtEur(data.revenue.value)}
-          vsTypical={data.revenue.vsTypical}
-          projected={data.revenue.projected !== null ? fmtEur(data.revenue.projected) : null}
+          value={fmtEur(data.revenue.shopify.value)}
+          metaValue={fmtEur(data.revenue.metaValue)}
+          vsTypical={data.revenue.shopify.vsTypical}
+          projected={
+            data.revenue.shopify.projected !== null
+              ? fmtEur(data.revenue.shopify.projected)
+              : null
+          }
           typicalLabel={typicalLabel}
         />
         <Tile
           label="Разход"
+          sourceTag="(Meta)"
           value={fmtEur(data.spend.value)}
           vsTypical={data.spend.vsTypical}
           projected={data.spend.projected !== null ? fmtEur(data.spend.projected) : null}
@@ -211,6 +252,7 @@ export function KpiStrip() {
         />
         <Tile
           label="ROAS"
+          sourceTag="(Meta)"
           value={fmtRoas(data.roas.value)}
           vsTypical={null}
           projected={null}
@@ -219,9 +261,14 @@ export function KpiStrip() {
         />
         <Tile
           label="Поръчки"
-          value={fmtInt(data.orders.value)}
-          vsTypical={data.orders.vsTypical}
-          projected={data.orders.projected !== null ? fmtInt(data.orders.projected) : null}
+          value={fmtInt(data.orders.shopify.value)}
+          metaValue={fmtInt(data.orders.metaValue)}
+          vsTypical={data.orders.shopify.vsTypical}
+          projected={
+            data.orders.shopify.projected !== null
+              ? fmtInt(data.orders.shopify.projected)
+              : null
+          }
           typicalLabel={typicalLabel}
         />
       </div>
