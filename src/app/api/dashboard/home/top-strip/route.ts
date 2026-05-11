@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { sofiaDate, sofiaHoursElapsed, shiftDate } from "@/lib/sofia-date";
+import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
 
 // ============================================================
 // Types
@@ -62,10 +63,6 @@ interface TopStripResponse {
   freshAsOf: string;
 }
 
-// Shopify schemas — one per market. Hard-coded for now; matches the three
-// active stores. If a 4th market opens we'll resolve via stores table.
-const SHOPIFY_SCHEMAS = ["store_bg", "store_gr", "store_ro"] as const;
-
 interface DailyAggRow {
   order_date: string;
   total_revenue: number | string | null;
@@ -73,16 +70,22 @@ interface DailyAggRow {
 }
 
 /**
- * Fetch daily aggregates across all three Shopify schemas, summed by date.
- * Used for both today and the prior same-weekdays — daily_aggregates is
- * continuously refreshed (~minute-level lag against raw orders), which is
- * acceptable for the 60s-refresh dashboard.
+ * Fetch daily aggregates across all bound Shopify schemas (`store_${marketCode}`),
+ * summed by date. Schemas are resolved dynamically via the market resolver
+ * (cached, 60s TTL) so opening a 4th market never needs a code edit here.
+ *
+ * Used for today and the 4 prior same-weekdays — daily_aggregates is
+ * continuously refreshed (~minute-level lag against raw orders), acceptable
+ * for the 60s-refresh dashboard.
  */
 async function fetchShopifyByDate(
   dates: string[]
 ): Promise<Map<string, { revenue: number; orders: number }>> {
+  const markets = await resolveAllHomeMarkets();
+  const schemas = markets.map((m) => `store_${m.marketCode}`);
+
   const perSchema = await Promise.all(
-    SHOPIFY_SCHEMAS.map(async (schema) => {
+    schemas.map(async (schema) => {
       const { data, error } = await supabaseAdmin
         .schema(schema)
         .from("daily_aggregates")
@@ -109,6 +112,40 @@ async function fetchShopifyByDate(
     }
   }
   return byDate;
+}
+
+/**
+ * Compute matched-hour tempo metric: today's running value vs the matched
+ * portion of the prior-weekdays average. Pure function so Meta and Shopify
+ * share exactly the same arithmetic + clamps.
+ *
+ * Returns nulls (no signal) when:
+ *   - It's too early in the Sofia day (< 3h elapsed). At hoursElapsed≈1 the
+ *     denominator matchedSoFar is ~4% of typ, so a single late-attribution
+ *     prior row can push vsTypical into the thousands of percent.
+ *   - No prior data at all.
+ *   - Prior average is 0 (no comparable activity).
+ */
+function buildTempoMetric<F extends string>(
+  todayValue: number,
+  priors: Array<Record<F, number>>,
+  field: F,
+  hoursElapsed: number
+): TempoMetric {
+  if (hoursElapsed < 3 || priors.length === 0) {
+    return { value: todayValue, vsTypical: null, projected: null };
+  }
+  const typ = priors.reduce((acc, p) => acc + p[field], 0) / priors.length;
+  if (typ === 0) {
+    return { value: todayValue, vsTypical: null, projected: null };
+  }
+  const matchedSoFar = typ * (hoursElapsed / 24);
+  const vsTypicalRaw = Math.round(((todayValue - matchedSoFar) / matchedSoFar) * 100);
+  // Belt-and-suspenders against extreme values: clamp the display so a
+  // freak row can't render "+12,450%" in the UI.
+  const vsTypical = Math.max(-999, Math.min(999, vsTypicalRaw));
+  const projected = Math.round(todayValue / (hoursElapsed / 24));
+  return { value: todayValue, vsTypical, projected };
 }
 
 // ============================================================
@@ -188,38 +225,13 @@ export async function GET(req: NextRequest) {
     }
 
     const today = byDate.get(todayIso) ?? { spend: 0, revenue: 0, purchases: 0 };
-    const priors = comparisonDates.map((d) => byDate.get(d)).filter((x): x is NonNullable<typeof x> => !!x);
-
-    const typical = (field: "spend" | "revenue" | "purchases"): number => {
-      if (priors.length === 0) return 0;
-      const sum = priors.reduce((acc, p) => acc + p[field], 0);
-      return sum / priors.length;
-    };
-
-    // If it's too early in the Sofia day (< 3h) or we have no prior data,
-    // skip the tempo/projected math — too noisy to be useful. 3h (not 1h)
-    // because at hoursElapsed≈1 the denominator matchedSoFar is ~4% of typ,
-    // so a single late-attribution prior row can push vsTypical into the
-    // thousands of percent.
-    const tooEarly = hoursElapsed < 3 || priors.length === 0;
-
-    const tempoMetric = (field: "spend" | "revenue" | "purchases"): TempoMetric => {
-      const value = today[field];
-      if (tooEarly) return { value, vsTypical: null, projected: null };
-      const typ = typical(field);
-      if (typ === 0) return { value, vsTypical: null, projected: null };
-      const matchedSoFar = typ * (hoursElapsed / 24);
-      const vsTypicalRaw = Math.round(((value - matchedSoFar) / matchedSoFar) * 100);
-      // Belt-and-suspenders against extreme values: clamp the display so a
-      // freak row can't render "+12,450%" in the UI.
-      const vsTypical = Math.max(-999, Math.min(999, vsTypicalRaw));
-      const projected = Math.round(value / (hoursElapsed / 24));
-      return { value, vsTypical, projected };
-    };
+    const priors = comparisonDates
+      .map((d) => byDate.get(d))
+      .filter((x): x is NonNullable<typeof x> => !!x);
 
     // === Ads block (Meta) ============================================
-    const metaRevenue = tempoMetric("revenue");
-    const metaSpend = tempoMetric("spend");
+    const metaRevenue = buildTempoMetric(today.revenue, priors, "revenue", hoursElapsed);
+    const metaSpend = buildTempoMetric(today.spend, priors, "spend", hoursElapsed);
     // ROAS = Meta revenue / Meta spend. Cap at 99.99x — an early-day row
     // with €1 spend and €500 revenue would otherwise render "500.00x".
     const roas = {
@@ -234,22 +246,19 @@ export async function GET(req: NextRequest) {
     const shopifyPriors = comparisonDates
       .map((d) => shopifyByDate.get(d))
       .filter((x): x is NonNullable<typeof x> => !!x);
-    const tooEarlyShopify = hoursElapsed < 3 || shopifyPriors.length === 0;
-    const shopifyTempo = (field: "revenue" | "orders"): TempoMetric => {
-      const value = shopifyToday[field];
-      if (tooEarlyShopify) return { value, vsTypical: null, projected: null };
-      const sum = shopifyPriors.reduce((acc, p) => acc + p[field], 0);
-      const typ = sum / shopifyPriors.length;
-      if (typ === 0) return { value, vsTypical: null, projected: null };
-      const matchedSoFar = typ * (hoursElapsed / 24);
-      const vsTypicalRaw = Math.round(((value - matchedSoFar) / matchedSoFar) * 100);
-      const vsTypical = Math.max(-999, Math.min(999, vsTypicalRaw));
-      const projected = Math.round(value / (hoursElapsed / 24));
-      return { value, vsTypical, projected };
-    };
 
-    const businessRevenue = shopifyTempo("revenue");
-    const businessOrders = shopifyTempo("orders");
+    const businessRevenue = buildTempoMetric(
+      shopifyToday.revenue,
+      shopifyPriors,
+      "revenue",
+      hoursElapsed
+    );
+    const businessOrders = buildTempoMetric(
+      shopifyToday.orders,
+      shopifyPriors,
+      "orders",
+      hoursElapsed
+    );
     const aov = {
       value:
         businessOrders.value > 0
