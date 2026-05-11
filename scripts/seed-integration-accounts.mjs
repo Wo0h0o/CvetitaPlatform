@@ -8,11 +8,14 @@
  * without duplicating rows (ON CONFLICT on the unique constraint).
  *
  * Binding policy (locked in docs/ads-architecture-research/07-arbiter-final.md):
- *   act_280706744248197 → Cvetita BG, role=primary    (current prod account)
- *   act_334527788845228 → Cvetita BG, role=legacy     (historical continuity)
+ *   act_280706744248197  → Cvetita BG, role=primary    (current prod account)
+ *   act_334527788845228  → Cvetita BG, role=legacy     (historical continuity)
  *   act_3479233942353523 → Cvetita GR, role=primary
  *   act_323746506828541  → Cvetita RO, role=primary
- *   act_612864896675154  → orphan (ProteinBar — no Shopify store), role=primary
+ *   act_612864896675154  → Cvetita BG, role=secondary  (ProteinBar sub-brand)
+ *   act_1856524808063116 → Cvetita DE, role=primary
+ *   act_601018858261180  → Cvetita IT, role=primary
+ *   act_1492854044575069 → Cvetita UK, role=primary
  *   act_2178567759636273 → disabled (personal USD, not a business account)
  */
 
@@ -84,6 +87,9 @@ const BINDING_POLICY = {
   act_612864896675154:  { marketCode: 'bg',    role: 'secondary', display: 'Meta — ProteinBar (BG sub-brand)' },
   act_3479233942353523: { marketCode: 'gr',    role: 'primary',   display: 'Meta — Cvetita GR' },
   act_323746506828541:  { marketCode: 'ro',    role: 'primary',   display: 'Meta — Cvetita RO' },
+  act_1856524808063116: { marketCode: 'de',    role: 'primary',   display: 'Meta — Cvetita DE' },
+  act_601018858261180:  { marketCode: 'it',    role: 'primary',   display: 'Meta — Cvetita IT' },
+  act_1492854044575069: { marketCode: 'uk',    role: 'primary',   display: 'Meta — Cvetita UK' },
   act_2178567759636273: { disabled: true,                         display: 'Meta — Personal (USD, disabled)' },
 };
 

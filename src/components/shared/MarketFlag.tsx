@@ -1,5 +1,5 @@
 /**
- * MarketFlag — inline SVG flags for our 3 markets.
+ * MarketFlag — inline SVG flags for our 6 markets.
  *
  * Why SVG and not emoji (🇧🇬🇬🇷🇷🇴):
  * Unicode regional-indicator pairs rely on an emoji font to render as a
@@ -17,7 +17,7 @@
  */
 
 interface MarketFlagProps {
-  /** Market code — "bg", "gr", "ro". Case-insensitive. */
+  /** Market code — "bg", "gr", "ro", "de", "it", "uk". Case-insensitive. */
   market: string;
   /** Height in px. Width is auto-derived from 3:2 aspect. Defaults to 16. */
   size?: number;
@@ -30,6 +30,9 @@ const MARKET_LABEL: Record<string, string> = {
   bg: "България",
   gr: "Гърция",
   ro: "Румъния",
+  de: "Германия",
+  it: "Италия",
+  uk: "Великобритания",
 };
 
 export function MarketFlag({
@@ -107,6 +110,51 @@ export function MarketFlag({
         <rect width="1" height="2" fill="#002B7F" />
         <rect x="1" width="1" height="2" fill="#FCD116" />
         <rect x="2" width="1" height="2" fill="#CE1126" />
+      </svg>
+    );
+  }
+
+  // Germany 🇩🇪 — black, red (#DD0000), gold (#FFCE00) horizontal thirds.
+  if (code === "de") {
+    return (
+      <svg {...commonProps}>
+        <rect width="3" height="0.6667" fill="#000000" />
+        <rect y="0.6667" width="3" height="0.6667" fill="#DD0000" />
+        <rect y="1.3333" width="3" height="0.6667" fill="#FFCE00" />
+      </svg>
+    );
+  }
+
+  // Italy 🇮🇹 — green (#009246), white, red (#CE2B37) vertical thirds.
+  if (code === "it") {
+    return (
+      <svg {...commonProps}>
+        <rect width="1" height="2" fill="#009246" />
+        <rect x="1" width="1" height="2" fill="#ffffff" />
+        <rect x="2" width="1" height="2" fill="#CE2B37" />
+      </svg>
+    );
+  }
+
+  // United Kingdom 🇬🇧 — Union Jack. Approximated for a 3:2 viewBox: blue
+  // field with white + red diagonals and a centred white-edged red cross.
+  // Exact ratios are simplified for inline SVG; readable at 16px.
+  if (code === "uk") {
+    return (
+      <svg {...commonProps}>
+        {/* Blue field */}
+        <rect width="3" height="2" fill="#012169" />
+        {/* White diagonals (X) */}
+        <path d="M0,0 L3,2 M3,0 L0,2" stroke="#ffffff" strokeWidth="0.4" />
+        {/* Red diagonals (offset for the Northern Ireland convention) */}
+        <path d="M0,0 L3,2" stroke="#C8102E" strokeWidth="0.2" />
+        <path d="M3,0 L0,2" stroke="#C8102E" strokeWidth="0.2" />
+        {/* White cross of St George (background) */}
+        <rect x="1.25" width="0.5" height="2" fill="#ffffff" />
+        <rect y="0.75" width="3" height="0.5" fill="#ffffff" />
+        {/* Red cross of St George (foreground) */}
+        <rect x="1.35" width="0.3" height="2" fill="#C8102E" />
+        <rect y="0.85" width="3" height="0.3" fill="#C8102E" />
       </svg>
     );
   }
