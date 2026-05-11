@@ -5,7 +5,8 @@ import { Skeleton } from "@/components/shared/Skeleton";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
 
 // ============================================================
-// Types (mirror /api/dashboard/home/top-strip response)
+// Types — mirror /api/dashboard/home/top-strip response.
+// Two source-pure sections: business (Shopify) and ads (Meta).
 // ============================================================
 
 interface TempoMetric {
@@ -14,18 +15,21 @@ interface TempoMetric {
   projected: number | null;
 }
 
-interface DualSourceMetric {
-  /** Shopify totals — primary value displayed on the tile. */
-  shopify: TempoMetric;
-  /** Meta-attributed absolute value — rendered as a sub-figure. */
-  metaValue: number;
-}
-
 interface TopStripResponse {
-  revenue: DualSourceMetric;
-  orders: DualSourceMetric;
-  spend: TempoMetric;
-  roas: { value: number };
+  business: {
+    revenue: TempoMetric;
+    orders: TempoMetric;
+    aov: { value: number };
+  };
+  ads: {
+    spend: TempoMetric;
+    roas: { value: number };
+    attribution: {
+      pct: number | null;
+      metaRevenue: number;
+      shopifyRevenue: number;
+    };
+  };
   anomalyCount: number;
   freshAsOf: string;
   error?: string;
@@ -37,7 +41,6 @@ interface TopStripResponse {
 
 const SOFIA_TZ = "Europe/Sofia";
 
-/** Bulgarian weekday noun in nominative case (e.g. "сряда"). */
 function sofiaWeekdayBg(d: Date): string {
   return new Intl.DateTimeFormat("bg-BG", {
     timeZone: SOFIA_TZ,
@@ -53,9 +56,7 @@ function typicalAdjectiveBg(weekdayBg: string): string {
 }
 
 function fmtEur(n: number): string {
-  return `${n.toLocaleString("bg-BG", {
-    maximumFractionDigits: 0,
-  })} EUR`;
+  return `${n.toLocaleString("bg-BG", { maximumFractionDigits: 0 })} EUR`;
 }
 
 function fmtInt(n: number): string {
@@ -67,7 +68,7 @@ function fmtRoas(n: number): string {
 }
 
 // ============================================================
-// Tile
+// Tile — single metric, optional sub-text for composability hints.
 // ============================================================
 
 interface TileProps {
@@ -79,17 +80,11 @@ interface TileProps {
   /** Hide the delta/projected row entirely (e.g. ROAS — ratio, not cumulative). */
   hideDelta?: boolean;
   /**
-   * Optional secondary value, rendered as small "X от Meta" under the primary.
-   * Used on Приходи/Поръчки to surface the Meta-attributed slice next to
-   * the Shopify total. Omit on Разход/ROAS (they're already Meta-only —
-   * use `sourceTag` instead).
+   * Free-form small line directly under the value. Used for composability
+   * hints (e.g. "428 EUR / 240 EUR" for ROAS, "428 от 794 EUR" for
+   * attribution). Stays subtle so the primary number still leads the eye.
    */
-  metaValue?: string;
-  /**
-   * Inline source qualifier shown next to the label (e.g. "(Meta)"). For
-   * single-source tiles where there's no `metaValue` line to disambiguate.
-   */
-  sourceTag?: string;
+  subText?: string;
 }
 
 function Tile({
@@ -99,8 +94,7 @@ function Tile({
   projected,
   typicalLabel,
   hideDelta,
-  metaValue,
-  sourceTag,
+  subText,
 }: TileProps) {
   let deltaNode: React.ReactNode;
   if (hideDelta) {
@@ -125,19 +119,12 @@ function Tile({
 
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col gap-2 min-h-[120px]">
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-        {sourceTag && (
-          <span className="text-[10px] text-text-3">{sourceTag}</span>
-        )}
-      </div>
+      <div className="text-[13px] font-semibold text-text">{label}</div>
       <div className="text-[28px] md:text-[32px] font-bold tracking-tight text-text leading-none">
         {value}
       </div>
-      {metaValue !== undefined && (
-        <div className="text-[11px] text-text-3 leading-none">
-          {metaValue} от Meta
-        </div>
+      {subText && (
+        <div className="text-[11px] text-text-3 leading-tight">{subText}</div>
       )}
       <div className="text-[12px] mt-auto flex flex-col gap-0.5">
         {deltaNode}
@@ -160,10 +147,57 @@ function TileSkeleton() {
 }
 
 // ============================================================
-// KpiStrip
+// Sections
+// ============================================================
+
+interface SectionShellProps {
+  title: string;
+  description: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+function SectionShell({ title, description, right, children }: SectionShellProps) {
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-[15px] font-semibold text-text">{title}</h2>
+        {right && <div className="flex items-center gap-3">{right}</div>}
+      </div>
+      <p className="text-[12px] text-text-3 mb-3">{description}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function LoadingStrip({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <SectionShell title={title} description={description}>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <TileSkeleton key={i} />
+      ))}
+    </SectionShell>
+  );
+}
+
+// ============================================================
+// KpiStrip — orchestrates a single fetch then renders both sections.
 // ============================================================
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+const BUSINESS_DESC =
+  "Реалните продажби през Shopify — приходи, поръчки, средна стойност.";
+const ADS_DESC =
+  "Meta — разход, ROAS и каква част от бизнеса идва от платените канали.";
 
 export function KpiStrip() {
   const { data, isLoading, error } = useSWR<TopStripResponse>(
@@ -177,23 +211,10 @@ export function KpiStrip() {
 
   if (isLoading || !data) {
     return (
-      <section className="mb-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-[15px] font-semibold text-text">Днешен ритъм</h2>
-        </div>
-        <p className="text-[12px] text-text-3 mb-3">
-          Числата идват от Meta attribution. Реалните Shopify-приходи виж в{" "}
-          <a href="/sales" className="underline hover:text-text-2 transition-colors">
-            Продажби
-          </a>
-          .
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <TileSkeleton key={i} />
-          ))}
-        </div>
-      </section>
+      <>
+        <LoadingStrip title="Бизнес днес" description={BUSINESS_DESC} />
+        <LoadingStrip title="Реклами днес" description={ADS_DESC} />
+      </>
     );
   }
 
@@ -207,71 +228,107 @@ export function KpiStrip() {
     );
   }
 
-  return (
-    <section className="mb-6">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-[15px] font-semibold text-text">Днешен ритъм</h2>
-        <div className="flex items-center gap-3">
-          {data.anomalyCount > 0 && (
-            <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-red-soft text-red animate-pulse"
-              aria-label={`${data.anomalyCount} аномалии`}
-            >
-              <span className="inline-block h-2 w-2 rounded-full bg-red" />
-              {data.anomalyCount} {data.anomalyCount === 1 ? "аномалия" : "аномалии"}
-            </span>
-          )}
-          <FreshnessDot lastSyncedAt={data.freshAsOf} showLabel />
-        </div>
-      </div>
-      <p className="text-[12px] text-text-3 mb-3">
-        Приходи и поръчки = реален Shopify. Разход и ROAS = Meta. Малкият
-        ред под всяка цифра показва Meta-attributed дела.
-      </p>
+  const { business, ads } = data;
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+  // === Ads section trim text — composability hints ===
+  // ROAS sub-text shows the two numbers it divides, so the operator can
+  // verify the ratio at a glance.
+  const roasSub =
+    ads.spend.value > 0
+      ? `${fmtEur(ads.attribution.metaRevenue)} / ${fmtEur(ads.spend.value)}`
+      : "няма spend днес";
+
+  // Attribution sub-text grounds the % in the absolute numbers it
+  // came from. Bridges to business.revenue.
+  const attributionSub =
+    ads.attribution.pct === null
+      ? "няма Shopify приходи още"
+      : `${fmtEur(ads.attribution.metaRevenue)} от ${fmtEur(ads.attribution.shopifyRevenue)} Shopify`;
+
+  return (
+    <>
+      <SectionShell title="Бизнес днес" description={BUSINESS_DESC}>
         <Tile
           label="Приходи"
-          value={fmtEur(data.revenue.shopify.value)}
-          metaValue={fmtEur(data.revenue.metaValue)}
-          vsTypical={data.revenue.shopify.vsTypical}
+          value={fmtEur(business.revenue.value)}
+          vsTypical={business.revenue.vsTypical}
           projected={
-            data.revenue.shopify.projected !== null
-              ? fmtEur(data.revenue.shopify.projected)
+            business.revenue.projected !== null
+              ? fmtEur(business.revenue.projected)
               : null
           }
           typicalLabel={typicalLabel}
         />
         <Tile
+          label="Поръчки"
+          value={fmtInt(business.orders.value)}
+          vsTypical={business.orders.vsTypical}
+          projected={
+            business.orders.projected !== null
+              ? fmtInt(business.orders.projected)
+              : null
+          }
+          typicalLabel={typicalLabel}
+        />
+        <Tile
+          label="Средна стойност"
+          value={fmtEur(business.aov.value)}
+          vsTypical={null}
+          projected={null}
+          typicalLabel={typicalLabel}
+          hideDelta
+        />
+      </SectionShell>
+
+      <SectionShell
+        title="Реклами днес"
+        description={ADS_DESC}
+        right={
+          <>
+            {data.anomalyCount > 0 && (
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-red-soft text-red animate-pulse"
+                aria-label={`${data.anomalyCount} аномалии`}
+              >
+                <span className="inline-block h-2 w-2 rounded-full bg-red" />
+                {data.anomalyCount}{" "}
+                {data.anomalyCount === 1 ? "аномалия" : "аномалии"}
+              </span>
+            )}
+            <FreshnessDot lastSyncedAt={data.freshAsOf} showLabel />
+          </>
+        }
+      >
+        <Tile
           label="Разход"
-          sourceTag="(Meta)"
-          value={fmtEur(data.spend.value)}
-          vsTypical={data.spend.vsTypical}
-          projected={data.spend.projected !== null ? fmtEur(data.spend.projected) : null}
+          value={fmtEur(ads.spend.value)}
+          vsTypical={ads.spend.vsTypical}
+          projected={
+            ads.spend.projected !== null ? fmtEur(ads.spend.projected) : null
+          }
           typicalLabel={typicalLabel}
         />
         <Tile
           label="ROAS"
-          sourceTag="(Meta)"
-          value={fmtRoas(data.roas.value)}
+          value={fmtRoas(ads.roas.value)}
+          subText={roasSub}
           vsTypical={null}
           projected={null}
           typicalLabel={typicalLabel}
           hideDelta
         />
         <Tile
-          label="Поръчки"
-          value={fmtInt(data.orders.shopify.value)}
-          metaValue={fmtInt(data.orders.metaValue)}
-          vsTypical={data.orders.shopify.vsTypical}
-          projected={
-            data.orders.shopify.projected !== null
-              ? fmtInt(data.orders.shopify.projected)
-              : null
+          label="Атрибуция"
+          value={
+            ads.attribution.pct !== null ? `${ads.attribution.pct}%` : "—"
           }
+          subText={attributionSub}
+          vsTypical={null}
+          projected={null}
           typicalLabel={typicalLabel}
+          hideDelta
         />
-      </div>
-    </section>
+      </SectionShell>
+    </>
   );
 }

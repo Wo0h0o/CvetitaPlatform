@@ -25,26 +25,39 @@ interface TempoMetric {
 }
 
 /**
- * Revenue / orders surface two values: the real Shopify total (primary,
- * what actually happened on the store) and the Meta-attributed slice
- * (secondary, what Meta claims credit for). The gap is the organic /
- * email / direct / non-Meta-paid contribution.
+ * Top-strip splits into two internally-composable sections:
+ *
+ *   business — what happened on the store (Shopify truth)
+ *   ads      — what the paid channels did (Meta attribution)
+ *
+ * Each section's numbers add up among themselves: Ads ROAS = ads.spend
+ * × ROAS → meta-revenue ⊆ ads.attribution.metaRevenue, all from Meta.
+ * Business revenue / orders / AOV all come from Shopify daily_aggregates.
+ *
+ * The bridge between them is `ads.attribution.pct` — what % of business
+ * revenue Meta attribution claims credit for. This makes the
+ * organic/email/direct gap explicit instead of hidden inside a mixed tile.
  */
-interface DualSourceMetric {
-  /** Shopify totals — primary truth. Drives vsTypical + projected. */
-  shopify: TempoMetric;
-  /** Meta-attributed absolute value. No tempo math — kept as a sub-figure. */
-  metaValue: number;
-}
-
 interface TopStripResponse {
-  revenue: DualSourceMetric;
-  orders: DualSourceMetric;
-  /** Spend is Meta-only by definition — Shopify has no ad-spend concept. */
-  spend: TempoMetric;
-  /** ROAS = Meta revenue / Meta spend. Mixing Shopify revenue with Meta
-   *  spend would be misleading (not all Shopify revenue is ad-attributable). */
-  roas: { value: number };
+  business: {
+    revenue: TempoMetric;
+    orders: TempoMetric;
+    /** Average order value today = revenue/orders. 0 if no orders yet. */
+    aov: { value: number };
+  };
+  ads: {
+    /** Meta ad-spend across all bound accounts. Shopify has no spend concept. */
+    spend: TempoMetric;
+    /** ROAS = meta-revenue / meta-spend. Composes within the ads section. */
+    roas: { value: number };
+    /** Bridge to business section: what % of Shopify revenue Meta claims. */
+    attribution: {
+      /** 0-100 (or null if business revenue is 0). */
+      pct: number | null;
+      metaRevenue: number;
+      shopifyRevenue: number;
+    };
+  };
   anomalyCount: number;
   freshAsOf: string;
 }
@@ -204,11 +217,9 @@ export async function GET(req: NextRequest) {
       return { value, vsTypical, projected };
     };
 
-    // Meta tempo metrics (revenue & orders kept for the secondary "от Meta"
-    // sub-figure; spend & roas stay Meta-only as primary).
+    // === Ads block (Meta) ============================================
     const metaRevenue = tempoMetric("revenue");
     const metaSpend = tempoMetric("spend");
-    const metaOrders = tempoMetric("purchases");
     // ROAS = Meta revenue / Meta spend. Cap at 99.99x — an early-day row
     // with €1 spend and €500 revenue would otherwise render "500.00x".
     const roas = {
@@ -218,16 +229,13 @@ export async function GET(req: NextRequest) {
           : 0,
     };
 
-    // Shopify tempo metrics — same matched-hour math, but against the
-    // (real) Shopify priors. Sums daily_aggregates per store + date.
+    // === Business block (Shopify) ====================================
     const shopifyToday = shopifyByDate.get(todayIso) ?? { revenue: 0, orders: 0 };
     const shopifyPriors = comparisonDates
       .map((d) => shopifyByDate.get(d))
       .filter((x): x is NonNullable<typeof x> => !!x);
     const tooEarlyShopify = hoursElapsed < 3 || shopifyPriors.length === 0;
-    const shopifyTempo = (
-      field: "revenue" | "orders"
-    ): TempoMetric => {
+    const shopifyTempo = (field: "revenue" | "orders"): TempoMetric => {
       const value = shopifyToday[field];
       if (tooEarlyShopify) return { value, vsTypical: null, projected: null };
       const sum = shopifyPriors.reduce((acc, p) => acc + p[field], 0);
@@ -240,17 +248,39 @@ export async function GET(req: NextRequest) {
       return { value, vsTypical, projected };
     };
 
+    const businessRevenue = shopifyTempo("revenue");
+    const businessOrders = shopifyTempo("orders");
+    const aov = {
+      value:
+        businessOrders.value > 0
+          ? Number((businessRevenue.value / businessOrders.value).toFixed(2))
+          : 0,
+    };
+
+    // === Attribution bridge ==========================================
+    // What % of Shopify revenue is Meta-attributed? Bounded [0, 100] —
+    // can briefly exceed 100 due to attribution timing (Meta credits a
+    // purchase before Shopify webhook lands); clamp to keep the UI sane.
+    const attributionPct =
+      businessRevenue.value > 0
+        ? Math.min(100, Math.round((metaRevenue.value / businessRevenue.value) * 100))
+        : null;
+
     const response: TopStripResponse = {
-      revenue: {
-        shopify: shopifyTempo("revenue"),
-        metaValue: metaRevenue.value,
+      business: {
+        revenue: businessRevenue,
+        orders: businessOrders,
+        aov,
       },
-      orders: {
-        shopify: shopifyTempo("orders"),
-        metaValue: metaOrders.value,
+      ads: {
+        spend: metaSpend,
+        roas,
+        attribution: {
+          pct: attributionPct,
+          metaRevenue: metaRevenue.value,
+          shopifyRevenue: businessRevenue.value,
+        },
       },
-      spend: metaSpend,
-      roas,
       anomalyCount: anomalyRaw ?? 0,
       freshAsOf: latestFetched ?? now.toISOString(),
     };
