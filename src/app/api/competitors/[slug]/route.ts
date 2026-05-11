@@ -96,6 +96,7 @@ export async function GET(
         logo_url: comp.logo_url,
         markets: settings.markets || [],
         sisterDomains: settings.sisterDomains || [],
+        seedUrls: Array.isArray(comp.seed_urls) ? comp.seed_urls : [],
         lastScanAt: settings.lastScanAt || null,
         lastScannedBy,
         created_at: comp.created_at,
@@ -111,5 +112,64 @@ export async function GET(
   } catch (err) {
     logger.error("Competitor detail GET failed", { ...requestMeta(req), error: String(err) });
     return NextResponse.json({ error: "Failed to load competitor" }, { status: 500 });
+  }
+}
+
+// PATCH /api/competitors/[slug] — admin-editable scan settings
+// Body: { seedUrls?: string[] }
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
+  try {
+    const { slug } = await params;
+    const supabase = getSupabase(req);
+    const body = await req.json();
+
+    const updates: Record<string, unknown> = {};
+
+    if (Array.isArray(body.seedUrls)) {
+      const cleaned: string[] = [];
+      for (const raw of body.seedUrls) {
+        if (typeof raw !== "string") continue;
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        try {
+          const u = new URL(trimmed);
+          if (u.protocol !== "https:" && u.protocol !== "http:") continue;
+          cleaned.push(u.toString());
+        } catch {
+          // Skip invalid URL
+        }
+      }
+      // Dedup while preserving order
+      updates.seed_urls = [...new Set(cleaned)];
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
+
+    const { data: updated, error } = await supabase
+      .from("competitors")
+      .update(updates)
+      .eq("slug", slug)
+      .select("id, slug, seed_urls")
+      .single();
+
+    if (error || !updated) {
+      return NextResponse.json({ error: "Competitor not found or update blocked" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      seedUrls: updated.seed_urls || [],
+    });
+  } catch (err) {
+    logger.error("Competitor PATCH failed", { ...requestMeta(req), error: String(err) });
+    return NextResponse.json({ error: "Failed to update competitor" }, { status: 500 });
   }
 }

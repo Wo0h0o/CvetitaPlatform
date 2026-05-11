@@ -1,6 +1,7 @@
 import { fetchWithTimeout } from "./fetch-utils";
 import { logger } from "./logger";
 import { extractMarketsFromHtml } from "./competitor-markets";
+import { canonicalProductName, scoreRelevance } from "./competitor-keywords";
 
 // ---------- Types ----------
 
@@ -57,12 +58,16 @@ async function geminiExtract(prompt: string): Promise<string> {
 
 // ---------- Sitemap Discovery ----------
 
-export async function discoverProductUrls(domain: string, limit = 30): Promise<string[]> {
+/**
+ * Sitemap-based product URL discovery. Walks the full sitemap index (no longer
+ * caps at "first 3 sub-sitemaps") and returns every product-like URL it finds.
+ * Caller is responsible for ranking / capping with `scoreRelevance`.
+ */
+export async function discoverProductUrls(domain: string): Promise<string[]> {
   const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
   const urls: string[] = [];
   const headers = { "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)" };
 
-  // Step 1: Fetch sitemap.xml
   try {
     const res = await fetchWithTimeout(`${baseUrl}/sitemap.xml`, { headers }, 8000);
     if (res.ok) {
@@ -70,22 +75,18 @@ export async function discoverProductUrls(domain: string, limit = 30): Promise<s
       const allLocs = (xml.match(/<loc>([^<]+)<\/loc>/g) || [])
         .map((m) => m.replace(/<\/?loc>/g, ""));
 
-      // Detect: is this a sitemap INDEX (contains links to other .xml files)?
       const isSitemapIndex = xml.includes("<sitemapindex") || allLocs.some((u) => u.endsWith(".xml"));
 
       if (isSitemapIndex) {
-        // It's an index — find sub-sitemaps with product-related names
-        const productSitemaps = allLocs
-          .filter((u) => u.endsWith(".xml") && /product|item|catalog/i.test(u))
-          .slice(0, 3);
-
-        // If no product-specific sitemap, take all sub-sitemaps (some sites use generic names)
-        const sitemapsToFetch = productSitemaps.length > 0
-          ? productSitemaps
-          : allLocs.filter((u) => u.endsWith(".xml")).slice(0, 3);
-
-        for (const subUrl of sitemapsToFetch) {
-          if (urls.length >= limit) break;
+        // Walk every sub-sitemap. Skip ones that are obviously NOT products
+        // (blogs, pages, authors), but otherwise be permissive — many shops
+        // name them generically.
+        const subSitemaps = allLocs.filter((u) =>
+          u.endsWith(".xml") &&
+          !/sitemap[-_](blog|article|news|author|page|tag|category|collection)s?[-_.]/i.test(u)
+        );
+        // Hard cap at 10 sub-sitemaps to prevent runaway scans
+        for (const subUrl of subSitemaps.slice(0, 10)) {
           try {
             const subRes = await fetchWithTimeout(subUrl, { headers }, 10000);
             if (!subRes.ok) continue;
@@ -93,20 +94,13 @@ export async function discoverProductUrls(domain: string, limit = 30): Promise<s
             const subLocs = (subXml.match(/<loc>([^<]+)<\/loc>/g) || [])
               .map((m) => m.replace(/<\/?loc>/g, ""));
             for (const loc of subLocs) {
-              if (isProductUrl(loc)) {
-                urls.push(loc);
-                if (urls.length >= limit) break;
-              }
+              if (isProductUrl(loc)) urls.push(loc);
             }
           } catch { /* skip failed sub-sitemap */ }
         }
       } else {
-        // Regular sitemap — extract product URLs directly
         for (const loc of allLocs) {
-          if (isProductUrl(loc)) {
-            urls.push(loc);
-            if (urls.length >= limit) break;
-          }
+          if (isProductUrl(loc)) urls.push(loc);
         }
       }
     }
@@ -114,36 +108,73 @@ export async function discoverProductUrls(domain: string, limit = 30): Promise<s
     logger.info("Sitemap fetch failed", { domain });
   }
 
-  // Take a spread sample (not just first N — old products tend to be discontinued)
-  const unique = [...new Set(urls)];
-  if (unique.length <= limit) return unique;
+  return [...new Set(urls)];
+}
 
-  // Sample evenly across the list
-  const step = Math.floor(unique.length / limit);
-  const sampled: string[] = [];
-  for (let i = 0; i < unique.length && sampled.length < limit; i += step) {
-    sampled.push(unique[i]);
+/**
+ * Harvest product anchors from a single category / collection / search page.
+ * Used when admin has seeded `competitor.seed_urls` with specific shelves
+ * (e.g. /collections/active-sport) — much higher precision than sitemap walk.
+ */
+export async function harvestProductUrlsFromPage(pageUrl: string): Promise<string[]> {
+  try {
+    const res = await fetchWithTimeout(pageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; CvetitaBot/1.0)",
+        "Accept": "text/html",
+      },
+    }, 12000);
+    if (!res.ok) return [];
+    const html = await res.text();
+    const base = new URL(pageUrl);
+
+    const hrefs = new Set<string>();
+    const anchorRegex = /<a[^>]+href=["']([^"'#]+)["']/gi;
+    let m: RegExpExecArray | null;
+    while ((m = anchorRegex.exec(html))) {
+      try {
+        const abs = new URL(m[1], pageUrl).toString();
+        const u = new URL(abs);
+        // Only same-host, product-shaped paths
+        if (u.host !== base.host) continue;
+        if (!isProductUrl(abs)) continue;
+        hrefs.add(abs.split(/[?#]/)[0]);
+      } catch {
+        /* malformed href */
+      }
+    }
+    return [...hrefs];
+  } catch (err) {
+    logger.error("Harvest from page failed", { pageUrl, error: String(err) });
+    return [];
   }
-
-  logger.info("Product URL discovery complete", { domain, total: unique.length, sampled: sampled.length });
-  return sampled;
 }
 
 function isProductUrl(url: string): boolean {
   const lower = url.toLowerCase();
-  // Common e-commerce product URL patterns
-  if (/\.(jpg|png|gif|css|js|pdf|xml)$/i.test(lower)) return false;
-  if (/\/(cart|checkout|account|login|register|blog|about|contact|policy|terms|faq)/i.test(lower)) return false;
-  if (/\/(category|collection|collections|brand|page|tag)s?\/?$/i.test(lower)) return false;
+  // Common e-commerce non-product paths
+  if (/\.(jpg|jpeg|png|webp|gif|svg|css|js|pdf|xml|json)(?:\?|$)/i.test(lower)) return false;
+  if (/\/(cart|checkout|account|login|register|signup|blog|news|article|about|contact|policy|terms|faq|search|wishlist|compare|sitemap|robots)\b/i.test(lower)) return false;
+  // Pure category/listing paths (no specific product slug)
+  if (/\/(category|categories|collection|collections|brand|brands|page|pages|tag|tags|author|categoria)s?\/?$/i.test(lower)) return false;
   // Positive signals
-  if (/\/product[s]?\//i.test(lower)) return true;
+  if (/\/products?\/[a-z0-9]/i.test(lower)) return true;
   if (/\.html$/i.test(lower)) return true;
-  if (/\/p\/\d/i.test(lower)) return true;
-  // URLs with slugs that look like products (has hyphens, no trailing slash for categories)
-  const path = new URL(url).pathname;
-  const segments = path.split("/").filter(Boolean);
-  if (segments.length >= 1 && segments[segments.length - 1].includes("-")) return true;
-  return false;
+  if (/\/p\/[a-z0-9]/i.test(lower)) return true;
+  try {
+    const path = new URL(url).pathname;
+    const segments = path.split("/").filter(Boolean);
+    if (segments.length === 0) return false;
+    const last = segments[segments.length - 1];
+    // Last segment must look like a slug (has a hyphen or unicode letters + length >= 4)
+    if (last.length < 4) return false;
+    if (last.includes("-")) return true;
+    // Latin-only single word slug must be at least 6 chars (avoid /shop, /sale)
+    if (/^[a-z0-9]+$/.test(last)) return last.length >= 8;
+    return /[а-я]/.test(last); // BG slug without hyphens
+  } catch {
+    return false;
+  }
 }
 
 // ---------- Product Extraction (JSON-LD first, Gemini fallback) ----------
@@ -258,27 +289,56 @@ async function detectMarkets(domain: string): Promise<{ markets: string[]; siste
   }
 }
 
+export interface ScanOptions {
+  /** Final cap on scraped products after relevance + dedup. Default 100. */
+  limit?: number;
+  /**
+   * Admin-curated category/collection URLs to harvest product links from.
+   * If empty, scanner falls back to sitemap.xml discovery.
+   */
+  seedUrls?: string[];
+  /**
+   * Cvetita-catalog-derived keyword set. If provided, candidate URLs and
+   * extracted product names are scored against it; only relevance > 0 kept.
+   */
+  relevanceKeywords?: Set<string>;
+}
+
 export async function scanCompetitor(
   domain: string,
-  limit = 30
+  opts: ScanOptions = {}
 ): Promise<ScanResult> {
-  // Step 0: Detect markets from homepage (parallel-safe with URL discovery)
-  const [marketsInfo, urls] = await Promise.all([
-    detectMarkets(domain),
-    discoverProductUrls(domain, limit),
-  ]);
-  logger.info("Product URLs discovered", { domain, count: urls.length, markets: marketsInfo.markets });
+  const limit = opts.limit ?? 100;
 
-  if (urls.length === 0) {
-    return { products: [], urlsFound: 0, urlsScanned: 0, ...marketsInfo };
+  // ---- Step 0: markets + URL discovery (parallel) ----
+  const [marketsInfo, discoveredUrls] = await Promise.all([
+    detectMarkets(domain),
+    discoverCandidateUrls(domain, opts.seedUrls),
+  ]);
+
+  // ---- Step 1: relevance ranking ----
+  const ranked = rankCandidates(discoveredUrls, opts.relevanceKeywords);
+  // Over-fetch 2× the limit so dedup losses don't starve the final list
+  const toFetch = ranked.slice(0, limit * 2);
+
+  logger.info("Candidate URLs ranked", {
+    domain,
+    discovered: discoveredUrls.length,
+    relevant: ranked.length,
+    toFetch: toFetch.length,
+    markets: marketsInfo.markets,
+    seeded: (opts.seedUrls?.length ?? 0) > 0,
+  });
+
+  if (toFetch.length === 0) {
+    return { products: [], urlsFound: discoveredUrls.length, urlsScanned: 0, ...marketsInfo };
   }
 
-  // Step 2: Fetch & extract products (parallel, max 5 at a time)
+  // ---- Step 2: fetch + extract (parallel, batch of 5) ----
   const products: ScannedProduct[] = [];
   const batchSize = 5;
-
-  for (let i = 0; i < urls.length; i += batchSize) {
-    const batch = urls.slice(i, i + batchSize);
+  for (let i = 0; i < toFetch.length; i += batchSize) {
+    const batch = toFetch.slice(i, i + batchSize);
     const results = await Promise.allSettled(
       batch.map(async (url) => {
         const res = await fetchWithTimeout(url, {
@@ -287,19 +347,65 @@ export async function scanCompetitor(
             "Accept": "text/html",
           },
         }, 8000);
-
         if (!res.ok) return null;
         const html = await res.text();
         return extractProductFromHtml(html, url);
       })
     );
-
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value) {
-        products.push(result.value);
-      }
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) products.push(r.value);
     }
   }
 
-  return { products, urlsFound: urls.length, urlsScanned: urls.length, ...marketsInfo };
+  // ---- Step 3: second relevance pass (now we have the real name) ----
+  let filtered = products;
+  if (opts.relevanceKeywords) {
+    filtered = products.filter(
+      (p) => scoreRelevance({ url: p.url, name: p.name }, opts.relevanceKeywords!) > 0
+    );
+  }
+
+  // ---- Step 4: dedup by canonical name (keep cheapest variant) ----
+  const canonMap = new Map<string, ScannedProduct>();
+  for (const p of filtered) {
+    const key = canonicalProductName(p.name);
+    const existing = canonMap.get(key);
+    if (!existing || p.price < existing.price) {
+      canonMap.set(key, p);
+    }
+  }
+  const deduped = [...canonMap.values()].slice(0, limit);
+
+  return {
+    products: deduped,
+    urlsFound: discoveredUrls.length,
+    urlsScanned: toFetch.length,
+    ...marketsInfo,
+  };
+}
+
+/**
+ * Resolve the candidate URL pool. Seed URLs win if present (admin-curated
+ * shelves give much better precision); otherwise fall back to sitemap walk.
+ */
+async function discoverCandidateUrls(domain: string, seedUrls?: string[]): Promise<string[]> {
+  if (seedUrls && seedUrls.length > 0) {
+    const harvested = await Promise.all(seedUrls.map((u) => harvestProductUrlsFromPage(u)));
+    return [...new Set(harvested.flat())];
+  }
+  return discoverProductUrls(domain);
+}
+
+/**
+ * Score every candidate URL by Cvetita-keyword relevance. Returns the URLs
+ * sorted by score desc. If no keywords provided, returns the raw list
+ * (no filtering, no ordering).
+ */
+function rankCandidates(urls: string[], keywords?: Set<string>): string[] {
+  if (!keywords || keywords.size === 0) return urls;
+  const scored = urls
+    .map((url) => ({ url, score: scoreRelevance({ url }, keywords) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.url);
 }

@@ -3,6 +3,8 @@ import { requireCronSecret } from "@/lib/api-auth";
 import { createClient } from "@supabase/supabase-js";
 import { scanCompetitor } from "@/lib/competitor-scanner";
 import { searchCompetitorIntel } from "@/lib/competitor-scraper";
+import { buildCvetitaKeywords } from "@/lib/competitor-keywords";
+import { fetchProductCatalog } from "@/lib/shopify";
 import { logger } from "@/lib/logger";
 
 // Use service role for cron — no user session
@@ -35,11 +37,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: "No active competitors" });
     }
 
+    // Cvetita relevance keywords — shared across all competitors in this run
+    let relevanceKeywords: Set<string> | undefined;
+    try {
+      const catalog = await fetchProductCatalog();
+      relevanceKeywords = buildCvetitaKeywords(catalog);
+    } catch (catErr) {
+      logger.error("Catalog load for cron relevance failed (non-fatal)", { error: String(catErr) });
+    }
+
     for (const comp of competitors) {
       // 1. Product scanning (sitemap discovery + price extraction)
       if (comp.domain) {
         try {
-          const scanResult = await scanCompetitor(comp.domain, 20);
+          const seedUrls = Array.isArray(comp.seed_urls) ? (comp.seed_urls as string[]) : [];
+          const scanResult = await scanCompetitor(comp.domain, {
+            limit: 100,
+            seedUrls: seedUrls.length > 0 ? seedUrls : undefined,
+            relevanceKeywords,
+          });
           if (scanResult.products.length > 0) {
             await supabase.from("competitor_prices").insert(
               scanResult.products.map((p) => ({

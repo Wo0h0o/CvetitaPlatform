@@ -29,6 +29,7 @@ interface CompetitorDetail {
     logo_url: string | null;
     markets: string[];
     sisterDomains: string[];
+    seedUrls: string[];
     lastScanAt: string | null;
   };
   latestPrices: Array<{

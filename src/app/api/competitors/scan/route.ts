@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { scanCompetitor } from "@/lib/competitor-scanner";
 import { searchCompetitorIntel } from "@/lib/competitor-scraper";
+import { buildCvetitaKeywords } from "@/lib/competitor-keywords";
+import { fetchProductCatalog } from "@/lib/shopify";
 import { logger, requestMeta } from "@/lib/logger";
 
 export const maxDuration = 120;
@@ -68,8 +70,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Run scan
-    const result = await scanCompetitor(comp.domain, 30);
+    // Build Cvetita-keyword relevance set from our Shopify catalog (5-min cached)
+    let relevanceKeywords: Set<string> | undefined;
+    try {
+      const catalog = await fetchProductCatalog();
+      relevanceKeywords = buildCvetitaKeywords(catalog);
+    } catch (catErr) {
+      logger.error("Catalog load for relevance failed (non-fatal)", { error: String(catErr) });
+    }
+
+    // Run scan with admin-curated seed URLs (if any) + relevance filter
+    const seedUrls = Array.isArray(comp.seed_urls) ? (comp.seed_urls as string[]) : [];
+    const result = await scanCompetitor(comp.domain, {
+      limit: 100,
+      seedUrls: seedUrls.length > 0 ? seedUrls : undefined,
+      relevanceKeywords,
+    });
     const alerts: { type: string; title: string; data: Record<string, unknown> }[] = [];
 
     if (result.products.length > 0) {

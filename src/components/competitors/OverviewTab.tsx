@@ -4,12 +4,15 @@ import { Card, CardBody, CardHeader } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
 import { ExternalLink, Globe, Package, Boxes, AlertCircle, Link2 } from "lucide-react";
 import { marketFlag, marketLabel } from "@/lib/competitor-markets";
+import { SeedUrlsCard } from "./SeedUrlsCard";
 
 interface OverviewTabProps {
   competitor: {
+    slug: string;
     domain: string | null;
     markets: string[];
     sisterDomains: string[];
+    seedUrls: string[];
   };
   stats: {
     productsTracked: number;
@@ -36,6 +39,9 @@ export function OverviewTab({ competitor, stats, latestPrices }: OverviewTabProp
         <KpiTile icon={Link2} label="Mapped към наши" value={String(stats.mappedProducts)} />
         <KpiTile icon={AlertCircle} label="Непрочетени промени" value={String(stats.unreadAlerts)} variant={stats.unreadAlerts > 0 ? "red" : "neutral"} />
       </div>
+
+      {/* Seed URLs — admin control */}
+      <SeedUrlsCard competitorSlug={competitor.slug} initialSeedUrls={competitor.seedUrls} />
 
       {/* Markets */}
       <Card>
