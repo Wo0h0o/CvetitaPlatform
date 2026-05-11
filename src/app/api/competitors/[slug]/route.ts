@@ -89,10 +89,24 @@ export async function GET(
       .eq("competitor_id", comp.id)
       .eq("is_read", false);
 
-    const { count: mappedCount } = await supabase
-      .from("competitor_product_map")
-      .select("*", { count: "exact", head: true })
-      .eq("competitor_id", comp.id);
+    // Mapped count — only count mappings whose URL is in the current scan.
+    // Orphan mappings (stale URL no longer scanned) are preserved in DB but
+    // not counted in the badge so the UI stays consistent with what's visible.
+    let mappedCount = 0;
+    if (currentScanUrls.size > 0) {
+      const { data: activeMappings } = await supabase
+        .from("competitor_product_map")
+        .select("competitor_product_url")
+        .eq("competitor_id", comp.id)
+        .in("competitor_product_url", Array.from(currentScanUrls));
+      mappedCount = activeMappings?.length || 0;
+    } else {
+      const { count } = await supabase
+        .from("competitor_product_map")
+        .select("*", { count: "exact", head: true })
+        .eq("competitor_id", comp.id);
+      mappedCount = count || 0;
+    }
 
     return NextResponse.json({
       competitor: {

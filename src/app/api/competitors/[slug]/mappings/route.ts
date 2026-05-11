@@ -16,7 +16,7 @@ async function resolveCompetitor(req: NextRequest, slug: string) {
   const supabase = getSupabase(req);
   const { data: comp } = await supabase
     .from("competitors")
-    .select("id, organization_id")
+    .select("id, organization_id, settings")
     .eq("slug", slug)
     .single();
   return comp;
@@ -40,7 +40,7 @@ export async function GET(
     }
 
     // Load mappings
-    const { data: mappings, error } = await supabase
+    const { data: allMappings, error } = await supabase
       .from("competitor_product_map")
       .select("*")
       .eq("competitor_id", comp.id)
@@ -48,7 +48,16 @@ export async function GET(
 
     if (error) throw error;
 
-    if (!mappings || mappings.length === 0) {
+    // Filter out orphan mappings — those whose competitor_product_url is not
+    // in the latest successful scan. The mapping rows are preserved in DB
+    // so they auto-reappear if the URL comes back in a future scan.
+    const settings = (comp.settings || {}) as { productUrls?: string[] };
+    const currentScanUrls = new Set(settings.productUrls || []);
+    const mappings = currentScanUrls.size > 0
+      ? (allMappings || []).filter((m) => currentScanUrls.has(m.competitor_product_url))
+      : (allMappings || []);
+
+    if (mappings.length === 0) {
       return NextResponse.json({ mappings: [] });
     }
 
