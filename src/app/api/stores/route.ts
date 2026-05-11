@@ -47,7 +47,7 @@ interface CreateStoreBody {
   apiVersion?: string;
 }
 
-const VALID_MARKETS = new Set(["bg", "gr", "ro", "hu", "hr", "rs"]);
+const VALID_MARKETS = new Set(["bg", "gr", "ro", "de", "it", "uk", "hu", "hr", "rs"]);
 
 export async function POST(req: NextRequest) {
   const authError = await requireAuth(req);
