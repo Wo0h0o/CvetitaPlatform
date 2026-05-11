@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 
 // ============================================================
 // Types (align with /api/dashboard/home/action-cards response)
@@ -54,6 +55,21 @@ const SCALE_PRESETS: Array<{ label: string; factor: number }> = [
   { label: "+50%", factor: 1.5 },
   { label: "+100%", factor: 2.0 },
 ];
+
+// Meta naming convention separates segments with `|`
+// (e.g. `MAN PRO | 10.03 | PRODUCT PAGE | CPR | VJ`).
+// Render the first segment as the heading and the rest as small chips.
+const TITLE_QUOTE_CHARS = /["'""«»„]/g;
+function parseTitle(title: string): { primary: string; chips: string[] } {
+  if (!title.includes("|")) return { primary: title, chips: [] };
+  const parts = title
+    .split("|")
+    .map((s) => s.replace(TITLE_QUOTE_CHARS, "").trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return { primary: title, chips: [] };
+  const [primary, ...chips] = parts;
+  return { primary, chips };
+}
 
 // ============================================================
 // Component
@@ -117,12 +133,39 @@ export function ActionCard({ data, onAction }: ActionCardProps) {
         ${BORDER_CLASS[data.severity]}
       `}
     >
-      <div className="flex flex-col gap-1.5 flex-1">
-        <h3 className="text-[14px] font-semibold text-text leading-snug">
-          {data.title}
-        </h3>
-        <p className="text-[12px] text-text-2 leading-snug">{data.why}</p>
-      </div>
+      {(() => {
+        const { primary, chips } = parseTitle(data.title);
+        return (
+          <div className="flex items-start justify-between gap-2 flex-1">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <h3 className="text-[14px] font-semibold text-text leading-snug">
+                {primary}
+              </h3>
+              {chips.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {chips.map((c, i) => (
+                    <span
+                      key={i}
+                      className="px-1.5 py-0.5 text-[10px] font-medium text-text-3 bg-surface-2 rounded"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="text-[12px] text-text-2 leading-snug">{data.why}</p>
+            </div>
+            {data.target.marketCode && (
+              <MarketFlag
+                market={data.target.marketCode}
+                size={16}
+                labelled
+                className="mt-0.5"
+              />
+            )}
+          </div>
+        );
+      })()}
 
       {mode === "idle" && (
         <div className="flex items-center gap-2 flex-wrap">
