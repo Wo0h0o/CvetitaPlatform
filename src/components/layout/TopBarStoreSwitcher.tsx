@@ -7,7 +7,7 @@ import { ChevronDown } from "lucide-react";
 import { MarketFlag } from "@/components/shared/MarketFlag";
 // BorderLevel + StoreCardData are canonical in StoreCard.tsx; the switcher
 // consumes the same /api/dashboard/home/stores shape.
-import { type BorderLevel, type StoreCardData } from "@/components/dashboard/StoreCard";
+import { type BorderLevel, type StoreCardData } from "@/components/dashboard/store-state";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -85,13 +85,13 @@ export function TopBarStoreSwitcher() {
   // for hidden routes doesn't short-circuit any hooks below.
   const ctx = classifyPath(pathname);
 
-  // Reuse the same /api/dashboard/home/stores endpoint that StoreMultiples
+  // Reuse the same /api/dashboard/home/stores endpoint that StoresTable
   // fetches on the home page — SWR dedupes across routes.
   //
   // refreshInterval: without this the switcher fetches once on mount and
   // stays frozen. Users who open Home → navigate to /ads/* would see stale
   // ROAS badges next to the current live KPIs on the drill-down page.
-  // 60s matches StoreMultiples' cadence and the endpoint's s-maxage.
+  // 60s matches StoresTable's cadence and the endpoint's s-maxage.
   const { data } = useSWR<StoresResponse>(
     ctx.kind === "hidden" ? null : "/api/dashboard/home/stores",
     fetcher,

@@ -12,7 +12,7 @@ import {
   EARLY_DAY_THRESHOLD_HOURS,
   type DisplayState,
   type StoreCardData,
-} from "./StoreCard";
+} from "./store-state";
 import { ArrowRight } from "lucide-react";
 
 // ============================================================
@@ -62,9 +62,14 @@ function fmtRoas(n: number): string {
   return n > 0 ? n.toFixed(2) : "—";
 }
 
+// Attribution % can briefly exceed 100 when Meta credits a purchase
+// before the matching Shopify webhook lands. Match the top-strip's
+// rendering convention: cap the display at "100%+" so the operator
+// reads a coherent number across both surfaces.
 function fmtPct(part: number, whole: number): string {
   if (whole <= 0) return "—";
-  return `${Math.round((part / whole) * 100)}%`;
+  const pct = Math.round((part / whole) * 100);
+  return pct > 100 ? "100%+" : `${pct}%`;
 }
 
 // ============================================================
@@ -179,8 +184,17 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
             {rows.map(({ store, state }) => (
               <tr
                 key={store.storeId}
+                role="button"
+                tabIndex={0}
+                aria-label={`Отвори продажби за ${store.name}`}
                 onClick={() => onRowClick(store.storeId)}
-                className="border-t border-border hover:bg-surface-2 cursor-pointer transition-colors"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onRowClick(store.storeId);
+                  }
+                }}
+                className="border-t border-border hover:bg-surface-2 cursor-pointer transition-colors focus:outline-none focus:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset"
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">

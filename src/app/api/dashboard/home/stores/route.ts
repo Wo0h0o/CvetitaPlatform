@@ -8,9 +8,9 @@ import {
   type ResolvedMarket,
 } from "@/lib/store-market-resolver";
 import { sofiaDate, lastNDates } from "@/lib/sofia-date";
-// Canonical BorderLevel lives in StoreCard — the route's payload is what
-// that component renders, so the type must stay in sync.
-import type { BorderLevel } from "@/components/dashboard/StoreCard";
+// Canonical BorderLevel lives in store-state — the route's payload is what
+// the home dashboard renders, so the type must stay in sync.
+import type { BorderLevel } from "@/components/dashboard/store-state";
 
 // ============================================================
 // Types
@@ -152,9 +152,9 @@ async function buildStoreCard(
     });
   }
 
-  // Sparkline: revenue per day, zero-filled. (Footnote in 08-week3-plan.md
-  // §2b: v1 uses Meta-reported revenue for internal consistency with the
-  // ROAS ratio; may swap to Shopify-actual in W4/W5.)
+  // Sparkline: Meta-revenue per day, zero-filled. Kept on Meta so the
+  // sparkline trend matches the ROAS denominator the card displays.
+  // (Shopify revenue lives in shopifyTodayRevenue for the table column.)
   const sparkline14d = dates14.map((d) => byDate.get(d)?.revenue ?? 0);
 
   const todayRow = byDate.get(todayIso);
