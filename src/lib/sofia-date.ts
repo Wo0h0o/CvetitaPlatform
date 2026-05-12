@@ -183,7 +183,22 @@ export function resolveDateWindow(
     }
   }
 
-  const days = daysBetween(from, to);
+  // Clamp future endpoints to today. Picking a future window through the
+  // custom picker would otherwise return 0-everywhere with "-100% vs
+  // предходен период" — technically true, practically baffling.
+  if (to > today) to = today;
+  if (from > today) from = today;
+
+  // Cap window length at 366 days. Long custom ranges silently truncate
+  // inside expandRange() in the routes, which means partial data with
+  // no signal — better to clamp visibly here at the source.
+  const MAX_DAYS = 366;
+  let days = daysBetween(from, to);
+  if (days > MAX_DAYS) {
+    from = shiftDate(to, MAX_DAYS - 1);
+    days = MAX_DAYS;
+  }
+
   const compTo = shiftDate(from, 1);
   const compFrom = shiftDate(compTo, days - 1);
 

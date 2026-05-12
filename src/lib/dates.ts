@@ -9,18 +9,46 @@ export interface DateRange {
   label: string;
 }
 
-function formatDateUTC(d: Date): string {
-  return d.toISOString().split("T")[0];
+// Sofia-anchored ISO date (YYYY-MM-DD). The business operates in
+// Europe/Sofia and the server's date-window resolver is Sofia-anchored
+// too, so the client must agree — otherwise the picker prefills inputs
+// with a UTC date that's off by one between 22:00–23:59 UTC.
+const SOFIA_TZ = "Europe/Sofia";
+function formatSofiaDate(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SOFIA_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+// UTC formatter used only for the internal compFrom/compTo math below —
+// those JS Dates are constructed as UTC midnight and offset by whole
+// days, so we format them in UTC to get back the same ISO string.
+function formatUTCDate(d: Date): string {
+  const yy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 function daysAgo(days: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return formatDateUTC(d);
+  const today = formatSofiaDate(new Date());
+  // Parse the Sofia ISO as UTC midnight and offset by whole days. We do
+  // not use setUTCDate on a `new Date()` because that would subtract
+  // from the *UTC* day, reintroducing the boundary bug we're fixing.
+  const [y, m, d] = today.split("-").map(Number);
+  const t = Date.UTC(y, m - 1, d) - days * 86_400_000;
+  const dt = new Date(t);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 export function getDateRange(preset: DatePreset, customFrom?: string, customTo?: string): DateRange {
-  const today = formatDateUTC(new Date());
+  const today = formatSofiaDate(new Date());
 
   let from: string;
   let to: string;
@@ -77,8 +105,8 @@ export function getDateRange(preset: DatePreset, customFrom?: string, customTo?:
   return {
     from,
     to,
-    compFrom: formatDateUTC(compFromDate),
-    compTo: formatDateUTC(compToDate),
+    compFrom: formatUTCDate(compFromDate),
+    compTo: formatUTCDate(compToDate),
     preset,
     label,
   };

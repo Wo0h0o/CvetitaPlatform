@@ -148,10 +148,14 @@ interface StoresTableProps {
 
 export function StoresTable({ queryString, preset, rangeLabel }: StoresTableProps) {
   const router = useRouter();
+  // 60s for today (intraday values drift); 5 min for ranges (one new
+  // order on day 28 of a 30d window is invisible at the precision the
+  // table renders, so the constant refetch is just noise).
+  const refreshInterval = preset === "today" ? 60_000 : 300_000;
   const { data, isLoading, error } = useSWR<StoresResponse>(
     `/api/dashboard/home/stores?${queryString}`,
     fetcher,
-    { refreshInterval: 60_000, revalidateOnFocus: false }
+    { refreshInterval, revalidateOnFocus: false }
   );
 
   const description =

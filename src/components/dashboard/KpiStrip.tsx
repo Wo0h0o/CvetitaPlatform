@@ -93,6 +93,12 @@ interface TileProps {
    * attribution). Stays subtle so the primary number still leads the eye.
    */
   subText?: string;
+  /**
+   * Label shown when `vsTypical` is null. Defaults to "още рано" (today
+   * pacing semantics — too early to project); range mode passes "няма
+   * сравнение" because there's no time-of-day signal to wait for.
+   */
+  nullLabel?: string;
 }
 
 function Tile({
@@ -103,12 +109,13 @@ function Tile({
   typicalLabel,
   hideDelta,
   subText,
+  nullLabel = "още рано",
 }: TileProps) {
   let deltaNode: React.ReactNode;
   if (hideDelta) {
     deltaNode = null;
   } else if (vsTypical === null) {
-    deltaNode = <span className="text-text-3">още рано</span>;
+    deltaNode = <span className="text-text-3">{nullLabel}</span>;
   } else {
     const sign = vsTypical > 0 ? "+" : "";
     const color =
@@ -218,10 +225,14 @@ interface KpiStripProps {
 
 export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
   const isToday = preset === "today";
+  // 60s refresh for today (the running totals change minute-by-minute);
+  // 5 min for historical ranges (today's row contributes <0.1% of a 30d
+  // sum — no point hammering the edge cache).
+  const refreshInterval = isToday ? 60_000 : 300_000;
   const { data, isLoading, error } = useSWR<TopStripResponse>(
     `/api/dashboard/home/top-strip?${queryString}`,
     fetcher,
-    { refreshInterval: 60_000, revalidateOnFocus: false }
+    { refreshInterval, revalidateOnFocus: false }
   );
 
   // For today, comparison baseline is the matched-hour same-weekday
@@ -288,6 +299,17 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
         ? `${fmtEur(ads.attribution.metaRevenue)} vs ${fmtEur(ads.attribution.shopifyRevenue)} Shopify · Meta изпреварва`
         : `${fmtEur(ads.attribution.metaRevenue)} от ${fmtEur(ads.attribution.shopifyRevenue)} Shopify`;
 
+  // Anomaly pill is locked to today's pending agent_briefs. In range
+  // mode it would float under the "30 дни" header but mean "right now",
+  // which reads wrong. Hide it; the operator still sees freshness via
+  // the FreshnessDot.
+  const showAnomalyPill = isToday && data.anomalyCount > 0;
+
+  // Range-mode tiles show "няма сравнение" instead of "още рано" when
+  // the previous-period denominator is 0 — no time-of-day signal to
+  // wait for, just nothing to compare against.
+  const nullLabel = isToday ? undefined : "няма сравнение";
+
   return (
     <>
       <SectionShell title={businessTitle} description={BUSINESS_DESC}>
@@ -301,6 +323,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
               : null
           }
           typicalLabel={typicalLabel}
+          nullLabel={nullLabel}
         />
         <Tile
           label="Поръчки"
@@ -312,6 +335,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
               : null
           }
           typicalLabel={typicalLabel}
+          nullLabel={nullLabel}
         />
         <Tile
           label="Средна стойност"
@@ -328,7 +352,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
         description={ADS_DESC}
         right={
           <>
-            {data.anomalyCount > 0 && (
+            {showAnomalyPill && (
               <span
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-red-soft text-red animate-pulse"
                 aria-label={`${data.anomalyCount} аномалии`}
@@ -350,6 +374,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             ads.spend.projected !== null ? fmtEur(ads.spend.projected) : null
           }
           typicalLabel={typicalLabel}
+          nullLabel={nullLabel}
         />
         <Tile
           label="ROAS"
