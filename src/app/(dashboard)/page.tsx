@@ -16,7 +16,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader title="Командно табло">
-        <DateRangePicker />
+        <DateRangePicker defaultPreset="today" />
       </PageHeader>
       <KpiStrip queryString={queryString} preset={preset} rangeLabel={label} />
       <StoresTable queryString={queryString} rangeLabel={label} preset={preset} />

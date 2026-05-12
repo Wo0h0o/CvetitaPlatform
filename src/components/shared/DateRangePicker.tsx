@@ -13,8 +13,18 @@ const presets: { id: DatePreset; label: string }[] = [
   { id: "90d", label: "90д" },
 ];
 
-export function DateRangePicker() {
-  const { preset, from, to, setPreset, setCustomRange } = useDateRange();
+/**
+ * `defaultPreset` must match whatever the parent page passed to its own
+ * `useDateRange(...)` call — otherwise the highlighted chip drifts away
+ * from the actual data window (e.g. Dashboard uses "today" while the
+ * picker would default to "30d" and highlight the wrong chip).
+ */
+export function DateRangePicker({
+  defaultPreset,
+}: {
+  defaultPreset?: DatePreset;
+} = {}) {
+  const { preset, from, to, setPreset, setCustomRange } = useDateRange(defaultPreset);
   const [showCustom, setShowCustom] = useState(false);
   const [customFrom, setCustomFrom] = useState(from);
   const [customTo, setCustomTo] = useState(to);
