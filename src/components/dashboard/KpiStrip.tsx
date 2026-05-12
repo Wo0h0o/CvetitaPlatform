@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
+import type { DatePreset } from "@/lib/dates";
 
 // ============================================================
 // Types — mirror /api/dashboard/home/top-strip response.
@@ -16,6 +17,13 @@ interface TempoMetric {
 }
 
 interface TopStripResponse {
+  mode: "today" | "range";
+  window: {
+    from: string;
+    to: string;
+    preset: DatePreset;
+    days: number;
+  };
   business: {
     revenue: TempoMetric;
     orders: TempoMetric;
@@ -199,21 +207,39 @@ const BUSINESS_DESC =
 const ADS_DESC =
   "Meta — разход, ROAS и каква част от бизнеса идва от платените канали.";
 
-export function KpiStrip() {
+interface KpiStripProps {
+  /** Query string from useDateRange (e.g. "preset=today" or "preset=30d"). */
+  queryString: string;
+  /** Echoed preset — drives "today" vs "range" rendering. */
+  preset: DatePreset;
+  /** Human label for the active range (e.g. "Днес", "30 дни"). */
+  rangeLabel: string;
+}
+
+export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
+  const isToday = preset === "today";
   const { data, isLoading, error } = useSWR<TopStripResponse>(
-    "/api/dashboard/home/top-strip",
+    `/api/dashboard/home/top-strip?${queryString}`,
     fetcher,
     { refreshInterval: 60_000, revalidateOnFocus: false }
   );
 
+  // For today, comparison baseline is the matched-hour same-weekday
+  // average; show that weekday in the delta label. For other ranges
+  // we compare to the equal-length preceding period.
   const weekdayBg = sofiaWeekdayBg(new Date());
-  const typicalLabel = `${typicalAdjectiveBg(weekdayBg)} ${weekdayBg}`;
+  const typicalLabel = isToday
+    ? `${typicalAdjectiveBg(weekdayBg)} ${weekdayBg}`
+    : "предходен период";
+
+  const businessTitle = isToday ? "Бизнес днес" : `Бизнес — ${rangeLabel}`;
+  const adsTitle = isToday ? "Реклами днес" : `Реклами — ${rangeLabel}`;
 
   if (isLoading || !data) {
     return (
       <>
-        <LoadingStrip title="Бизнес днес" description={BUSINESS_DESC} />
-        <LoadingStrip title="Реклами днес" description={ADS_DESC} />
+        <LoadingStrip title={businessTitle} description={BUSINESS_DESC} />
+        <LoadingStrip title={adsTitle} description={ADS_DESC} />
       </>
     );
   }
@@ -264,7 +290,7 @@ export function KpiStrip() {
 
   return (
     <>
-      <SectionShell title="Бизнес днес" description={BUSINESS_DESC}>
+      <SectionShell title={businessTitle} description={BUSINESS_DESC}>
         <Tile
           label="Приходи"
           value={fmtEur(business.revenue.value)}
@@ -298,7 +324,7 @@ export function KpiStrip() {
       </SectionShell>
 
       <SectionShell
-        title="Реклами днес"
+        title={adsTitle}
         description={ADS_DESC}
         right={
           <>

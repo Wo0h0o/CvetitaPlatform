@@ -7,54 +7,65 @@ import {
   resolveAllHomeMarkets,
   type ResolvedMarket,
 } from "@/lib/store-market-resolver";
-import { sofiaDate, lastNDates } from "@/lib/sofia-date";
+import {
+  lastNDates,
+  resolveDateWindow,
+  shiftDate,
+  type DateWindow,
+} from "@/lib/sofia-date";
 // Canonical BorderLevel lives in store-state — the route's payload is what
 // the home dashboard renders, so the type must stay in sync.
 import type { BorderLevel } from "@/components/dashboard/store-state";
 
 // ============================================================
 // Types
+//
+// Field names stay anchored on "today" for backwards compatibility (the
+// TopBarStoreSwitcher and `deriveDisplayState` consume them). When the
+// dashboard filter selects a range, these fields carry the SUM over that
+// range — semantics are documented per-field.
 // ============================================================
 
 interface StoreCardPayload {
-  /** Store UUID — used as the card-tap target (/sales/store/[storeId]). */
   storeId: string;
   marketCode: string;
   name: string;
-  /** 14 values, oldest first, one per day. Zero-filled for missing days. */
+  /**
+   * 14 values, oldest first, one per day. Anchored to the trailing 14
+   * days ending at `window.to` so the sparkline stays a stable visual
+   * baseline regardless of the selected window.
+   */
   sparkline14d: number[];
   /**
-   * Today's spend in EUR. Frontend uses this to distinguish "campaigns
-   * paused" (todaySpend === 0) from "spend going but no conversions yet"
-   * (todaySpend > 0, roasLast24h === 0) — two states that previously
-   * collapsed into a single amber "леко под нормата" label.
+   * Meta spend over the selected window (EUR). Frontend uses 0 to mean
+   * "campaigns paused / no activity in this window".
    */
   todaySpend: number;
-  /** Today's revenue in EUR (Meta-attributed). */
+  /** Meta-attributed revenue over the selected window (EUR). */
   todayRevenue: number;
-  /**
-   * Today's Shopify revenue for this store. Drives the "real revenue" column
-   * in StoresTable so the row composes with the top-strip business block.
-   */
+  /** Shopify revenue over the selected window (EUR). */
   shopifyTodayRevenue: number;
-  /** Today's Shopify orders count for this store. */
+  /** Shopify orders count over the selected window. */
   shopifyTodayOrders: number;
-  /** Today's ROAS (revenue / spend). 0 when spend is 0 or no data yet. */
+  /** ROAS over the window = revenue / spend. 0 when spend is 0. */
   roasLast24h: number;
-  /** Median of the prior 13 days' daily ROAS. Days with spend=0 are skipped. */
+  /**
+   * Median ROAS of the trailing 14 days ending at `window.to`, excluding
+   * the window itself (so the baseline isn't compared against itself).
+   */
   roasMedian14d: number;
   borderLevel: BorderLevel;
-  /** Most recent sync across all bound integration_accounts. ISO timestamp. */
   lastSyncedAt: string | null;
-  /**
-   * MAX(created_at) across all bound integration_accounts. FreshnessDot uses
-   * this to distinguish "freshly bound, cron hasn't fired yet" (amber) from
-   * "never synced, something is broken" (red).
-   */
   accountCreatedAt: string | null;
 }
 
 interface StoresResponse {
+  window: {
+    from: string;
+    to: string;
+    preset: DateWindow["preset"];
+    days: number;
+  };
   stores: StoreCardPayload[];
 }
 
@@ -69,9 +80,9 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function deriveBorder(today: number, medianRoas: number): BorderLevel {
-  if (medianRoas === 0 || today === 0) return "amber";
-  const ratio = today / medianRoas;
+function deriveBorder(current: number, medianRoas: number): BorderLevel {
+  if (medianRoas === 0 || current === 0) return "amber";
+  const ratio = current / medianRoas;
   if (ratio < 0.7) return "red";
   if (ratio < 0.9) return "amber";
   return "green";
@@ -93,60 +104,85 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Inclusive ISO date range expanded forward. Capped at 366 days. */
+function expandRange(fromIso: string, toIso: string): string[] {
+  const out: string[] = [];
+  let cursor = fromIso;
+  let guard = 0;
+  while (cursor <= toIso && guard < 366) {
+    out.push(cursor);
+    cursor = shiftDate(cursor, -1);
+    guard++;
+  }
+  return out;
+}
+
 async function buildStoreCard(
   market: ResolvedMarket,
-  todayIso: string
+  windowSpec: DateWindow
 ): Promise<StoreCardPayload> {
-  const dates14 = lastNDates(14, todayIso);
-  const oldest = dates14[0];
+  // Sparkline anchor: trailing 14 days ending at window.to. Stable
+  // visual baseline regardless of selected window.
+  const dates14 = lastNDates(14, windowSpec.to);
+  const windowDates = expandRange(windowSpec.from, windowSpec.to);
 
-  // Parallel: 14-day Meta insights + last_synced_at + today's Shopify
-  // daily_aggregates for this specific store's schema. The Shopify row
-  // gives the row in StoresTable a real "приходи днес" column that
-  // composes with the top-strip business block.
-  //
-  // We call the public `read_store_daily_aggregates` RPC instead of the
-  // schema-mounted `.schema(s).from('daily_aggregates')` path because
-  // PostgREST's exposed-schemas cache doesn't always reload promptly when
-  // new per-store schemas are seeded. Going through a public function
-  // bypasses that cache entirely. See migration 025.
+  // Baseline for the median ROAS comparison: the 14 days immediately
+  // preceding the selected window. Using "trailing 14d ending at
+  // window.to" instead would shrink to 0 for 14d+ ranges (every day
+  // would be inside the window) and the border would always be amber.
+  const baselineEnd = shiftDate(windowSpec.from, 1); // day before window
+  const baselineDates = lastNDates(14, baselineEnd);
+
+  // Union of dates we need to query Meta for: sparkline + window +
+  // baseline. Deduped because they overlap for short windows.
+  const insightsDates = Array.from(
+    new Set<string>([...dates14, ...windowDates, ...baselineDates])
+  );
+  const oldestInsight = insightsDates.reduce(
+    (acc, d) => (acc < d ? acc : d),
+    insightsDates[0]
+  );
+  const newestInsight = insightsDates.reduce(
+    (acc, d) => (acc > d ? acc : d),
+    insightsDates[0]
+  );
+
   const storeSchema = `store_${market.marketCode}`;
-  const [insightsRes, accountsRes, shopifyTodayRes] = await Promise.all([
+  const [insightsRes, accountsRes, shopifyWindowRes] = await Promise.all([
     supabaseAdmin
       .from("meta_insights_by_store")
       .select("date, spend, revenue")
       .eq("store_id", market.storeId)
       .eq("level", "account")
-      .gte("date", oldest)
-      .lte("date", todayIso),
+      .gte("date", oldestInsight)
+      .lte("date", newestInsight),
     supabaseAdmin
       .from("integration_accounts")
       .select("last_synced_at, created_at")
       .in("id", market.allIntegrationAccountIds),
+    // Shopify aggregates over the SELECTED window (sums into the store's
+    // "приходи" cell). Sparkline stays on Meta, so we don't ask Shopify
+    // for the 14d trail.
     supabaseAdmin.rpc("read_store_daily_aggregates", {
       p_schema: storeSchema,
-      p_dates: [todayIso],
+      p_dates: windowDates,
     }),
   ]);
 
   if (insightsRes.error) throw new Error(insightsRes.error.message);
   if (accountsRes.error) throw new Error(accountsRes.error.message);
-  // Don't throw on Shopify miss — a brand-new store with no daily_aggregates
-  // row yet shouldn't break the whole stores endpoint.
-  if (shopifyTodayRes.error) {
+  if (shopifyWindowRes.error) {
     logger.error("stores: shopify daily_aggregates fetch failed", {
       storeSchema,
-      error: shopifyTodayRes.error.message,
+      error: shopifyWindowRes.error.message,
     });
   }
 
   const rows = (insightsRes.data ?? []) as InsightRow[];
   const byDate = new Map<string, { spend: number; revenue: number }>();
-  // The view returns one row per (date, object_id) at level=account, so a
-  // BG-style store with multiple active bindings (Cvetita primary +
-  // ProteinBar + legacy) yields several rows per date. Accumulate instead
-  // of overwriting so the card reflects the total business, not just the
-  // last row Postgres returned.
+  // Multiple bindings per store (e.g. BG: Cvetita + ProteinBar + legacy)
+  // produce multiple rows per date at level=account. Accumulate, don't
+  // overwrite.
   for (const r of rows) {
     const existing = byDate.get(r.date) ?? { spend: 0, revenue: 0 };
     byDate.set(r.date, {
@@ -155,34 +191,43 @@ async function buildStoreCard(
     });
   }
 
-  // Sparkline: Meta-revenue per day, zero-filled. Kept on Meta so the
-  // sparkline trend matches the ROAS denominator the card displays.
-  // (Shopify revenue lives in shopifyTodayRevenue for the table column.)
+  // Sparkline: always Meta-revenue per day across the trailing 14d.
   const sparkline14d = dates14.map((d) => byDate.get(d)?.revenue ?? 0);
 
-  const todayRow = byDate.get(todayIso);
-  const todaySpend = Number((todayRow?.spend ?? 0).toFixed(2));
-  const todayRevenue = Number((todayRow?.revenue ?? 0).toFixed(2));
+  // Aggregate Meta over the selected window.
+  let windowSpend = 0;
+  let windowRevenue = 0;
+  for (const d of windowDates) {
+    const row = byDate.get(d);
+    if (!row) continue;
+    windowSpend += row.spend;
+    windowRevenue += row.revenue;
+  }
+  const todaySpend = Number(windowSpend.toFixed(2));
+  const todayRevenue = Number(windowRevenue.toFixed(2));
+  const roasLast24h =
+    windowSpend > 0 ? Number((windowRevenue / windowSpend).toFixed(2)) : 0;
 
-  // RPC returns array of rows for the requested dates. We asked for one date,
-  // so 0 or 1 row.
-  const shopifyTodayRows = (shopifyTodayRes.data ?? []) as Array<{
+  // Shopify totals over window.
+  const shopifyRows = (shopifyWindowRes.data ?? []) as Array<{
     order_date: string;
     total_revenue: number | string | null;
     total_orders: number | string | null;
   }>;
-  const shopifyToday = shopifyTodayRows[0] ?? null;
-  const shopifyTodayRevenue = Number(num(shopifyToday?.total_revenue).toFixed(2));
-  const shopifyTodayOrders = num(shopifyToday?.total_orders);
-  const roasLast24h =
-    todayRow && todayRow.spend > 0 ? Number((todayRow.revenue / todayRow.spend).toFixed(2)) : 0;
+  let shopifyRevenueSum = 0;
+  let shopifyOrdersSum = 0;
+  for (const r of shopifyRows) {
+    shopifyRevenueSum += num(r.total_revenue);
+    shopifyOrdersSum += num(r.total_orders);
+  }
+  const shopifyTodayRevenue = Number(shopifyRevenueSum.toFixed(2));
+  const shopifyTodayOrders = shopifyOrdersSum;
 
-  // Median ROAS over the 13 days BEFORE today — that's the baseline we
-  // compare today against. Skip days with spend=0 or missing data; today
-  // is excluded so a partial day doesn't pull the baseline around.
+  // Median ROAS over the 14 days immediately BEFORE the selected window.
+  // Skip days with spend=0. Baseline is independent of window length so
+  // a 30d/90d window still has a meaningful comparison anchor.
   const priorRoas: number[] = [];
-  for (const d of dates14) {
-    if (d === todayIso) continue;
+  for (const d of baselineDates) {
     const row = byDate.get(d);
     if (!row || row.spend === 0) continue;
     priorRoas.push(row.revenue / row.spend);
@@ -191,9 +236,7 @@ async function buildStoreCard(
 
   const borderLevel = deriveBorder(roasLast24h, roasMedian14d);
 
-  // "Is any of this data fresh?" — take MAX across bindings (not MIN).
-  // MAX(created_at) pairs with MAX(last_synced_at): if the newest binding
-  // was just added, FreshnessDot enters its grace window.
+  // Freshness: MAX across all bound accounts.
   const accountRows = (accountsRes.data ?? []) as Array<{
     last_synced_at: string | null;
     created_at: string | null;
@@ -207,7 +250,9 @@ async function buildStoreCard(
   const lastSyncedAt =
     syncTimes.length > 0 ? syncTimes.reduce((a, b) => (a > b ? a : b)) : null;
   const accountCreatedAt =
-    createdTimes.length > 0 ? createdTimes.reduce((a, b) => (a > b ? a : b)) : null;
+    createdTimes.length > 0
+      ? createdTimes.reduce((a, b) => (a > b ? a : b))
+      : null;
 
   return {
     storeId: market.storeId,
@@ -235,11 +280,21 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const todayIso = sofiaDate(new Date());
+    const window = resolveDateWindow(req.nextUrl.searchParams);
     const markets = await resolveAllHomeMarkets();
-    const stores = await Promise.all(markets.map((m) => buildStoreCard(m, todayIso)));
+    const stores = await Promise.all(
+      markets.map((m) => buildStoreCard(m, window))
+    );
 
-    const response: StoresResponse = { stores };
+    const response: StoresResponse = {
+      window: {
+        from: window.from,
+        to: window.to,
+        preset: window.preset,
+        days: window.days,
+      },
+      stores,
+    };
     return NextResponse.json(response, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=30" },
     });

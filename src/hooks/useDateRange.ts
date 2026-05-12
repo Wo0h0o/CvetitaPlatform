@@ -4,7 +4,17 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useMemo, useCallback } from "react";
 import { getDateRange, type DatePreset, type DateRange } from "@/lib/dates";
 
-export function useDateRange(): DateRange & {
+/**
+ * URL-backed date-range state.
+ *
+ * `defaultPreset` is the preset used when the URL has no `?preset=` param.
+ * Defaults to "30d" for backwards compatibility with the analytics pages;
+ * the dashboard home overrides it to "today" because its tiles do
+ * intraday pacing only meaningful for the current day.
+ */
+export function useDateRange(
+  defaultPreset: DatePreset = "30d"
+): DateRange & {
   setPreset: (preset: DatePreset) => void;
   setCustomRange: (from: string, to: string) => void;
   queryString: string;
@@ -13,7 +23,7 @@ export function useDateRange(): DateRange & {
   const router = useRouter();
   const pathname = usePathname();
 
-  const preset = (searchParams.get("preset") as DatePreset) || "30d";
+  const preset = (searchParams.get("preset") as DatePreset) || defaultPreset;
   const customFrom = searchParams.get("from") || undefined;
   const customTo = searchParams.get("to") || undefined;
 

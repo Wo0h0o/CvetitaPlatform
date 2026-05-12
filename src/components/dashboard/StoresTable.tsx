@@ -14,12 +14,19 @@ import {
   type StoreCardData,
 } from "./store-state";
 import { ArrowRight } from "lucide-react";
+import type { DatePreset } from "@/lib/dates";
 
 // ============================================================
 // Types — payload shape mirrors /api/dashboard/home/stores response.
 // ============================================================
 
 interface StoresResponse {
+  window?: {
+    from: string;
+    to: string;
+    preset: DatePreset;
+    days: number;
+  };
   stores: StoreCardData[];
   error?: string;
 }
@@ -110,8 +117,14 @@ interface RowData {
   state: DisplayState;
 }
 
-function buildRowData(stores: StoreCardData[]): RowData[] {
-  const isEarly = sofiaHoursElapsed() < EARLY_DAY_THRESHOLD_HOURS;
+function buildRowData(
+  stores: StoreCardData[],
+  preset: DatePreset
+): RowData[] {
+  // "early" only applies to intraday pacing for the current day. For any
+  // range that isn't "today", a red ratio is real signal — don't demote it.
+  const isEarly =
+    preset === "today" && sofiaHoursElapsed() < EARLY_DAY_THRESHOLD_HOURS;
   return stores.map((store) => ({
     store,
     state: deriveDisplayState(store, isEarly),
@@ -124,22 +137,34 @@ function buildRowData(stores: StoreCardData[]): RowData[] {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-export function StoresTable() {
+interface StoresTableProps {
+  /** Query string from useDateRange. */
+  queryString: string;
+  /** Echoed preset — gates the early-day demotion. */
+  preset: DatePreset;
+  /** Human label for the active range — appears in the section sub-text. */
+  rangeLabel: string;
+}
+
+export function StoresTable({ queryString, preset, rangeLabel }: StoresTableProps) {
   const router = useRouter();
   const { data, isLoading, error } = useSWR<StoresResponse>(
-    "/api/dashboard/home/stores",
+    `/api/dashboard/home/stores?${queryString}`,
     fetcher,
     { refreshInterval: 60_000, revalidateOnFocus: false }
   );
+
+  const description =
+    preset === "today"
+      ? "Приходи (Shopify) и attribution срещу Meta-разход — за всеки магазин (днес)."
+      : `Приходи (Shopify) и attribution срещу Meta-разход — за всеки магазин (${rangeLabel}).`;
 
   return (
     <section className="mb-6">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-[15px] font-semibold text-text">Магазини</h2>
       </div>
-      <p className="text-[12px] text-text-3 mb-3">
-        Приходи (Shopify) и attribution срещу Meta-разход — за всеки магазин.
-      </p>
+      <p className="text-[12px] text-text-3 mb-3">{description}</p>
 
       {isLoading || !data ? (
         <TableSkeleton />
@@ -148,7 +173,10 @@ export function StoresTable() {
           Грешка при зареждане на магазините
         </div>
       ) : (
-        <StoresTableBody rows={buildRowData(data.stores)} onRowClick={(id) => router.push(`/sales/store/${id}`)} />
+        <StoresTableBody
+          rows={buildRowData(data.stores, preset)}
+          onRowClick={(id) => router.push(`/sales/store/${id}`)}
+        />
       )}
     </section>
   );

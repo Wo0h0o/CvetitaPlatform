@@ -66,6 +66,138 @@ export function lastNDates(n: number, todayIso: string): string[] {
   return out;
 }
 
+// ============================================================
+// Date-window resolver — shared between dashboard API routes that accept
+// a `preset` query param (today / yesterday / 7d / 30d / 90d / custom).
+//
+// All relative presets anchor to the current Sofia day. Custom uses the
+// from/to provided by the client verbatim. Comparison window is the
+// equal-length period immediately preceding `from`.
+//
+// Lives in sofia-date so server routes don't reach into client-only
+// `lib/dates.ts` (which formats in UTC and is incorrect near the Sofia
+// day boundary).
+// ============================================================
+
+export type DateWindowPreset =
+  | "today"
+  | "yesterday"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "custom";
+
+export interface DateWindow {
+  /** Resolved start date (YYYY-MM-DD, Sofia-anchored for relative presets). */
+  from: string;
+  /** Resolved end date inclusive. */
+  to: string;
+  /** Comparison-period start: equal length immediately before `from`. */
+  compFrom: string;
+  /** Comparison-period end (the day before `from`). */
+  compTo: string;
+  /** Echoed preset for convenience. */
+  preset: DateWindowPreset;
+  /** True iff window collapses to the current Sofia day (preset=today). */
+  isToday: boolean;
+  /** Inclusive day count of the primary window. */
+  days: number;
+}
+
+const VALID_PRESETS: DateWindowPreset[] = [
+  "today",
+  "yesterday",
+  "7d",
+  "30d",
+  "90d",
+  "custom",
+];
+
+function isValidIsoDate(s: string | null | undefined): s is string {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  const [y1, m1, d1] = fromIso.split("-").map(Number);
+  const [y2, m2, d2] = toIso.split("-").map(Number);
+  const ms = Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1);
+  return Math.round(ms / 86_400_000) + 1;
+}
+
+/**
+ * Resolve a date window from URL query params. Caller passes
+ * `searchParams` (URLSearchParams or a similar `get(name)` interface).
+ *
+ * Default preset is "today" — matches the dashboard home where the
+ * pacing tiles only make sense for the current day. Pages that prefer a
+ * different default should pass it explicitly.
+ */
+export function resolveDateWindow(
+  searchParams: { get: (name: string) => string | null },
+  defaultPreset: DateWindowPreset = "today"
+): DateWindow {
+  const raw = searchParams.get("preset");
+  const preset: DateWindowPreset =
+    raw && (VALID_PRESETS as string[]).includes(raw)
+      ? (raw as DateWindowPreset)
+      : defaultPreset;
+
+  const today = sofiaDate();
+  let from: string;
+  let to: string;
+
+  switch (preset) {
+    case "today":
+      from = today;
+      to = today;
+      break;
+    case "yesterday":
+      from = shiftDate(today, 1);
+      to = from;
+      break;
+    case "7d":
+      from = shiftDate(today, 6);
+      to = today;
+      break;
+    case "30d":
+      from = shiftDate(today, 29);
+      to = today;
+      break;
+    case "90d":
+      from = shiftDate(today, 89);
+      to = today;
+      break;
+    case "custom": {
+      const customFrom = searchParams.get("from");
+      const customTo = searchParams.get("to");
+      if (!isValidIsoDate(customFrom) || !isValidIsoDate(customTo)) {
+        // Malformed custom range — fall back silently to 30d so the UI
+        // never blanks out. Client is expected to enforce shape.
+        from = shiftDate(today, 29);
+        to = today;
+      } else {
+        from = customFrom;
+        to = customTo > customFrom ? customTo : customFrom;
+      }
+      break;
+    }
+  }
+
+  const days = daysBetween(from, to);
+  const compTo = shiftDate(from, 1);
+  const compFrom = shiftDate(compTo, days - 1);
+
+  return {
+    from,
+    to,
+    compFrom,
+    compTo,
+    preset,
+    isToday: preset === "today",
+    days,
+  };
+}
+
 /** 'YYYY-MM-DD HH:mm' in Europe/Sofia (used for human-readable note timestamps). */
 export function sofiaDateTimeLabel(d: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
