@@ -351,6 +351,24 @@ async function processMarket(
   apiKey: string,
   productCatalog: Map<string, string>
 ): Promise<MarketProcessResult> {
+  return processMarketInner(market, organizationId, forDate, apiKey, productCatalog).catch((e: unknown) => {
+    const msg = e instanceof Error ? `${e.message} | ${e.stack?.split("\n").slice(0, 6).join(" || ")}` : String(e);
+    return {
+      market: market.marketCode,
+      cohortsConsidered: 0,
+      cardsWritten: 0,
+      skipped: `inner threw: ${msg.slice(0, 1000)}`,
+    };
+  });
+}
+
+async function processMarketInner(
+  market: ResolvedMarket,
+  organizationId: string,
+  forDate: string,
+  apiKey: string,
+  productCatalog: Map<string, string>
+): Promise<MarketProcessResult> {
   // shiftDate(date, N) returns N days *earlier* (positive N goes backwards).
   const oldest = shiftDate(forDate, 13);
 
