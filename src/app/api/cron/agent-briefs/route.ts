@@ -351,13 +351,14 @@ async function processMarket(
   apiKey: string,
   productCatalog: Map<string, string>
 ): Promise<MarketProcessResult> {
-  return processMarketInner(market, organizationId, forDate, apiKey, productCatalog).catch((e: unknown) => {
+  let lastStep = "init";
+  return processMarketInner(market, organizationId, forDate, apiKey, productCatalog, (s: string) => { lastStep = s; }).catch((e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     return {
       market: market.marketCode,
       cohortsConsidered: 0,
       cardsWritten: 0,
-      skipped: `inner threw: ${msg.slice(0, 600)}`,
+      skipped: `inner threw at step=${lastStep}: ${msg.slice(0, 500)}`,
     };
   });
 }
@@ -367,13 +368,14 @@ async function processMarketInner(
   organizationId: string,
   forDate: string,
   apiKey: string,
-  productCatalog: Map<string, string>
+  productCatalog: Map<string, string>,
+  setStep: (s: string) => void = () => {}
 ): Promise<MarketProcessResult> {
-  let step = "init";
+  setStep("shiftDate");
   // shiftDate(date, N) returns N days *earlier* (positive N goes backwards).
   const oldest = shiftDate(forDate, 13);
 
-  step = "accountIds";
+  setStep("accountIds");
   const accountIds = market.allIntegrationAccountIds;
   if (!Array.isArray(accountIds)) {
     throw new Error(
@@ -381,7 +383,7 @@ async function processMarketInner(
     );
   }
 
-  step = "insights-query";
+  setStep("insights-query");
   // Pull 14d ad-level insights across ALL bindings of this market (so blended
   // BG with primary + legacy + ProteinBar all show up).
   const { data: rowsRaw, error } = await supabaseAdmin
@@ -392,7 +394,7 @@ async function processMarketInner(
     .gte("date", oldest)
     .lte("date", forDate);
 
-  step = "insights-check";
+  setStep("insights-check");
   if (error) {
     logger.error("agent-briefs: insights fetch failed", { market: market.marketCode, error: error.message });
     return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "insights error" };
@@ -408,6 +410,7 @@ async function processMarketInner(
     };
   }
 
+  setStep("rows-to-adIds");
   // Resolve ad → product
   if (!Array.isArray(rows)) {
     throw new Error(`step=rows-not-array typeof=${typeof rows} ctor=${(rows as { constructor?: { name?: string } })?.constructor?.name}`);
@@ -416,25 +419,14 @@ async function processMarketInner(
   const storeIdByAccount = new Map<string, string>();
   for (const accId of accountIds) storeIdByAccount.set(accId, market.storeId);
 
-  let resolutions: Map<string, AdResolution>;
-  try {
-    resolutions = await resolveAdsToProducts(adIds, storeIdByAccount);
-  } catch (e) {
-    throw new Error(`step=resolveAdsToProducts adIds=${adIds.length} | ${e instanceof Error ? e.message : String(e)}`);
-  }
+  setStep("resolveAdsToProducts");
+  const resolutions = await resolveAdsToProducts(adIds, storeIdByAccount);
 
-  let adsAgg: Map<string, AdAgg>;
-  let cohorts: ProductCohort[];
-  try {
-    adsAgg = aggregateAds(rows, forDate);
-  } catch (e) {
-    throw new Error(`step=aggregateAds rows=${rows.length} | ${e instanceof Error ? e.message : String(e)}`);
-  }
-  try {
-    cohorts = buildCohorts(adsAgg, resolutions, productCatalog);
-  } catch (e) {
-    throw new Error(`step=buildCohorts adsAgg=${adsAgg.size} resolutions=${resolutions.size} | ${e instanceof Error ? e.message : String(e)}`);
-  }
+  setStep("aggregateAds");
+  const adsAgg = aggregateAds(rows, forDate);
+
+  setStep("buildCohorts");
+  const cohorts = buildCohorts(adsAgg, resolutions, productCatalog);
 
   if (cohorts.length === 0) {
     return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no mixed-perf cohorts" };
