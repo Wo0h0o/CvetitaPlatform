@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import useSWR from "swr";
 import { ChevronDown, Store } from "lucide-react";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
+import { MarketFlag } from "@/components/shared/MarketFlag";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -11,29 +12,6 @@ interface StoreItem {
   id: string;
   name: string;
   market_code: string;
-}
-
-const marketColors: Record<string, string> = {
-  bg: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  gr: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  ro: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
-  de: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  it: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-  uk: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
-  hu: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  hr: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-  rs: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
-};
-
-function MarketBadge({ code }: { code: string }) {
-  const colors = marketColors[code] || "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-  return (
-    <span
-      className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase leading-none ${colors}`}
-    >
-      {code}
-    </span>
-  );
 }
 
 export function StoreSelector() {
@@ -88,7 +66,7 @@ export function StoreSelector() {
         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-2 border border-border hover:border-border-strong transition-colors text-[13px] text-text cursor-pointer"
       >
         {selectedCode ? (
-          <MarketBadge code={selectedCode} />
+          <MarketFlag market={selectedCode} size={14} labelled />
         ) : (
           <Store size={14} className="text-text-2" />
         )}
@@ -130,7 +108,7 @@ export function StoreSelector() {
                     : "text-text hover:bg-surface-2"
                 }`}
               >
-                <MarketBadge code={store.market_code} />
+                <MarketFlag market={store.market_code} size={14} labelled />
                 <span>{store.name}</span>
               </button>
             );

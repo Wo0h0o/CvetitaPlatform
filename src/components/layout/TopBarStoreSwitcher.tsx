@@ -23,7 +23,7 @@ interface StoresResponse {
 // /ads/adsets sub-routes and render "🏬 ?" in the switcher. When adding a
 // new market, also extend `HOME_MARKET_CODES` in `lib/store-market-resolver.ts`
 // and `FLAG_BY_MARKET` in `api/dashboard/home/stores/route.ts`.
-const ADS_PATH_RE = /^\/ads\/(bg|gr|ro|de|it|uk)(\/|$)/;
+const ADS_PATH_RE = /^\/ads\/(bg|gr|ro|de|it|uk|sk|hu)(\/|$)/;
 const SALES_PATH_RE = /^\/sales\/store\/([a-f0-9-]+)/i;
 
 /**

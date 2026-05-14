@@ -157,7 +157,7 @@ export async function resolveMarket(marketCode: string): Promise<ResolvedMarket>
 // Convenience: resolve all three home-page markets in parallel
 // ============================================================
 
-export const HOME_MARKET_CODES = ["bg", "gr", "ro", "de", "it", "uk"] as const;
+export const HOME_MARKET_CODES = ["bg", "gr", "ro", "de", "it", "uk", "sk", "hu"] as const;
 export type HomeMarketCode = (typeof HOME_MARKET_CODES)[number];
 
 /**

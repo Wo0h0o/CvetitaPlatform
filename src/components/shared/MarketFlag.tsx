@@ -17,7 +17,7 @@
  */
 
 interface MarketFlagProps {
-  /** Market code — "bg", "gr", "ro", "de", "it", "uk". Case-insensitive. */
+  /** Market code — "bg", "gr", "ro", "de", "it", "uk", "sk", "hu". Case-insensitive. */
   market: string;
   /** Height in px. Width is auto-derived from 3:2 aspect. Defaults to 16. */
   size?: number;
@@ -33,6 +33,8 @@ const MARKET_LABEL: Record<string, string> = {
   de: "Германия",
   it: "Италия",
   uk: "Великобритания",
+  sk: "Словакия",
+  hu: "Унгария",
 };
 
 export function MarketFlag({
@@ -155,6 +157,31 @@ export function MarketFlag({
         {/* Red cross of St George (foreground) */}
         <rect x="1.35" width="0.3" height="2" fill="#C8102E" />
         <rect y="0.85" width="3" height="0.3" fill="#C8102E" />
+      </svg>
+    );
+  }
+
+  // Slovakia 🇸🇰 — white, blue (#0B4EA2), red (#EE1C25) horizontal thirds.
+  // Coat of arms (white double-cross on red shield over three blue hills) is
+  // unreadable at 16px so we omit it — same simplification ISO flag libraries
+  // make at small sizes. Still unambiguously SK against HU and CZ.
+  if (code === "sk") {
+    return (
+      <svg {...commonProps}>
+        <rect width="3" height="0.6667" fill="#ffffff" />
+        <rect y="0.6667" width="3" height="0.6667" fill="#0B4EA2" />
+        <rect y="1.3333" width="3" height="0.6667" fill="#EE1C25" />
+      </svg>
+    );
+  }
+
+  // Hungary 🇭🇺 — red (#CE2939), white, green (#477050) horizontal thirds.
+  if (code === "hu") {
+    return (
+      <svg {...commonProps}>
+        <rect width="3" height="0.6667" fill="#CE2939" />
+        <rect y="0.6667" width="3" height="0.6667" fill="#ffffff" />
+        <rect y="1.3333" width="3" height="0.6667" fill="#477050" />
       </svg>
     );
   }
