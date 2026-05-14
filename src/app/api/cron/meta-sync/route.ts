@@ -23,7 +23,11 @@ const SYNC_DAYS_BACK_NIGHTLY = 3;
 // N — safe to run every 15 minutes without exhausting BUC budgets.
 const SYNC_DAYS_BACK_INTRADAY = 1;
 
-const SYNC_LEVELS: InsightsLevel[] = ["account", "campaign"];
+// adset + ad added 2026-05-14 so agent-briefs can do product-cohort analysis.
+// BUC budget impact measured: peak usage stayed under 5% per account at the
+// previous 2-level config, so 4 levels remains comfortably below the 75%
+// throttling guard.
+const SYNC_LEVELS: InsightsLevel[] = ["account", "campaign", "adset", "ad"];
 
 interface IntegrationAccountRow {
   id: string;
