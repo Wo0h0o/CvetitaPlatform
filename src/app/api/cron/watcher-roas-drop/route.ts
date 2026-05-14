@@ -36,7 +36,7 @@ interface MetaRow {
 }
 
 interface ShopifyRow {
-  date: string;
+  order_date: string;
   total_revenue: number | string | null;
 }
 
@@ -162,7 +162,7 @@ export async function GET(req: Request) {
 
     const revenueByDate = new Map<string, number>();
     for (const r of (shopifyRows ?? []) as ShopifyRow[]) {
-      revenueByDate.set(r.date, num(r.total_revenue));
+      revenueByDate.set(r.order_date, num(r.total_revenue));
     }
 
     const todaySpend = spendByDate.get(today) ?? 0;
