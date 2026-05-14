@@ -28,6 +28,14 @@
     {
       "path": "/api/cron/poll-shopify-orders",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/watcher-roas-drop",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/inbox-outcomes",
+      "schedule": "0 3 * * *"
     }
   ]
 }

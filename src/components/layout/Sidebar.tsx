@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import useSWR from "swr";
 import {
   LayoutDashboard,
   Settings,
@@ -15,7 +16,10 @@ import {
   Bot,
   DollarSign,
   Shield,
+  Inbox,
 } from "lucide-react";
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface NavChild {
   href: string;
@@ -39,6 +43,7 @@ const navSections: NavSection[] = [
     label: "Основни",
     items: [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
+      { href: "/inbox", icon: Inbox, label: "Входящи" },
       { href: "/agents", icon: Bot, label: "Агенти" },
     ],
   },
@@ -91,6 +96,17 @@ export function Sidebar({
   onMobileClose: () => void;
 }) {
   const pathname = usePathname();
+
+  // Inbox unread badge — polls the count-only endpoint every 60s. SWR dedupes
+  // across components so adding more inbox-aware UI later won't multiply
+  // requests. Kept inline rather than as a separate hook because no one else
+  // needs the count yet.
+  const { data: inboxCount } = useSWR<{ count: number }>(
+    "/api/inbox?countOnly=1",
+    fetcher,
+    { revalidateOnFocus: false, refreshInterval: 60_000 }
+  );
+  const unread = inboxCount?.count ?? 0;
 
   return (
     <>
@@ -160,9 +176,19 @@ export function Sidebar({
                         title={collapsed ? item.label : undefined}
                       >
                         <item.icon size={20} strokeWidth={isActive ? 2 : 1.5} />
-                        <span className={`text-[14px] ${collapsed ? "md:hidden" : ""}`}>
+                        <span className={`text-[14px] flex-1 ${collapsed ? "md:hidden" : ""}`}>
                           {item.label}
                         </span>
+                        {item.href === "/inbox" && unread > 0 && (
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-accent text-white text-[11px] font-semibold leading-none ${
+                              collapsed ? "md:hidden" : ""
+                            }`}
+                            aria-label={`${unread} непрочетени сигнала`}
+                          >
+                            {unread > 99 ? "99+" : unread}
+                          </span>
+                        )}
                       </Link>
                       {showChildren && (
                         <div className="ml-6 mt-0.5 space-y-0.5">
