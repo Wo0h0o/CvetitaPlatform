@@ -19,10 +19,12 @@ export async function GET(req: Request) {
 
   const startedAt = Date.now();
 
-  // Fetch all active stores to get their schema names
+  // Fetch all active stores to get their schema names. Meta-only placeholders
+  // (no Shopify creds) have empty per-store schemas, so we skip them — there's
+  // nothing to aggregate and the RPC call is wasted work.
   const { data: stores, error: storesErr } = await supabaseAdmin
     .from("stores")
-    .select("id, market_code")
+    .select("id, market_code, settings")
     .eq("is_active", true);
 
   if (storesErr) {
@@ -41,6 +43,8 @@ export async function GET(req: Request) {
 
   // Refresh each store sequentially (low frequency, no need for parallelism)
   for (const store of stores ?? []) {
+    const settings = (store.settings as Record<string, unknown>) || {};
+    if (settings.meta_only === true) continue;
     const schema = `store_${store.market_code}`;
     try {
       const { error: rpcErr } = await supabaseAdmin.rpc(

@@ -58,6 +58,11 @@ export async function GET(req: Request) {
   for (const store of stores ?? []) {
     const storeStart = Date.now();
     const settings = (store.settings as Record<string, unknown>) || {};
+    // Skip Meta-only placeholders (stores that hold a Meta binding but no
+    // Shopify credentials yet — e.g. HU before its shop comes online).
+    if (settings.meta_only === true) {
+      continue;
+    }
     const lastIso = typeof settings.last_orders_poll_at === "string"
       ? (settings.last_orders_poll_at as string)
       : null;
