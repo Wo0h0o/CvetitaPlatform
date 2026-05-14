@@ -352,12 +352,12 @@ async function processMarket(
   productCatalog: Map<string, string>
 ): Promise<MarketProcessResult> {
   return processMarketInner(market, organizationId, forDate, apiKey, productCatalog).catch((e: unknown) => {
-    const msg = e instanceof Error ? `${e.message} | ${e.stack?.split("\n").slice(0, 6).join(" || ")}` : String(e);
+    const msg = e instanceof Error ? e.message : String(e);
     return {
       market: market.marketCode,
       cohortsConsidered: 0,
       cardsWritten: 0,
-      skipped: `inner threw: ${msg.slice(0, 1000)}`,
+      skipped: `inner threw: ${msg.slice(0, 600)}`,
     };
   });
 }
@@ -369,12 +369,21 @@ async function processMarketInner(
   apiKey: string,
   productCatalog: Map<string, string>
 ): Promise<MarketProcessResult> {
+  let step = "init";
   // shiftDate(date, N) returns N days *earlier* (positive N goes backwards).
   const oldest = shiftDate(forDate, 13);
 
+  step = "accountIds";
+  const accountIds = market.allIntegrationAccountIds;
+  if (!Array.isArray(accountIds)) {
+    throw new Error(
+      `accountIds-not-array typeof=${typeof accountIds} ctor=${(accountIds as { constructor?: { name?: string } })?.constructor?.name} market=${market.marketCode}`
+    );
+  }
+
+  step = "insights-query";
   // Pull 14d ad-level insights across ALL bindings of this market (so blended
   // BG with primary + legacy + ProteinBar all show up).
-  const accountIds = market.allIntegrationAccountIds;
   const { data: rowsRaw, error } = await supabaseAdmin
     .from("meta_insights_daily")
     .select("date, object_id, object_name, spend, revenue, purchases, frequency, integration_account_id")
@@ -383,6 +392,7 @@ async function processMarketInner(
     .gte("date", oldest)
     .lte("date", forDate);
 
+  step = "insights-check";
   if (error) {
     logger.error("agent-briefs: insights fetch failed", { market: market.marketCode, error: error.message });
     return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "insights error" };
