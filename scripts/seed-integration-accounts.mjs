@@ -90,6 +90,8 @@ const BINDING_POLICY = {
   act_1856524808063116: { marketCode: 'de',    role: 'primary',   display: 'Meta — Cvetita DE' },
   act_601018858261180:  { marketCode: 'it',    role: 'primary',   display: 'Meta — Cvetita IT' },
   act_1492854044575069: { marketCode: 'uk',    role: 'primary',   display: 'Meta — Cvetita UK' },
+  act_786040973159408:  { marketCode: 'sk',    role: 'primary',   display: 'Meta — Cvetita SK' },
+  act_1208503709890038: { marketCode: 'hu',    role: 'primary',   display: 'Meta — Cvetita HU' },
   act_2178567759636273: { disabled: true,                         display: 'Meta — Personal (USD, disabled)' },
 };
 
