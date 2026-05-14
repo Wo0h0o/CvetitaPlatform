@@ -519,13 +519,32 @@ async function processMarket(
     };
   });
 
-  const { error: upsertErr } = await supabaseAdmin.from("agent_briefs").upsert(briefRows, {
-    onConflict: "organization_id,for_date,target_type,target_id",
-    ignoreDuplicates: false,
-  });
-  if (upsertErr) {
-    logger.error("agent-briefs: upsert failed", { market: market.marketCode, error: upsertErr.message });
-    return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: 0, skipped: "upsert failed" };
+  // Delete-then-insert keeps the cron idempotent for today's run without
+  // relying on PostgREST upserting against the partial UNIQUE INDEX (which
+  // it can't target through `onConflict`).
+  const { error: delErr } = await supabaseAdmin
+    .from("agent_briefs")
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("for_date", forDate)
+    .eq("source_agent", "agent-briefs-product")
+    .eq("store_id", market.storeId);
+  if (delErr) {
+    return {
+      market: market.marketCode,
+      cohortsConsidered: cohorts.length,
+      cardsWritten: 0,
+      skipped: `delete failed: ${delErr.message.slice(0, 200)}`,
+    };
+  }
+  const { error: insertErr } = await supabaseAdmin.from("agent_briefs").insert(briefRows);
+  if (insertErr) {
+    return {
+      market: market.marketCode,
+      cohortsConsidered: cohorts.length,
+      cardsWritten: 0,
+      skipped: `insert failed: ${insertErr.message.slice(0, 200)}`,
+    };
   }
 
   return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: briefRows.length };
