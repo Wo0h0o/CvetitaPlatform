@@ -447,6 +447,15 @@ async function processMarketInner(
     return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no mixed-perf cohorts" };
   }
 
+  setStep("payload-build");
+  // Verify cohort shape before .map/.slice chains
+  for (let i = 0; i < cohorts.length; i++) {
+    const c = cohorts[i];
+    if (!Array.isArray(c.winners)) throw new Error(`cohort[${i}].winners not array typeof=${typeof c.winners}`);
+    if (!Array.isArray(c.losers)) throw new Error(`cohort[${i}].losers not array typeof=${typeof c.losers}`);
+    if (!Array.isArray(c.ads)) throw new Error(`cohort[${i}].ads not array typeof=${typeof c.ads}`);
+  }
+
   // Compact JSON for the LLM (keep ad_id so it can reference + recommend reallocations)
   const userPayload = {
     market: {
