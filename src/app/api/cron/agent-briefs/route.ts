@@ -573,12 +573,20 @@ export async function GET(req: Request) {
 
   const perMarket: MarketProcessResult[] = [];
   let totalCards = 0;
-  for (const r of results) {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     if (r.status === "fulfilled") {
       perMarket.push(r.value);
       totalCards += r.value.cardsWritten;
     } else {
-      logger.error("agent-briefs: market settle rejected", { reason: String(r.reason) });
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      logger.error("agent-briefs: market settle rejected", { reason });
+      perMarket.push({
+        market: markets[i]?.marketCode ?? "?",
+        cohortsConsidered: 0,
+        cardsWritten: 0,
+        skipped: `rejected: ${reason.slice(0, 200)}`,
+      });
     }
   }
 
