@@ -337,6 +337,11 @@ interface MarketProcessResult {
   cohortsConsidered: number;
   cardsWritten: number;
   skipped?: string;
+  debug?: {
+    accountIds: string[];
+    rowsFromDb: number;
+    queryRange: { oldest: string; forDate: string };
+  };
 }
 
 async function processMarket(
@@ -365,14 +370,13 @@ async function processMarket(
   }
   const rows = (rowsRaw ?? []) as (InsightRow & { integration_account_id: string })[];
   if (rows.length === 0) {
-    logger.warn("agent-briefs: no insights for market", {
+    return {
       market: market.marketCode,
-      accountIds,
-      oldest,
-      forDate,
-      bindings_count: market.bindings.length,
-    });
-    return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no insights" };
+      cohortsConsidered: 0,
+      cardsWritten: 0,
+      skipped: "no insights",
+      debug: { accountIds, rowsFromDb: 0, queryRange: { oldest, forDate } },
+    };
   }
 
   // Resolve ad → product
