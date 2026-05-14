@@ -384,10 +384,26 @@ async function processMarket(
   const adIds = [...new Set(rows.map((r) => r.object_id))];
   const storeIdByAccount = new Map<string, string>();
   for (const accId of accountIds) storeIdByAccount.set(accId, market.storeId);
-  const resolutions = await resolveAdsToProducts(adIds, storeIdByAccount);
 
-  const adsAgg = aggregateAds(rows, forDate);
-  const cohorts = buildCohorts(adsAgg, resolutions, productCatalog);
+  let resolutions: Map<string, AdResolution>;
+  try {
+    resolutions = await resolveAdsToProducts(adIds, storeIdByAccount);
+  } catch (e) {
+    throw new Error(`step=resolveAdsToProducts adIds=${adIds.length} | ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  let adsAgg: Map<string, AdAgg>;
+  let cohorts: ProductCohort[];
+  try {
+    adsAgg = aggregateAds(rows, forDate);
+  } catch (e) {
+    throw new Error(`step=aggregateAds rows=${rows.length} | ${e instanceof Error ? e.message : String(e)}`);
+  }
+  try {
+    cohorts = buildCohorts(adsAgg, resolutions, productCatalog);
+  } catch (e) {
+    throw new Error(`step=buildCohorts adsAgg=${adsAgg.size} resolutions=${resolutions.size} | ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   if (cohorts.length === 0) {
     return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no mixed-perf cohorts" };
