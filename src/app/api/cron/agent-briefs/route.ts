@@ -399,6 +399,9 @@ async function processMarketInner(
   }
 
   // Resolve ad → product
+  if (!Array.isArray(rows)) {
+    throw new Error(`step=rows-not-array typeof=${typeof rows} ctor=${(rows as { constructor?: { name?: string } })?.constructor?.name}`);
+  }
   const adIds = [...new Set(rows.map((r) => r.object_id))];
   const storeIdByAccount = new Map<string, string>();
   for (const accId of accountIds) storeIdByAccount.set(accId, market.storeId);
