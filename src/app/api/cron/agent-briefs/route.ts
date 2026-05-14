@@ -208,7 +208,7 @@ function median(values: number[]): number {
 // ============================================================
 
 function aggregateAds(rows: InsightRow[], todayIso: string): Map<string, AdAgg> {
-  const last3dStart = shiftDate(todayIso, -2);
+  const last3dStart = shiftDate(todayIso, 2); // 2 days back
   const byId = new Map<string, AdAgg>();
   for (const r of rows) {
     let a = byId.get(r.object_id);
@@ -351,7 +351,8 @@ async function processMarket(
   apiKey: string,
   productCatalog: Map<string, string>
 ): Promise<MarketProcessResult> {
-  const oldest = shiftDate(forDate, -13);
+  // shiftDate(date, N) returns N days *earlier* (positive N goes backwards).
+  const oldest = shiftDate(forDate, 13);
 
   // Pull 14d ad-level insights across ALL bindings of this market (so blended
   // BG with primary + legacy + ProteinBar all show up).
