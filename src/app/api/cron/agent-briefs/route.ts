@@ -279,6 +279,9 @@ function buildCohorts(
 
   const cohorts: ProductCohort[] = [];
   for (const [handle, ads] of byHandle) {
+    if (!Array.isArray(ads)) {
+      throw new Error(`buildCohorts: ads-not-array handle=${handle} typeof=${typeof ads} ctor=${(ads as { constructor?: { name?: string } })?.constructor?.name}`);
+    }
     const total_spend_14d = ads.reduce((s, a) => s + a.spend_14d, 0);
     if (total_spend_14d < NOISE_FLOOR_COHORT_SPEND) continue;
     const signalAds = ads.filter((a) => a.spend_14d >= 10);
