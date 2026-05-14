@@ -278,23 +278,31 @@ function buildCohorts(
   }
 
   const cohorts: ProductCohort[] = [];
+  let subStep = "loop-init";
+  try {
   for (const [handle, ads] of byHandle) {
     if (!Array.isArray(ads)) {
       throw new Error(`buildCohorts: ads-not-array handle=${handle} typeof=${typeof ads} ctor=${(ads as { constructor?: { name?: string } })?.constructor?.name}`);
     }
+    subStep = `total_spend handle=${handle}`;
     const total_spend_14d = ads.reduce((s, a) => s + a.spend_14d, 0);
     if (total_spend_14d < NOISE_FLOOR_COHORT_SPEND) continue;
+    subStep = `signalAds handle=${handle}`;
     const signalAds = ads.filter((a) => a.spend_14d >= 10);
     if (signalAds.length < MIN_ADS_WITH_SIGNAL) continue;
 
+    subStep = `revenue_calc handle=${handle}`;
     const total_revenue_14d = ads.reduce((s, a) => s + a.revenue_14d, 0);
     const total_purchases_14d = ads.reduce((s, a) => s + a.purchases_14d, 0);
     const cohort_roas_14d = total_spend_14d > 0 ? total_revenue_14d / total_spend_14d : 0;
+    subStep = `median handle=${handle} signalAds=${signalAds.length}`;
     const cohort_median_ad_roas = median(signalAds.map((a) => a.roas_14d));
 
+    subStep = `winners handle=${handle}`;
     const winners = signalAds
       .filter((a) => a.roas_14d >= WINNER_ROAS_FLOOR && a.roas_14d >= cohort_median_ad_roas * 1.1)
       .sort((a, b) => b.roas_14d - a.roas_14d);
+    subStep = `losers handle=${handle}`;
     const losers = signalAds
       .filter(
         (a) =>
@@ -312,6 +320,7 @@ function buildCohorts(
     const severity: "red" | "amber" =
       hasDeadCreative || loserSpendShare > 0.5 ? "red" : "amber";
 
+    subStep = `push handle=${handle}`;
     cohorts.push({
       product_handle: handle,
       product_title: productTitleByHandle.get(handle) ?? null,
@@ -325,6 +334,9 @@ function buildCohorts(
       losers,
       severity,
     });
+  }
+  } catch (e) {
+    throw new Error(`buildCohorts.${subStep} → ${e instanceof Error ? e.message : String(e)}`);
   }
 
   cohorts.sort((a, b) => b.total_spend_14d - a.total_spend_14d);
