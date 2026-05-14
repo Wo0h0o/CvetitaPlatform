@@ -3,27 +3,53 @@ import { requireCronSecret } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { sofiaDate, shiftDate } from "@/lib/sofia-date";
-import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
+import { resolveAllHomeMarkets, type ResolvedMarket } from "@/lib/store-market-resolver";
+import { resolveAdsToProducts, type AdResolution } from "@/lib/ad-mappings/resolver";
 
-// Vercel Hobby hard limit on serverless functions. 5 parallel Claude calls
-// at ~10-15s each fit well inside 60s; sequential would not.
 export const maxDuration = 60;
+
+/**
+ * /api/cron/agent-briefs — product-cohort analyser
+ *
+ * For each market we:
+ *   1. Pull 14d of meta_insights_daily at ad level
+ *   2. Resolve each ad to its product handle(s) via ad_destinations +
+ *      destination_products (built by /api/cron/resolve-ad-destinations)
+ *   3. Cluster ads by product_handle
+ *   4. For each product cohort with mixed performance (winners AND losers),
+ *      ask Claude to write ONE narrative card explaining who's working,
+ *      who isn't, and what to do.
+ *
+ * Output: agent_briefs rows with target_type='product'. The old per-ad
+ * cards from previous cron runs stay in the table for history; the new
+ * product-level cards live alongside them and dominate the inbox by
+ * severity sorting (product cards usually red/amber when there's real
+ * spread, while old per-ad cards mostly stay pending until acknowledged).
+ *
+ * Pre-filter rules (no LLM):
+ *   - cohort.total_spend_14d >= NOISE_FLOOR
+ *   - cohort has >=2 ads with spend > €10 in last 14d (otherwise no
+ *     comparison signal)
+ *   - cohort has at least one ad < median × 0.7 (a loser) AND at least
+ *     one ad with median_roas > 1.5 (a winner) — i.e. genuine mixed perf
+ *
+ * Cards are upserted by (organization_id, for_date, target_type='product',
+ * target_id=<product_handle>) — re-runs same day are idempotent. New runs
+ * on a different day get fresh cards (one per active mixed-perf product).
+ */
+
+const NOISE_FLOOR_COHORT_SPEND = 30; // EUR; below this the cohort is noise
+const MIN_ADS_WITH_SIGNAL = 2;
+const WINNER_ROAS_FLOOR = 1.5;
+const LOSER_RATIO = 0.7;
+const TOP_N_COHORTS_PER_MARKET = 5; // cap to keep token budget sane
 
 // ============================================================
 // Types
 // ============================================================
 
-interface IntegrationAccountRow {
-  id: string;
-  organization_id: string;
-  external_id: string;
-  display_name: string;
-  currency: string | null;
-}
-
 interface InsightRow {
   date: string;
-  level: "ad" | "adset" | "campaign";
   object_id: string;
   object_name: string | null;
   spend: number | string | null;
@@ -32,47 +58,48 @@ interface InsightRow {
   frequency: number | string | null;
 }
 
-type ObjectKey = string; // `${level}:${object_id}`
-
-interface Aggregate {
-  level: "ad" | "adset" | "campaign";
-  target_id: string;
-  target_name: string;
+interface AdAgg {
+  ad_id: string;
+  ad_name: string;
   spend_14d: number;
   revenue_14d: number;
   purchases_14d: number;
-  frequency_sum: number;
-  frequency_days: number;
-  daily_roas: number[]; // one entry per day with spend > 0
+  roas_14d: number;
+  daily_roas: number[];
+  median_daily_roas: number;
   last_3d_spend: number;
   last_3d_revenue: number;
+  last_3d_roas: number;
+  freq_avg: number;
+  destination_path: string | null;
+  destination_type: string | null;
 }
 
-interface Candidate {
-  target_type: "ad" | "adset" | "campaign";
-  target_id: string;
-  target_name: string;
-  metrics: {
-    spend_14d: number;
-    revenue_14d: number;
-    roas_14d: number;
-    cpa_14d: number;
-    median_daily_roas: number;
-    last_3d_roas: number;
-    frequency_avg: number;
-    purchases_14d: number;
-  };
-  flagged_as: "red" | "amber" | "green";
+interface ProductCohort {
+  product_handle: string;
+  product_title: string | null;
+  ads: AdAgg[];
+  total_spend_14d: number;
+  total_revenue_14d: number;
+  total_purchases_14d: number;
+  cohort_roas_14d: number;
+  cohort_median_ad_roas: number;
+  winners: AdAgg[];        // ads >= median*1.1 AND roas_14d > WINNER_ROAS_FLOOR
+  losers: AdAgg[];         // ads < median*LOSER_RATIO
+  severity: "red" | "amber";
 }
 
 interface BriefCard {
   severity: "red" | "amber" | "green";
   title: string;
   why: string;
-  target_type: "ad" | "adset" | "campaign";
-  target_id: string;
-  target_name: string;
   actions: string[];
+  recommended_action?: {
+    kind: "pause" | "scale" | "review" | "reallocate";
+    target_ad_ids?: string[];
+    reallocate_to_ad_id?: string;
+    note?: string;
+  };
 }
 
 interface ClaudeToolUseBlock {
@@ -94,39 +121,36 @@ interface ClaudeResponse {
 }
 
 // ============================================================
-// System prompt (Bulgarian)
+// System prompt
 // ============================================================
 
-const SYSTEM_PROMPT = `Ти си Meta Ads анализатор за Cvetita — българска билкова козметика с магазини в БГ, ГР и РО.
+const SYSTEM_PROMPT = `Ти си Meta Ads анализатор за Cvetita Herbal — българска компания за билкови добавки с над 15 години на пазара и магазини в BG, GR, RO, DE, IT, UK, SK + предстоящ HU. Тонът ти е „грижовен експерт": спокоен, директен, на собственика, винаги с конкретни числа.
 
-Задача: прегледай подадените кандидати от последните 14 дни и избери 2-4 от тях за които да
-предложиш действие. Пиши стегнато, на български, директно към собственика.
+КОНТЕКСТ: всички продукти се рекламират през множество ad creative-и едновременно — една и съща продукт-страница (или нейн advertorial-вариант) може да има 3-10 активни реклами. Истинският сигнал е НЕ дали една реклама не работи, а защо ИМЕННО ТАЗИ не работи, когато ДРУГИ за същия продукт работят.
+
+Задача: получаваш набор от продуктови кохорти за един пазар. За всяка кохорта си виждаш winners + losers. Изпиши 1 карта на кохорта, която обяснява несъответствието и препоръчва конкретно действие.
 
 ПРАВИЛА:
-- ЗАДЪЛЖИТЕЛНО използвай инструмента generate_action_cards — никакъв свободен текст извън инструмента.
-- Max 4 карти, min 0. Ако всичко изглежда здраво, върни празен масив { "cards": [] }.
-- severity трябва точно да съвпадне с flagged_as от входа (red/amber/green).
-- title: кратко действие + името в кавички. Примери: "Пауза на \\"BG-TOF-Video3\\"", "Скалирай \\"RO-Cold\\"".
-- why: 1-2 изречения с конкретни цифри от метриките. Пример: "CPA 18€, +140% спрямо 14д медиана. Frequency 4.2 — публиката е изчерпана."
-- target_type, target_id, target_name: копирай ТОЧНО от входа.
-- actions (според flagged_as):
-  * "red"   → ["pause", "dismiss"]
-  * "amber" → ["review", "dismiss"]
-  * "green" → ["scale", "dismiss"]
+- ЗАДЪЛЖИТЕЛНО използвай инструмента generate_product_cards — никакъв свободен текст.
+- 1 карта = 1 продуктова кохорта от входа. Max 5 карти.
+- severity:
+  * "red"   = поне една реклама с >= €50 разход в 14д и 0 поръчки, ИЛИ losers носят > 50% от cohort spend.
+  * "amber" = mixed performance но никой не е катастрофа.
+  * "green" = почти не я ползвай тук — резервирана за watcher-ите.
+- title: задължително споменава ИМЕТО НА ПРОДУКТА в кавички + кратко действие. Пример: „Левзея Макс: 2 от 5 реклами не работят".
+- why: 3-4 изречения с конкретни числа: (1) общ контекст на кохортата, (2) winner-ите с ROAS, (3) loser-ите с ROAS + harch, (4) хипотеза защо има spread (изтощен audience, лошо позициониран hook, frequency, и т.н.).
+- recommended_action.kind: pause / scale / review / reallocate. „reallocate" е препоръчителен когато имаш ясен winner — попълни target_ad_ids (losers) + reallocate_to_ad_id (winner). За action.note дай 1 изречение с алтернативен ход (напр. „или тествай новия hook от RO с този креатив").
+- actions масив: ["pause","dismiss"] за red, ["review","dismiss"] за amber.
 
 НЕ ПРАВИ:
-- Не измисляй числа, които не са във входа.
-- Не използвай „незабавно“, „веднага“, „критично“. Тонът е спокоен и експертен.
-- Не препоръчвай действия за target_type="campaign" с action="pause" — спирането на цели кампании е извън W4.`;
+- Не препоръчвай pause на ВСИЧКИ реклами в кохортата.
+- Не казвай „критично", „спешно", „незабавно". Спокоен експертен тон.
+- Не измисляй данни — само това което е в JSON-а.
+- Ако losers всъщност не са лоши (всички с ROAS > 1.5) — пропусни тази кохорта.`;
 
-// ============================================================
-// Tool definition for Claude's forced-JSON output
-// ============================================================
-
-const ACTION_CARDS_TOOL = {
-  name: "generate_action_cards",
-  description:
-    "Emit 0-4 action cards for the Owner Home Action Row, based on the provided candidates.",
+const TOOL = {
+  name: "generate_product_cards",
+  description: "Emit 0-5 product-cohort cards based on the input cohorts.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -138,27 +162,23 @@ const ACTION_CARDS_TOOL = {
             severity: { type: "string" as const, enum: ["red", "amber", "green"] },
             title: { type: "string" as const },
             why: { type: "string" as const },
-            target_type: { type: "string" as const, enum: ["ad", "adset", "campaign"] },
-            target_id: { type: "string" as const },
-            target_name: { type: "string" as const },
             actions: {
               type: "array" as const,
-              items: {
-                type: "string" as const,
-                enum: ["pause", "scale", "review", "dismiss"],
-              },
+              items: { type: "string" as const, enum: ["pause", "scale", "review", "dismiss", "reallocate"] },
               minItems: 1,
             },
+            recommended_action: {
+              type: "object" as const,
+              properties: {
+                kind: { type: "string" as const, enum: ["pause", "scale", "review", "reallocate"] },
+                target_ad_ids: { type: "array" as const, items: { type: "string" as const } },
+                reallocate_to_ad_id: { type: "string" as const },
+                note: { type: "string" as const },
+              },
+              required: ["kind"],
+            },
           },
-          required: [
-            "severity",
-            "title",
-            "why",
-            "target_type",
-            "target_id",
-            "target_name",
-            "actions",
-          ],
+          required: ["severity", "title", "why", "actions", "recommended_action"],
         },
       },
     },
@@ -184,213 +204,218 @@ function median(values: number[]): number {
 }
 
 // ============================================================
-// Pre-filter thresholds — per-market tuning
-//
-// Tuned after the first cron run (2026-04-15) produced a noisy GR brief
-// on €12.64 spend / 2 purchases (14d ratio 8.62 vs median 11.15). A single
-// conversion swing at that volume flips ROAS by 30%+, which isn't a
-// meaningful signal. Two guards: raise the spend floor, and require a
-// minimum absolute purchase count before flagging on ratio.
-//
-// The "€50+ spend with 0 purchases" red trigger is exempt from the
-// min-purchases gate — a dead creative burning budget IS the signal,
-// precisely because conversions = 0.
+// Aggregate ads from raw insight rows
 // ============================================================
 
-interface MarketThresholds {
-  /** € — objects with less 14d spend are skipped (noise floor). */
-  noiseFloorSpend14d: number;
-  /**
-   * Required absolute 14d purchase count for ratio-based flagging.
-   * Ad set / campaign with fewer conversions is too statistically noisy
-   * to suggest an action on.
-   */
-  minPurchases14d: number;
-}
-
-const DEFAULT_THRESHOLDS: MarketThresholds = {
-  noiseFloorSpend14d: 30,
-  minPurchases14d: 5,
-};
-
-const MARKET_THRESHOLDS: Record<string, MarketThresholds> = {
-  // BG: stable €230-690/day. Most ads easily clear €30 over 14d and ≥5 conversions.
-  bg: { noiseFloorSpend14d: 30, minPurchases14d: 5 },
-  // GR: €22-105/day, volatile — one stray conversion flips ratios.
-  // Tighter spend floor keeps the LLM focused on objects with real signal.
-  gr: { noiseFloorSpend14d: 50, minPurchases14d: 5 },
-  // RO: smallest market (€5-15/day). Too strict = nothing ever flags.
-  // Lower purchase gate; keep spend floor modest.
-  ro: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
-  // DE: ramp-up market (~€30/day at seed time). Permissive floor so the LLM
-  // sees early signal; raise once daily spend stabilises.
-  de: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
-  // IT: largest of the three new markets (~€45/day). Same ramp-up posture as DE.
-  it: { noiseFloorSpend14d: 30, minPurchases14d: 3 },
-  // UK: smallest at launch (~€4/day). Lowest floor — anything under €15 over
-  // 14d genuinely has no signal; tune up once spend grows.
-  uk: { noiseFloorSpend14d: 15, minPurchases14d: 2 },
-};
-
-function thresholdsFor(marketCode: string | null): MarketThresholds {
-  if (!marketCode) return DEFAULT_THRESHOLDS;
-  return MARKET_THRESHOLDS[marketCode] ?? DEFAULT_THRESHOLDS;
-}
-
-// ============================================================
-// Candidate selection — pre-filter outliers before sending to Claude
-// ============================================================
-
-function pickCandidates(
-  rows: InsightRow[],
-  todayIso: string,
-  marketCode: string | null
-): Candidate[] {
-  const thresholds = thresholdsFor(marketCode);
-  const last3dStart = shiftDate(todayIso, 2); // inclusive of today+yesterday+day-before
-  const byKey = new Map<ObjectKey, Aggregate>();
-
+function aggregateAds(rows: InsightRow[], todayIso: string): Map<string, AdAgg> {
+  const last3dStart = shiftDate(todayIso, -2);
+  const byId = new Map<string, AdAgg>();
   for (const r of rows) {
-    const key: ObjectKey = `${r.level}:${r.object_id}`;
-    let a = byKey.get(key);
+    let a = byId.get(r.object_id);
     if (!a) {
       a = {
-        level: r.level,
-        target_id: r.object_id,
-        target_name: r.object_name ?? "(без име)",
+        ad_id: r.object_id,
+        ad_name: r.object_name ?? "(без име)",
         spend_14d: 0,
         revenue_14d: 0,
         purchases_14d: 0,
-        frequency_sum: 0,
-        frequency_days: 0,
+        roas_14d: 0,
         daily_roas: [],
+        median_daily_roas: 0,
         last_3d_spend: 0,
         last_3d_revenue: 0,
+        last_3d_roas: 0,
+        freq_avg: 0,
+        destination_path: null,
+        destination_type: null,
       };
-      byKey.set(key, a);
+      byId.set(r.object_id, a);
     }
     const s = num(r.spend);
     const rev = num(r.revenue);
-    const p = num(r.purchases);
-    const f = num(r.frequency);
     a.spend_14d += s;
     a.revenue_14d += rev;
-    a.purchases_14d += p;
-    if (f > 0) {
-      a.frequency_sum += f;
-      a.frequency_days += 1;
-    }
+    a.purchases_14d += num(r.purchases);
     if (s > 0) a.daily_roas.push(rev / s);
     if (r.date >= last3dStart) {
       a.last_3d_spend += s;
       a.last_3d_revenue += rev;
     }
+    a.freq_avg = Math.max(a.freq_avg, num(r.frequency));
   }
-
-  const candidates: Candidate[] = [];
-  for (const a of byKey.values()) {
-    // Noise floor — spend below the per-market threshold isn't worth a card.
-    if (a.spend_14d < thresholds.noiseFloorSpend14d) continue;
-
-    const roas_14d = a.spend_14d > 0 ? a.revenue_14d / a.spend_14d : 0;
-    const cpa_14d = a.purchases_14d > 0 ? a.spend_14d / a.purchases_14d : 0;
-    const median_daily_roas = median(a.daily_roas);
-    const last_3d_roas = a.last_3d_spend > 0 ? a.last_3d_revenue / a.last_3d_spend : 0;
-    const frequency_avg = a.frequency_days > 0 ? a.frequency_sum / a.frequency_days : 0;
-
-    // "Dead creative" signal: real spend, zero conversions. Bypasses the
-    // min-purchases gate (0 purchases IS the signal), but still honours
-    // the noise floor above.
-    const isDeadCreative = a.spend_14d > 50 && a.purchases_14d === 0;
-
-    let flagged: "red" | "amber" | "green" | null = null;
-    if (median_daily_roas > 0 && a.purchases_14d >= thresholds.minPurchases14d) {
-      const ratio = last_3d_roas / median_daily_roas;
-      if (ratio < 0.7) flagged = "red";
-      else if (ratio < 0.9) flagged = "amber";
-      else if (ratio > 1.3 && a.spend_14d > 30) flagged = "green";
-    }
-    // Secondary red triggers — don't require the min-purchases gate.
-    if (!flagged && frequency_avg > 3.5) flagged = "red";
-    if (!flagged && isDeadCreative) flagged = "red";
-
-    if (!flagged) continue;
-
-    candidates.push({
-      target_type: a.level,
-      target_id: a.target_id,
-      target_name: a.target_name,
-      metrics: {
-        spend_14d: Math.round(a.spend_14d * 100) / 100,
-        revenue_14d: Math.round(a.revenue_14d * 100) / 100,
-        roas_14d: Math.round(roas_14d * 100) / 100,
-        cpa_14d: Math.round(cpa_14d * 100) / 100,
-        median_daily_roas: Math.round(median_daily_roas * 100) / 100,
-        last_3d_roas: Math.round(last_3d_roas * 100) / 100,
-        frequency_avg: Math.round(frequency_avg * 100) / 100,
-        purchases_14d: Math.round(a.purchases_14d),
-      },
-      flagged_as: flagged,
-    });
+  for (const a of byId.values()) {
+    a.roas_14d = a.spend_14d > 0 ? a.revenue_14d / a.spend_14d : 0;
+    a.median_daily_roas = median(a.daily_roas);
+    a.last_3d_roas = a.last_3d_spend > 0 ? a.last_3d_revenue / a.last_3d_spend : 0;
   }
-
-  // Cap to keep token budget sane — 20 is plenty; Claude picks 2-4.
-  return candidates.slice(0, 20);
+  return byId;
 }
 
 // ============================================================
-// Per-account pipeline
+// Build product cohorts
 // ============================================================
 
-async function buildBriefsForAccount(
-  account: IntegrationAccountRow,
-  marketCode: string | null,
+function buildCohorts(
+  adsAgg: Map<string, AdAgg>,
+  resolutions: Map<string, AdResolution>,
+  productTitleByHandle: Map<string, string>
+): ProductCohort[] {
+  // Index ads by their primary product handle (first in array).
+  const byHandle = new Map<string, AdAgg[]>();
+  for (const ad of adsAgg.values()) {
+    const r = resolutions.get(ad.ad_id);
+    if (!r) continue;
+    ad.destination_path = r.destination_path;
+    ad.destination_type = r.destination_type;
+    const handle = r.product_handles[0];
+    if (!handle) continue;
+    let arr = byHandle.get(handle);
+    if (!arr) {
+      arr = [];
+      byHandle.set(handle, arr);
+    }
+    arr.push(ad);
+  }
+
+  const cohorts: ProductCohort[] = [];
+  for (const [handle, ads] of byHandle) {
+    const total_spend_14d = ads.reduce((s, a) => s + a.spend_14d, 0);
+    if (total_spend_14d < NOISE_FLOOR_COHORT_SPEND) continue;
+    const signalAds = ads.filter((a) => a.spend_14d >= 10);
+    if (signalAds.length < MIN_ADS_WITH_SIGNAL) continue;
+
+    const total_revenue_14d = ads.reduce((s, a) => s + a.revenue_14d, 0);
+    const total_purchases_14d = ads.reduce((s, a) => s + a.purchases_14d, 0);
+    const cohort_roas_14d = total_spend_14d > 0 ? total_revenue_14d / total_spend_14d : 0;
+    const cohort_median_ad_roas = median(signalAds.map((a) => a.roas_14d));
+
+    const winners = signalAds
+      .filter((a) => a.roas_14d >= WINNER_ROAS_FLOOR && a.roas_14d >= cohort_median_ad_roas * 1.1)
+      .sort((a, b) => b.roas_14d - a.roas_14d);
+    const losers = signalAds
+      .filter(
+        (a) =>
+          (cohort_median_ad_roas > 0 && a.roas_14d < cohort_median_ad_roas * LOSER_RATIO) ||
+          (a.spend_14d >= 50 && a.purchases_14d === 0)
+      )
+      .sort((a, b) => a.roas_14d - b.roas_14d);
+
+    if (winners.length === 0 && losers.length === 0) continue;
+    if (losers.length === 0) continue; // no problem to flag
+
+    const loserSpend = losers.reduce((s, a) => s + a.spend_14d, 0);
+    const loserSpendShare = total_spend_14d > 0 ? loserSpend / total_spend_14d : 0;
+    const hasDeadCreative = losers.some((a) => a.spend_14d >= 50 && a.purchases_14d === 0);
+    const severity: "red" | "amber" =
+      hasDeadCreative || loserSpendShare > 0.5 ? "red" : "amber";
+
+    cohorts.push({
+      product_handle: handle,
+      product_title: productTitleByHandle.get(handle) ?? null,
+      ads,
+      total_spend_14d,
+      total_revenue_14d,
+      total_purchases_14d,
+      cohort_roas_14d,
+      cohort_median_ad_roas,
+      winners,
+      losers,
+      severity,
+    });
+  }
+
+  cohorts.sort((a, b) => b.total_spend_14d - a.total_spend_14d);
+  return cohorts.slice(0, TOP_N_COHORTS_PER_MARKET);
+}
+
+// ============================================================
+// Per-market pipeline
+// ============================================================
+
+interface MarketProcessResult {
+  market: string;
+  cohortsConsidered: number;
+  cardsWritten: number;
+  skipped?: string;
+}
+
+async function processMarket(
+  market: ResolvedMarket,
+  organizationId: string,
   forDate: string,
-  apiKey: string
-): Promise<{ accountId: string; cardCount: number; skipped?: string }> {
-  // Load last 14d of per-object insights.
-  const oldest = shiftDate(forDate, 13);
-  const { data: rowsRaw, error: rowsErr } = await supabaseAdmin
+  apiKey: string,
+  productCatalog: Map<string, string>
+): Promise<MarketProcessResult> {
+  const oldest = shiftDate(forDate, -13);
+
+  // Pull 14d ad-level insights across ALL bindings of this market (so blended
+  // BG with primary + legacy + ProteinBar all show up).
+  const accountIds = market.allIntegrationAccountIds;
+  const { data: rowsRaw, error } = await supabaseAdmin
     .from("meta_insights_daily")
-    .select("date, level, object_id, object_name, spend, revenue, purchases, frequency")
-    .eq("integration_account_id", account.id)
-    .in("level", ["ad", "adset", "campaign"])
+    .select("date, object_id, object_name, spend, revenue, purchases, frequency, integration_account_id")
+    .in("integration_account_id", accountIds)
+    .eq("level", "ad")
     .gte("date", oldest)
     .lte("date", forDate);
 
-  if (rowsErr) {
-    logger.error("agent-briefs: insights fetch failed", {
-      accountId: account.id,
-      error: rowsErr.message,
-    });
-    return { accountId: account.id, cardCount: 0, skipped: "insights fetch failed" };
+  if (error) {
+    logger.error("agent-briefs: insights fetch failed", { market: market.marketCode, error: error.message });
+    return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "insights error" };
+  }
+  const rows = (rowsRaw ?? []) as (InsightRow & { integration_account_id: string })[];
+  if (rows.length === 0) {
+    return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no insights" };
   }
 
-  const rows = (rowsRaw ?? []) as InsightRow[];
-  const candidates = pickCandidates(rows, forDate, marketCode);
+  // Resolve ad → product
+  const adIds = [...new Set(rows.map((r) => r.object_id))];
+  const storeIdByAccount = new Map<string, string>();
+  for (const accId of accountIds) storeIdByAccount.set(accId, market.storeId);
+  const resolutions = await resolveAdsToProducts(adIds, storeIdByAccount);
 
-  if (candidates.length === 0) {
-    // Everything looks healthy — no need to spend an LLM call.
-    return { accountId: account.id, cardCount: 0, skipped: "no candidates" };
+  const adsAgg = aggregateAds(rows, forDate);
+  const cohorts = buildCohorts(adsAgg, resolutions, productCatalog);
+
+  if (cohorts.length === 0) {
+    return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no mixed-perf cohorts" };
   }
 
-  // Call Claude Sonnet 4.6 with forced tool_choice — guarantees structured output.
+  // Compact JSON for the LLM (keep ad_id so it can reference + recommend reallocations)
   const userPayload = {
-    account: {
-      name: account.display_name,
-      external_id: account.external_id,
-      currency: account.currency ?? "EUR",
-      market_code: marketCode ?? null,
+    market: {
+      code: market.marketCode,
+      name: market.storeName,
     },
-    period: {
-      from: oldest,
-      to: forDate,
-      days: 14,
-    },
-    candidates,
+    period_days: 14,
+    cohorts: cohorts.map((c) => ({
+      product_handle: c.product_handle,
+      product_title: c.product_title,
+      total_spend_14d: Math.round(c.total_spend_14d * 100) / 100,
+      total_revenue_14d: Math.round(c.total_revenue_14d * 100) / 100,
+      total_purchases_14d: c.total_purchases_14d,
+      cohort_roas_14d: Math.round(c.cohort_roas_14d * 100) / 100,
+      cohort_median_ad_roas: Math.round(c.cohort_median_ad_roas * 100) / 100,
+      winners: c.winners.slice(0, 3).map((a) => ({
+        ad_id: a.ad_id,
+        ad_name: a.ad_name,
+        spend: Math.round(a.spend_14d * 100) / 100,
+        roas: Math.round(a.roas_14d * 100) / 100,
+        purchases: a.purchases_14d,
+      })),
+      losers: c.losers.slice(0, 5).map((a) => ({
+        ad_id: a.ad_id,
+        ad_name: a.ad_name,
+        spend: Math.round(a.spend_14d * 100) / 100,
+        roas: Math.round(a.roas_14d * 100) / 100,
+        purchases: a.purchases_14d,
+        freq: Math.round(a.freq_avg * 100) / 100,
+      })),
+      precomputed_severity: c.severity,
+    })),
   };
 
-  const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+  const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -399,88 +424,87 @@ async function buildBriefsForAccount(
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 3072,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: JSON.stringify(userPayload) }],
-      tools: [ACTION_CARDS_TOOL],
-      tool_choice: { type: "tool", name: "generate_action_cards" },
+      tools: [TOOL],
+      tool_choice: { type: "tool", name: "generate_product_cards" },
     }),
   });
 
-  if (!anthropicRes.ok) {
-    await anthropicRes.text();
+  if (!claudeRes.ok) {
+    const errText = await claudeRes.text();
     logger.error("agent-briefs: Claude API error", {
-      accountId: account.id,
-      status: anthropicRes.status,
+      market: market.marketCode,
+      status: claudeRes.status,
+      body: errText.slice(0, 300),
     });
-    return { accountId: account.id, cardCount: 0, skipped: "claude api error" };
+    return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: 0, skipped: "claude error" };
   }
 
-  const body = (await anthropicRes.json()) as ClaudeResponse;
-  const toolBlock = body.content?.find(
-    (c): c is ClaudeToolUseBlock => c.type === "tool_use" && c.name === "generate_action_cards"
+  const body = (await claudeRes.json()) as ClaudeResponse;
+  const tool = body.content?.find(
+    (c): c is ClaudeToolUseBlock => c.type === "tool_use" && c.name === "generate_product_cards"
   );
-  const cards = (toolBlock?.input?.cards ?? []) as BriefCard[];
+  const cards = (tool?.input?.cards ?? []) as BriefCard[];
 
   if (cards.length === 0) {
-    return { accountId: account.id, cardCount: 0, skipped: "claude returned 0 cards" };
+    return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: 0, skipped: "claude 0 cards" };
   }
 
-  // Upsert into agent_briefs with ON CONFLICT DO NOTHING (idempotency on
-  // integration_account_id, for_date, target_type, target_id).
-  const candidateByTargetId = new Map(candidates.map((c) => [c.target_id, c]));
-  const briefRows = cards
-    // Sanity-filter: drop cards whose target_id isn't in our candidate list
-    // (Claude should copy verbatim but we don't trust it blindly).
-    .filter((card) => candidateByTargetId.has(card.target_id))
-    .map((card) => {
-      const cand = candidateByTargetId.get(card.target_id);
-      return {
-        organization_id: account.organization_id,
-        integration_account_id: account.id,
-        for_date: forDate,
-        severity: card.severity,
-        title: card.title,
-        why: card.why,
-        target_type: card.target_type,
-        target_id: card.target_id,
-        target_name: card.target_name,
-        actions: card.actions,
-        payload: {
-          metrics: cand?.metrics,
-          flagged_as: cand?.flagged_as,
-          model: "claude-sonnet-4-6",
-          stop_reason: body.stop_reason,
-          input_tokens: body.usage?.input_tokens,
-          output_tokens: body.usage?.output_tokens,
+  // Match each LLM card back to its cohort by product handle mentioned in title.
+  // We rely on the prompt rule that the product name is in quotes. Fallback:
+  // first cohort by spend.
+  const briefRows = cards.map((card, idx) => {
+    const cohort =
+      cohorts.find((c) => c.product_title && card.title.includes(c.product_title)) ??
+      cohorts.find((c) => card.title.toLowerCase().includes(c.product_handle.toLowerCase())) ??
+      cohorts[Math.min(idx, cohorts.length - 1)];
+    return {
+      organization_id: organizationId,
+      integration_account_id: null, // product-cohort cards aren't tied to one Meta account
+      store_id: market.storeId,
+      for_date: forDate,
+      severity: card.severity,
+      title: card.title,
+      why: card.why,
+      target_type: "product",
+      target_id: cohort.product_handle,
+      target_name: cohort.product_title ?? cohort.product_handle,
+      actions: card.actions,
+      source_agent: "agent-briefs-product",
+      payload: {
+        cohort_summary: {
+          total_spend_14d: cohort.total_spend_14d,
+          total_revenue_14d: cohort.total_revenue_14d,
+          total_purchases_14d: cohort.total_purchases_14d,
+          cohort_roas_14d: cohort.cohort_roas_14d,
+          winners_count: cohort.winners.length,
+          losers_count: cohort.losers.length,
         },
-      };
-    });
+        recommended_action: card.recommended_action ?? null,
+        model: "claude-sonnet-4-6",
+        stop_reason: body.stop_reason,
+        input_tokens: body.usage?.input_tokens,
+        output_tokens: body.usage?.output_tokens,
+      },
+    };
+  });
 
-  if (briefRows.length === 0) {
-    return { accountId: account.id, cardCount: 0, skipped: "all cards filtered" };
-  }
-
-  const { error: upsertErr } = await supabaseAdmin
-    .from("agent_briefs")
-    .upsert(briefRows, {
-      onConflict: "integration_account_id,for_date,target_type,target_id",
-      ignoreDuplicates: true,
-    });
-
+  const { error: upsertErr } = await supabaseAdmin.from("agent_briefs").upsert(briefRows, {
+    onConflict: "organization_id,for_date,target_type,target_id",
+    ignoreDuplicates: false,
+  });
   if (upsertErr) {
-    logger.error("agent-briefs: upsert failed", {
-      accountId: account.id,
-      error: upsertErr.message,
-    });
-    return { accountId: account.id, cardCount: 0, skipped: "upsert failed" };
+    logger.error("agent-briefs: upsert failed", { market: market.marketCode, error: upsertErr.message });
+    return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: 0, skipped: "upsert failed" };
   }
 
-  return { accountId: account.id, cardCount: briefRows.length };
+  return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: briefRows.length };
 }
 
 // ============================================================
-// GET — cron entrypoint
+// GET
 // ============================================================
 
 export async function GET(req: Request) {
@@ -489,80 +513,71 @@ export async function GET(req: Request) {
 
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    logger.error("agent-briefs: CLAUDE_API_KEY missing");
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "CLAUDE_API_KEY missing" }, { status: 500 });
   }
 
   const startedAt = Date.now();
   const forDate = sofiaDate();
-
-  // Active Meta accounts.
-  const { data: accounts, error: accErr } = await supabaseAdmin
-    .from("integration_accounts")
-    .select("id, organization_id, external_id, display_name, currency")
-    .eq("service", "meta_ads")
-    .eq("status", "active");
-
-  if (accErr) {
-    logger.error("agent-briefs: failed to load accounts", { error: accErr.message });
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
-  }
-
-  const activeAccounts = (accounts ?? []) as IntegrationAccountRow[];
-
-  // Map each account to its market code (for the LLM prompt context).
-  // resolveAllHomeMarkets returns ResolvedMarket[] which has bindings; we
-  // build an account→market map so BG's 3 accounts all know they're "bg".
   const markets = await resolveAllHomeMarkets();
-  const marketByAccountId = new Map<string, string>();
+
+  // Pre-load product catalogs per market for title lookups (handle → title).
+  const productTitleByMarket = new Map<string, Map<string, string>>();
   for (const m of markets) {
-    for (const b of m.bindings) {
-      marketByAccountId.set(b.integrationAccountId, m.marketCode);
+    const { data: prods } = await supabaseAdmin
+      .schema(`store_${m.marketCode}` as never)
+      .from("products")
+      .select("handle, title")
+      .eq("status", "active");
+    const map = new Map<string, string>();
+    for (const p of (prods ?? []) as Array<{ handle: string; title: string }>) {
+      map.set(p.handle, p.title);
     }
+    productTitleByMarket.set(m.marketCode, map);
   }
 
-  // Fan out — 60s serverless budget accommodates this comfortably in parallel.
-  const results = await Promise.allSettled(
-    activeAccounts.map((acc) =>
-      buildBriefsForAccount(acc, marketByAccountId.get(acc.id) ?? null, forDate, apiKey)
-    )
+  // organization_id per market (resolveAllHomeMarkets doesn't carry it)
+  const { data: storeOrgRows } = await supabaseAdmin
+    .from("stores")
+    .select("id, organization_id")
+    .in("id", markets.map((m) => m.storeId));
+  const orgByStore = new Map<string, string>(
+    (storeOrgRows ?? []).map((r) => [r.id as string, r.organization_id as string])
   );
 
-  let cardsGenerated = 0;
-  let succeeded = 0;
-  const perAccount: Array<{ accountId: string; cardCount: number; skipped?: string; error?: string }> = [];
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    const acc = activeAccounts[i];
+  const results = await Promise.allSettled(
+    markets.map((m) => {
+      const orgId = orgByStore.get(m.storeId);
+      if (!orgId) {
+        return Promise.resolve({
+          market: m.marketCode,
+          cohortsConsidered: 0,
+          cardsWritten: 0,
+          skipped: "no organization_id",
+        } as MarketProcessResult);
+      }
+      return processMarket(m, orgId, forDate, apiKey, productTitleByMarket.get(m.marketCode) ?? new Map());
+    })
+  );
+
+  const perMarket: MarketProcessResult[] = [];
+  let totalCards = 0;
+  for (const r of results) {
     if (r.status === "fulfilled") {
-      cardsGenerated += r.value.cardCount;
-      if (!r.value.skipped) succeeded++;
-      perAccount.push({ accountId: acc.id, cardCount: r.value.cardCount, skipped: r.value.skipped });
+      perMarket.push(r.value);
+      totalCards += r.value.cardsWritten;
     } else {
-      perAccount.push({
-        accountId: acc.id,
-        cardCount: 0,
-        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-      });
+      logger.error("agent-briefs: market settle rejected", { reason: String(r.reason) });
     }
   }
 
   const durationMs = Date.now() - startedAt;
-  logger.info("agent-briefs cron completed", {
-    forDate,
-    accountsProcessed: activeAccounts.length,
-    succeeded,
-    cardsGenerated,
-    durationMs,
-  });
+  logger.info("agent-briefs cron completed", { forDate, totalCards, durationMs });
 
   return NextResponse.json({
     ok: true,
     forDate,
-    accountsProcessed: activeAccounts.length,
-    succeeded,
-    cardsGenerated,
+    totalCards,
     durationMs,
-    perAccount,
+    perMarket,
   });
 }
