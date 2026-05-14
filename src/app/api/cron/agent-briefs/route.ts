@@ -567,7 +567,17 @@ export async function GET(req: Request) {
           skipped: "no organization_id",
         } as MarketProcessResult);
       }
-      return processMarket(m, orgId, forDate, apiKey, productTitleByMarket.get(m.marketCode) ?? new Map());
+      return processMarket(m, orgId, forDate, apiKey, productTitleByMarket.get(m.marketCode) ?? new Map()).catch(
+        (e: unknown): MarketProcessResult => {
+          const msg = e instanceof Error ? `${e.message} | ${e.stack?.split("\n").slice(0, 3).join(" / ")}` : String(e);
+          return {
+            market: m.marketCode,
+            cohortsConsidered: 0,
+            cardsWritten: 0,
+            skipped: `processMarket threw: ${msg.slice(0, 500)}`,
+          };
+        }
+      );
     })
   );
 
