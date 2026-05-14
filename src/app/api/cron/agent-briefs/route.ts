@@ -365,6 +365,13 @@ async function processMarket(
   }
   const rows = (rowsRaw ?? []) as (InsightRow & { integration_account_id: string })[];
   if (rows.length === 0) {
+    logger.warn("agent-briefs: no insights for market", {
+      market: market.marketCode,
+      accountIds,
+      oldest,
+      forDate,
+      bindings_count: market.bindings.length,
+    });
     return { market: market.marketCode, cohortsConsidered: 0, cardsWritten: 0, skipped: "no insights" };
   }
 
