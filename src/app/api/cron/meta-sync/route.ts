@@ -245,8 +245,15 @@ export async function GET(request: Request) {
   // and a capital T or trailing space should not silently demote an intraday
   // run to the 3-day nightly backfill.
   const windowParam = (url.searchParams.get("window") ?? "").trim().toLowerCase();
-  const daysBack =
-    windowParam === "today" ? SYNC_DAYS_BACK_INTRADAY : SYNC_DAYS_BACK_NIGHTLY;
+  // Optional `?daysBack=N` for manual backfills (e.g. when a new level is
+  // enabled and the per-day history is empty). Clamped to [1..30] so a
+  // typo can't blow the BUC budget. `window=today` still wins if set.
+  const daysBackParam = parseInt(url.searchParams.get("daysBack") ?? "", 10);
+  const daysBack = windowParam === "today"
+    ? SYNC_DAYS_BACK_INTRADAY
+    : Number.isFinite(daysBackParam) && daysBackParam > 0
+      ? Math.min(daysBackParam, 30)
+      : SYNC_DAYS_BACK_NIGHTLY;
 
   // Date window: today - daysBack + 1 .. today, anchored to Europe/Sofia (the
   // business operating timezone). UTC-based math here would shift the window
