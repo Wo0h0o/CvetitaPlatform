@@ -336,7 +336,7 @@ function buildCohorts(
     });
   }
   } catch (e) {
-    throw new Error(`buildCohorts.${subStep} → ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`v2-bc.${subStep} | ${e instanceof Error ? e.message : String(e)}`);
   }
 
   cohorts.sort((a, b) => b.total_spend_14d - a.total_spend_14d);
