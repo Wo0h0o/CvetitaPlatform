@@ -569,18 +569,21 @@ async function processMarketInner(
   }
 
   if (!Array.isArray(rawCards)) {
+    const preview =
+      typeof rawCards === "string"
+        ? (rawCards as string).slice(0, 400)
+        : JSON.stringify(rawCards).slice(0, 400);
     logger.error("agent-briefs: tool returned non-array cards", {
       market: market.marketCode,
       stop_reason: body.stop_reason,
       typeofCards: typeof rawCards,
-      ctor: (rawCards as unknown as { constructor?: { name?: string } })?.constructor?.name,
-      previewJson: JSON.stringify(rawCards).slice(0, 300),
+      preview,
     });
     return {
       market: market.marketCode,
       cohortsConsidered: cohorts.length,
       cardsWritten: 0,
-      skipped: `cards-not-array typeof=${typeof rawCards} stop_reason=${body.stop_reason}`,
+      skipped: `cards-not-array typeof=${typeof rawCards} stop_reason=${body.stop_reason} | preview: ${preview}`,
     };
   }
 
