@@ -48,6 +48,17 @@ const TYPE_COLOR: Record<EventType, string> = {
   unpaid_leave: "bg-gray-100 text-gray-700",
 };
 
+// Same family as TYPE_COLOR but only the background, used to tint the whole
+// schedule cell when the entire day is off. Kept separate so the badge
+// styling can keep stronger contrast without exploding the whole cell.
+const FULL_DAY_BG: Record<EventType, string> = {
+  absence: "",
+  overtime: "",
+  sick: "bg-blue-50",
+  paid_leave: "bg-purple-50",
+  unpaid_leave: "bg-gray-100",
+};
+
 const WEEKDAY_NAMES = ["Пон", "Вт", "Ср", "Чет", "Пет"];
 
 function pad(n: number) {
@@ -364,6 +375,29 @@ function DayCell({ date, events }: { date: Date; events: DayEvent[] }) {
       .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
       .reduce((s, e) => s + (parseMin(e.end_time!) - parseMin(e.start_time!)), 0);
     worked = Math.max(0, worked - absMin / 60) + otMin / 60;
+  }
+
+  // Full-day off: tint the entire cell and render a centred type label so
+  // the calendar reads at a glance ("този ден е отпуск" вместо "имам badge").
+  // Partial events (absence + overtime) keep the chip list because they
+  // coexist with the working hours of the same day.
+  if (fullDayOff) {
+    return (
+      <div className={`p-2 min-h-[100px] flex flex-col ${FULL_DAY_BG[fullDayOff.event_type]}`}>
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-semibold text-text">{date.getDate()}</span>
+          <span className="text-[11px] text-text-3">0.0ч</span>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <span
+            className={`text-[12px] font-semibold px-2 py-0.5 rounded ${TYPE_COLOR[fullDayOff.event_type]}`}
+            title={fullDayOff.reason ?? ""}
+          >
+            {TYPE_LABEL[fullDayOff.event_type]}
+          </span>
+        </div>
+      </div>
+    );
   }
 
   return (
