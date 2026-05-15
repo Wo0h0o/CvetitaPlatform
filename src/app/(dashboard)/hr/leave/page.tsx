@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
@@ -58,18 +58,41 @@ export default function LeavePage() {
     { revalidateOnFocus: false }
   );
 
+  const todayIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+
   const [showForm, setShowForm] = useState(false);
   const [leaveType, setLeaveType] = useState<"paid" | "unpaid">("paid");
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  });
-  const [workingDays, setWorkingDays] = useState(1);
+  // Defaults to TODAY for both. User adjusts "До" to span more days; we
+  // derive working_days (Mon–Fri only) automatically since BG labour law
+  // counts leave in работни дни, not calendar days.
+  const [startDate, setStartDate] = useState(todayIso);
+  const [endDate, setEndDate] = useState(todayIso);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Working days = Mon-Fri count in [startDate, endDate] inclusive.
+  const workingDays = useMemo(() => {
+    if (!startDate || !endDate || endDate < startDate) return 0;
+    const a = new Date(startDate + "T00:00:00");
+    const b = new Date(endDate + "T00:00:00");
+    let n = 0;
+    const cur = new Date(a);
+    while (cur <= b) {
+      const dow = cur.getDay();
+      if (dow >= 1 && dow <= 5) n += 1;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return n;
+  }, [startDate, endDate]);
+
   const handleSubmit = async () => {
+    if (workingDays < 1) {
+      toast("Изберете поне един работен ден", "error");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/hr/leave-requests", {
@@ -171,25 +194,41 @@ export default function LeavePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[13px] font-semibold text-text mb-1.5">Считано от</label>
+                <label className="block text-[13px] font-semibold text-text mb-1.5">От</label>
                 <input
                   type="date"
                   className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-[14px]"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setStartDate(v);
+                    // Keep endDate at or after the new start.
+                    if (endDate < v) setEndDate(v);
+                  }}
                 />
               </div>
               <div>
-                <label className="block text-[13px] font-semibold text-text mb-1.5">Работни дни</label>
+                <label className="block text-[13px] font-semibold text-text mb-1.5">До</label>
                 <input
-                  type="number"
-                  min={1}
-                  max={365}
+                  type="date"
                   className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-[14px]"
-                  value={workingDays}
-                  onChange={(e) => setWorkingDays(Math.max(1, Number(e.target.value) || 1))}
+                  value={endDate}
+                  min={startDate}
+                  onChange={(e) => setEndDate(e.target.value || startDate)}
                 />
               </div>
+            </div>
+
+            <div className="text-[12px] text-text-2 bg-accent-soft/30 border border-accent/20 rounded-lg px-3 py-2 flex items-center justify-between">
+              <span>
+                <span className="font-semibold text-accent">{workingDays}</span> работни дни
+                {workingDays > 0 && (
+                  <span className="text-text-3"> (уикенди не се броят)</span>
+                )}
+              </span>
+              {workingDays === 0 && (
+                <span className="text-orange text-[11px]">Избери поне един работен ден</span>
+              )}
             </div>
 
             <div>

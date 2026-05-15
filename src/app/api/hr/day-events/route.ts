@@ -73,7 +73,8 @@ export async function GET(req: NextRequest) {
 
 interface DayEventBody {
   userId?: string;          // target worker (defaults to self)
-  event_date: string;       // YYYY-MM-DD
+  event_date: string;       // YYYY-MM-DD — start of range (or single day)
+  end_date?: string | null; // YYYY-MM-DD — inclusive end; full-day types only
   event_type: string;
   start_time?: string | null;
   end_time?: string | null;
@@ -81,9 +82,14 @@ interface DayEventBody {
 }
 
 /**
- * POST /api/hr/day-events — create a new event for self or, with privileges,
- * for another worker. Validates the type/time constraints client-side to
- * surface a nicer error than the DB CHECK violation.
+ * POST /api/hr/day-events — create event(s) for self or, with privileges, for
+ * another worker.
+ *
+ * For full-day types (sick / paid_leave / unpaid_leave) the caller may pass
+ * `end_date` to mark a range. We expand the range into one row per calendar
+ * day (weekends included, so the calendar visually spans the whole leave
+ * block). Partial types (absence / overtime) must remain single-day —
+ * stretching a partial event across days has no meaningful interpretation.
  */
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext(req);
@@ -133,25 +139,61 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Range expansion (full-day types only).
+  if (!isFullDay && body.end_date && body.end_date !== body.event_date) {
+    return NextResponse.json(
+      { error: "end_date is only valid for full-day events" },
+      { status: 400 }
+    );
+  }
+  if (body.end_date && !/^\d{4}-\d{2}-\d{2}$/.test(body.end_date)) {
+    return NextResponse.json({ error: "end_date must be YYYY-MM-DD" }, { status: 400 });
+  }
+  if (body.end_date && body.end_date < body.event_date) {
+    return NextResponse.json(
+      { error: "end_date must be on or after event_date" },
+      { status: 400 }
+    );
+  }
+
+  // Build the list of dates to insert.
+  const dates: string[] = [];
+  if (isFullDay && body.end_date) {
+    const cur = new Date(body.event_date + "T00:00:00");
+    const end = new Date(body.end_date + "T00:00:00");
+    let safety = 366; // hard cap so a malformed range can't blow up the loop
+    while (cur <= end && safety-- > 0) {
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, "0");
+      const d = String(cur.getDate()).padStart(2, "0");
+      dates.push(`${y}-${m}-${d}`);
+      cur.setDate(cur.getDate() + 1);
+    }
+  } else {
+    dates.push(body.event_date);
+  }
+
   try {
     const supabase = getSupabase(req);
+    const rows = dates.map((d) => ({
+      user_id: targetUserId,
+      organization_id: ctx.organizationId,
+      event_date: d,
+      event_type: body.event_type,
+      start_time: isFullDay ? null : body.start_time,
+      end_time: isFullDay ? null : body.end_time,
+      reason: body.reason ?? null,
+      created_by: ctx.userId,
+    }));
+
     const { data, error } = await supabase
       .from("hr_day_events")
-      .insert({
-        user_id: targetUserId,
-        organization_id: ctx.organizationId,
-        event_date: body.event_date,
-        event_type: body.event_type,
-        start_time: isFullDay ? null : body.start_time,
-        end_time: isFullDay ? null : body.end_time,
-        reason: body.reason ?? null,
-        created_by: ctx.userId,
-      })
-      .select()
-      .single();
+      .insert(rows)
+      .select();
 
     if (error) throw error;
-    return NextResponse.json({ event: data });
+    // Single-day callers still get `event` for backwards compatibility.
+    return NextResponse.json({ events: data, event: data?.[0] ?? null });
   } catch (err) {
     logger.error("HR day-events POST failed", { ...requestMeta(req), error: String(err) });
     return NextResponse.json({ error: "Failed to create event" }, { status: 500 });

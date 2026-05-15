@@ -192,6 +192,7 @@ export default function SchedulePage() {
     start_time: string | null;
     end_time: string | null;
     reason: string | null;
+    end_date?: string | null;
   }) => {
     if (!modalDate || !selectedUserId) return;
     try {
@@ -208,7 +209,8 @@ export default function SchedulePage() {
       if (!res.ok) throw new Error(json.error ?? "Failed");
       await refreshEvents();
       handleCloseModal();
-      toast("Записано", "success");
+      const count = json.events?.length ?? 1;
+      toast(count > 1 ? `Записани ${count} дни` : "Записано", "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Грешка", "error");
     }
@@ -397,6 +399,7 @@ export default function SchedulePage() {
         }
       >
         <DayModalContent
+          startDate={modalDate ?? ""}
           existing={dayEventsForModal}
           onDelete={handleDelete}
           onCreate={handleCreate}
@@ -634,16 +637,19 @@ function computeMonthlyTotalsInline(
 }
 
 function DayModalContent({
+  startDate,
   existing,
   onCreate,
   onDelete,
 }: {
+  startDate: string; // YYYY-MM-DD — the day the modal was opened on
   existing: DayEvent[];
   onCreate: (payload: {
     event_type: EventType;
     start_time: string | null;
     end_time: string | null;
     reason: string | null;
+    end_date?: string | null;
   }) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }) {
@@ -651,9 +657,27 @@ function DayModalContent({
   const [startTime, setStartTime] = useState("12:00");
   const [endTime, setEndTime] = useState("14:00");
   const [reason, setReason] = useState("");
+  const [endDate, setEndDate] = useState(startDate); // for sick/leave range
   const [submitting, setSubmitting] = useState(false);
 
   const isFullDay = type === "sick" || type === "paid_leave" || type === "unpaid_leave";
+
+  // Reset endDate to startDate whenever the modal re-opens on a different
+  // day OR when the user switches away from a full-day type (so a stale
+  // range doesn't survive a type change).
+  useEffect(() => {
+    setEndDate(startDate);
+  }, [startDate, isFullDay]);
+
+  // Inclusive day count when ranged (Cal days, weekends included — for
+  // sick/leave the worker is "off" regardless of weekend).
+  const rangeDays = useMemo(() => {
+    if (!isFullDay) return 1;
+    if (!startDate || !endDate || endDate < startDate) return 1;
+    const a = new Date(startDate + "T00:00:00");
+    const b = new Date(endDate + "T00:00:00");
+    return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  }, [isFullDay, startDate, endDate]);
 
   const submit = async () => {
     setSubmitting(true);
@@ -663,6 +687,7 @@ function DayModalContent({
         start_time: isFullDay ? null : startTime,
         end_time: isFullDay ? null : endTime,
         reason: reason.trim() || null,
+        end_date: isFullDay && endDate !== startDate ? endDate : null,
       });
       setReason("");
     } finally {
@@ -746,6 +771,38 @@ function DayModalContent({
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
                 />
+              </div>
+            </div>
+          )}
+
+          {isFullDay && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[13px] font-semibold text-text mb-1.5">От дата</label>
+                <input
+                  type="date"
+                  className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-[14px]"
+                  value={startDate}
+                  disabled
+                  title="Кликнатата дата в календара"
+                />
+              </div>
+              <div>
+                <label className="block text-[13px] font-semibold text-text mb-1.5">
+                  До дата
+                </label>
+                <input
+                  type="date"
+                  className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-[14px]"
+                  value={endDate}
+                  min={startDate}
+                  onChange={(e) => setEndDate(e.target.value || startDate)}
+                />
+              </div>
+              <div className="col-span-2 text-[12px] text-text-3">
+                {rangeDays > 1
+                  ? `Ще се маркират ${rangeDays} последователни дни.`
+                  : "Само избраната дата. За повече дни — избери крайна дата."}
               </div>
             </div>
           )}
