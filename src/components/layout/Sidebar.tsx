@@ -17,6 +17,7 @@ import {
   DollarSign,
   Shield,
   Inbox,
+  CalendarDays,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -38,7 +39,25 @@ interface NavSection {
   items: NavItem[];
 }
 
-const navSections: NavSection[] = [
+const hrSection: NavSection = {
+  label: "HR",
+  items: [
+    { href: "/hr", icon: CalendarDays, label: "HR Начало" },
+    {
+      href: "/hr/schedule",
+      icon: CalendarDays,
+      label: "График",
+    },
+    { href: "/hr/leave", icon: Mail, label: "Заявки за отпуск" },
+  ],
+};
+
+// Manager-and-admin extras to /hr (worker doesn't see these)
+const hrManagerExtras: NavItem[] = [
+  { href: "/hr/team", icon: Users, label: "Екип" },
+];
+
+const fullNavSections: NavSection[] = [
   {
     label: "Основни",
     items: [
@@ -78,11 +97,37 @@ const navSections: NavSection[] = [
         children: [
           { href: "/settings", label: "Профил" },
           { href: "/settings/stores", label: "Магазини" },
+          { href: "/settings/team", label: "Екип" },
         ],
       },
     ],
   },
 ];
+
+function buildSections(role: string | null): NavSection[] {
+  // Worker = HR-only sidebar with a slim settings link for their own profile.
+  if (role === "worker") {
+    return [
+      hrSection,
+      {
+        label: "Профил",
+        items: [{ href: "/settings", icon: Settings, label: "Моят профил" }],
+      },
+    ];
+  }
+
+  // Manager/admin/viewer/agent see HR (with team extras for manager+admin)
+  // plus the full dashboard. The role check for showing /hr/team is duplicated
+  // server-side in middleware — the sidebar hide is purely cosmetic.
+  const hrForManagers: NavSection = {
+    ...hrSection,
+    items:
+      role === "admin" || role === "manager"
+        ? [...hrSection.items, ...hrManagerExtras]
+        : hrSection.items,
+  };
+  return [hrForManagers, ...fullNavSections];
+}
 
 export function Sidebar({
   collapsed,
@@ -97,12 +142,19 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
 
+  const { data: me } = useSWR<{ role: string }>("/api/me", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60_000,
+  });
+  const role = me?.role ?? null;
+  const navSections = buildSections(role);
+  const isWorker = role === "worker";
+
   // Inbox unread badge — polls the count-only endpoint every 60s. SWR dedupes
   // across components so adding more inbox-aware UI later won't multiply
-  // requests. Kept inline rather than as a separate hook because no one else
-  // needs the count yet.
+  // requests. Workers don't see the inbox tile at all, so skip the fetch.
   const { data: inboxCount } = useSWR<{ count: number }>(
-    "/api/inbox?countOnly=1",
+    isWorker ? null : "/api/inbox?countOnly=1",
     fetcher,
     { revalidateOnFocus: false, refreshInterval: 60_000 }
   );
@@ -139,7 +191,7 @@ export function Sidebar({
                 Цветита
               </div>
               <div className="text-[11px] text-text-3 leading-tight">
-                Команден Център
+                {isWorker ? "HR" : "Команден Център"}
               </div>
             </div>
           </div>
