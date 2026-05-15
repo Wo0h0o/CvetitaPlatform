@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
-import { Card, CardBody } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Modal } from "@/components/shared/Modal";
@@ -59,7 +58,18 @@ const FULL_DAY_BG: Record<EventType, string> = {
   unpaid_leave: "bg-gray-100",
 };
 
-const WEEKDAY_NAMES = ["Пон", "Вт", "Ср", "Чет", "Пет"];
+// Status-dot colour per event type, used for the soft pill list inside a
+// partial-event day. Solid dots read faster than text-only labels in a
+// dense grid.
+const TYPE_DOT: Record<EventType, string> = {
+  absence: "bg-orange",
+  overtime: "bg-accent",
+  sick: "bg-blue-500",
+  paid_leave: "bg-purple-500",
+  unpaid_leave: "bg-gray-500",
+};
+
+const WEEKDAY_NAMES = ["Пон", "Вт", "Ср", "Чет", "Пет", "Съб", "Нед"];
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -71,10 +81,21 @@ function isWeekday(d: Date) {
   const x = d.getDay();
   return x >= 1 && x <= 5;
 }
+function isWeekend(d: Date) {
+  const x = d.getDay();
+  return x === 0 || x === 6;
+}
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
-/** Build the list of week rows for the month: each week is a row of Mon–Fri
+/** Build the list of week rows for the month: each week is a row of Mon–Sun
  * Date objects. Days outside the current month appear as nulls so the grid
- * keeps clean columns even when the month starts mid-week. */
+ * keeps clean columns when the month starts mid-week or ends mid-week. */
 function buildMonthWeeks(year: number, month: number): (Date | null)[][] {
   const first = new Date(year, month, 1);
   const last = new Date(year, month + 1, 0);
@@ -85,7 +106,7 @@ function buildMonthWeeks(year: number, month: number): (Date | null)[][] {
   const weeks: (Date | null)[][] = [];
   while (cursor <= last) {
     const week: (Date | null)[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
       const d = new Date(cursor);
       d.setDate(cursor.getDate() + i);
       week.push(d.getMonth() === month ? d : null);
@@ -126,8 +147,9 @@ export default function SchedulePage() {
   );
 
   // Day events for the visible month, scoped to the selected worker.
-  const monthStart = new Date(refMonth.year, refMonth.month, 1);
-  const monthEnd = new Date(refMonth.year, refMonth.month + 1, 0);
+  // Memoised so downstream useMemo deps stay referentially stable across renders.
+  const monthStart = useMemo(() => new Date(refMonth.year, refMonth.month, 1), [refMonth]);
+  const monthEnd = useMemo(() => new Date(refMonth.year, refMonth.month + 1, 0), [refMonth]);
   const fromIso = isoDate(monthStart);
   const toIso = isoDate(monthEnd);
 
@@ -208,48 +230,69 @@ export default function SchedulePage() {
 
   const dayEventsForModal = modalDate ? eventsByDate.get(modalDate) ?? [] : [];
 
+  // KPI strip: monthly worked/expected for the currently viewed user.
+  // Computed inline rather than via /api/hr/team so it stays accurate for
+  // workers viewing themselves (team endpoint is manager-gated).
+  const kpi = useMemo(() => {
+    if (!eventsData) return null;
+    return computeMonthlyTotalsInline(monthStart, monthEnd, eventsData.events);
+  }, [eventsData, monthStart, monthEnd]);
+
+  const today = new Date();
+
   return (
     <>
-      <PageHeader title="График">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
+      <PageHeader title="График" />
+
+      {/* Toolbar: month nav + (manager only) worker select + KPI summary.
+          Single rounded card so the controls float together as one Apple-like
+          "navigation pill" above the calendar. */}
+      <div className="bg-surface rounded-2xl shadow-sm px-3 py-2.5 mb-4 flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-text-2 hover:bg-surface-2 cursor-pointer transition-colors"
+            aria-label="Предишен месец"
             onClick={() =>
               setRefMonth(({ year, month }) => {
                 const d = new Date(year, month - 1, 1);
                 return { year: d.getFullYear(), month: d.getMonth() };
               })
             }
-            aria-label="Предишен месец"
           >
-            <ChevronLeft size={16} />
-          </Button>
-          <span className="text-[14px] font-semibold text-text min-w-[140px] text-center capitalize">
+            <ChevronLeft size={18} />
+          </button>
+          <span className="text-[15px] font-semibold text-text min-w-[140px] text-center capitalize">
             {monthLabel}
           </span>
-          <Button
-            variant="secondary"
-            size="sm"
+          <button
+            type="button"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-text-2 hover:bg-surface-2 cursor-pointer transition-colors"
+            aria-label="Следващ месец"
             onClick={() =>
               setRefMonth(({ year, month }) => {
                 const d = new Date(year, month + 1, 1);
                 return { year: d.getFullYear(), month: d.getMonth() };
               })
             }
-            aria-label="Следващ месец"
           >
-            <ChevronRight size={16} />
-          </Button>
+            <ChevronRight size={18} />
+          </button>
         </div>
-      </PageHeader>
 
-      {isManager && (
-        <Card className="mb-4">
-          <CardBody className="flex items-center gap-3 flex-wrap">
-            <label className="text-[13px] font-semibold text-text">Виж график на:</label>
+        <button
+          type="button"
+          onClick={() => setRefMonth({ year: today.getFullYear(), month: today.getMonth() })}
+          className="px-3 h-8 rounded-full text-[12px] font-medium bg-surface-2 hover:bg-border text-text-2 cursor-pointer transition-colors"
+        >
+          Днес
+        </button>
+
+        {isManager && (
+          <div className="flex items-center gap-2 ml-2">
+            <span className="text-[12px] text-text-3">Виж:</span>
             <select
-              className="bg-surface-2 border border-border rounded-lg px-3 py-2 text-[13px] cursor-pointer"
+              className="bg-surface-2 border-0 rounded-full pl-3 pr-8 h-8 text-[13px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30"
               value={selectedUserId ?? ""}
               onChange={(e) => setSelectedUserId(e.target.value)}
             >
@@ -257,66 +300,83 @@ export default function SchedulePage() {
               {(teamData?.workers ?? []).map((w) => (
                 <option key={w.user_id} value={w.user_id}>
                   {w.full_name ?? w.email ?? w.user_id}
-                  {w.job_title ? ` — ${w.job_title}` : ""}
                 </option>
               ))}
             </select>
-          </CardBody>
-        </Card>
+          </div>
+        )}
+
+        {/* KPI strip pushed to the right on wide screens, wraps naturally below. */}
+        {kpi && (
+          <div className="ml-auto flex items-center gap-3 text-[12px] tabular-nums">
+            <span className="text-text-3">
+              <span className="font-semibold text-text">{kpi.workedHours.toFixed(1)}</span>
+              <span className="text-text-3"> / {kpi.expectedHours}ч</span>
+            </span>
+            {kpi.overtimeHours > 0 && (
+              <span className="text-accent font-medium">+{kpi.overtimeHours.toFixed(1)}ч OT</span>
+            )}
+            {kpi.paidLeaveDays > 0 && (
+              <span className="text-purple-700">{kpi.paidLeaveDays}д отпуск</span>
+            )}
+            {kpi.sickDays > 0 && (
+              <span className="text-blue-700">{kpi.sickDays}д болн.</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Calendar tile grid. The container has a slightly tinted background
+          so the gap between tiles reads as a hair-line separator without
+          needing actual borders. */}
+      {!eventsData ? (
+        <Skeleton className="h-[560px] w-full rounded-2xl" />
+      ) : (
+        <div className="bg-surface-2/60 rounded-2xl p-2 sm:p-3 overflow-x-auto">
+          {/* Weekday header row */}
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2 mb-2 min-w-[640px]">
+            {WEEKDAY_NAMES.map((n, i) => {
+              const isWknd = i >= 5;
+              return (
+                <div
+                  key={n}
+                  className={`text-[11px] font-medium uppercase tracking-wider px-2 ${
+                    isWknd ? "text-text-3" : "text-text-2"
+                  }`}
+                >
+                  {n}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Day tiles flattened across 5–6 rows */}
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2 min-w-[640px]">
+            {weeks.flatMap((week, wi) =>
+              week.map((d, di) => {
+                if (!d) {
+                  return <div key={`${wi}-${di}`} className="rounded-xl bg-transparent" />;
+                }
+                const iso = isoDate(d);
+                return (
+                  <DayTile
+                    key={iso}
+                    date={d}
+                    isToday={isSameDay(d, today)}
+                    events={eventsByDate.get(iso) ?? []}
+                    onClick={() => setModalDate(iso)}
+                  />
+                );
+              })
+            )}
+          </div>
+        </div>
       )}
 
-      <Card>
-        <CardBody className="p-0">
-          {!eventsData ? (
-            <div className="p-5">
-              <Skeleton className="h-64 w-full" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-separate border-spacing-0 text-[13px]">
-                <thead>
-                  <tr className="bg-surface-2">
-                    {WEEKDAY_NAMES.map((n) => (
-                      <th
-                        key={n}
-                        className="text-left px-3 py-2 font-semibold text-text-2 border-b border-border w-1/5"
-                      >
-                        {n}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {weeks.map((week, wi) => (
-                    <tr key={wi}>
-                      {week.map((d, di) => (
-                        <td
-                          key={di}
-                          className={`align-top border-b border-r border-border last:border-r-0 ${
-                            d ? "cursor-pointer hover:bg-surface-2" : "bg-surface-2/40"
-                          }`}
-                          onClick={() => d && setModalDate(isoDate(d))}
-                        >
-                          {d && (
-                            <DayCell
-                              date={d}
-                              events={eventsByDate.get(isoDate(d)) ?? []}
-                            />
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-text-3">
         {(Object.keys(TYPE_LABEL) as EventType[]).map((t) => (
-          <span key={t} className={`px-2 py-1 rounded-md ${TYPE_COLOR[t]}`}>
+          <span key={t} className="inline-flex items-center gap-1.5">
+            <span className={`inline-block w-2 h-2 rounded-full ${TYPE_DOT[t]}`} />
             {TYPE_LABEL[t]}
           </span>
         ))}
@@ -346,12 +406,31 @@ export default function SchedulePage() {
   );
 }
 
-function DayCell({ date, events }: { date: Date; events: DayEvent[] }) {
-  // Effective worked hours (mirrors lib/hr.computeDayHours). Inline because
-  // this is a hot render path and we want it allocation-free per cell.
+/**
+ * Apple-like day tile. Renders one of three layouts:
+ *   1. Full-day off: tile tinted with the type's pastel, label centred.
+ *   2. Working day with partial events: 8h baseline + soft pills for
+ *      absence/overtime, max 2 visible, rest collapsed into a "+N още" chip.
+ *   3. Plain day (incl. weekend with no events): just the date and an hours
+ *      hint ("8ч" for weekdays, "—" for weekends to signal "няма очакване").
+ */
+function DayTile({
+  date,
+  isToday,
+  events,
+  onClick,
+}: {
+  date: Date;
+  isToday: boolean;
+  events: DayEvent[];
+  onClick: () => void;
+}) {
+  const weekend = isWeekend(date);
   const fullDayOff = events.find((e) =>
     ["sick", "paid_leave", "unpaid_leave"].includes(e.event_type)
   );
+
+  // Effective hours (mirrors lib/hr.computeDayHours).
   let worked = isWeekday(date) ? 8 : 0;
   if (fullDayOff) {
     worked = 0;
@@ -377,51 +456,181 @@ function DayCell({ date, events }: { date: Date; events: DayEvent[] }) {
     worked = Math.max(0, worked - absMin / 60) + otMin / 60;
   }
 
-  // Full-day off: tint the entire cell and render a centred type label so
-  // the calendar reads at a glance ("този ден е отпуск" вместо "имам badge").
-  // Partial events (absence + overtime) keep the chip list because they
-  // coexist with the working hours of the same day.
+  const tileBase =
+    "group rounded-xl shadow-sm hover:shadow-md transition-all duration-150 cursor-pointer min-h-[92px] sm:min-h-[112px] flex flex-col text-left";
+  const tileTone = fullDayOff
+    ? FULL_DAY_BG[fullDayOff.event_type]
+    : weekend
+      ? "bg-surface/70 hover:bg-surface"
+      : "bg-surface hover:bg-surface-2";
+
+  // Today indicator: small accent circle wrapping the date number.
+  const dateNumber = isToday ? (
+    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-accent text-white text-[13px] font-semibold leading-none">
+      {date.getDate()}
+    </span>
+  ) : (
+    <span
+      className={`text-[15px] leading-none font-semibold ${
+        weekend ? "text-text-3" : "text-text"
+      }`}
+    >
+      {date.getDate()}
+    </span>
+  );
+
+  // Right-side hours hint.
+  let hoursHint: React.ReactNode;
+  if (fullDayOff) {
+    hoursHint = null; // The big centred label already tells the story.
+  } else if (weekend && events.length === 0) {
+    hoursHint = <span className="text-[11px] text-text-3">—</span>;
+  } else {
+    hoursHint = (
+      <span className="text-[11px] tabular-nums text-text-3">{worked.toFixed(1)}ч</span>
+    );
+  }
+
+  // Full-day off layout: centred label, dimmed date in corner.
   if (fullDayOff) {
     return (
-      <div className={`p-2 min-h-[100px] flex flex-col ${FULL_DAY_BG[fullDayOff.event_type]}`}>
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-text">{date.getDate()}</span>
-          <span className="text-[11px] text-text-3">0.0ч</span>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${tileBase} ${tileTone} p-2.5 items-stretch`}
+      >
+        <div className="flex items-center justify-between">{dateNumber}</div>
+        <div className="flex-1 flex items-center justify-center px-1">
           <span
-            className={`text-[12px] font-semibold px-2 py-0.5 rounded ${TYPE_COLOR[fullDayOff.event_type]}`}
+            className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${TYPE_COLOR[fullDayOff.event_type]}`}
             title={fullDayOff.reason ?? ""}
           >
             {TYPE_LABEL[fullDayOff.event_type]}
           </span>
         </div>
-      </div>
+      </button>
     );
   }
 
+  // Working / weekend day: show partial events as soft pills with dot prefix.
+  const VISIBLE = 2;
+  const visible = events.slice(0, VISIBLE);
+  const remaining = events.length - visible.length;
+
   return (
-    <div className="p-2 min-h-[100px]">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[13px] font-semibold text-text">{date.getDate()}</span>
-        <span className="text-[11px] text-text-3">{worked.toFixed(1)}ч</span>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${tileBase} ${tileTone} p-2.5 items-stretch`}
+    >
+      <div className="flex items-center justify-between gap-1">
+        {dateNumber}
+        {hoursHint}
       </div>
-      <div className="space-y-1">
-        {events.map((e) => (
+      <div className="flex-1 mt-1.5 space-y-1 overflow-hidden">
+        {visible.map((e) => (
           <div
             key={e.id}
-            className={`text-[10px] px-1.5 py-0.5 rounded ${TYPE_COLOR[e.event_type]}`}
+            className="flex items-center gap-1.5 text-[11px] text-text-2 truncate"
             title={e.reason ?? ""}
           >
-            {e.start_time && e.end_time
-              ? `${e.start_time.slice(0, 5)}–${e.end_time.slice(0, 5)} `
-              : ""}
-            {TYPE_LABEL[e.event_type]}
+            <span
+              className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${TYPE_DOT[e.event_type]}`}
+            />
+            {e.start_time && e.end_time && (
+              <span className="tabular-nums text-text-3">
+                {e.start_time.slice(0, 5)}
+              </span>
+            )}
+            <span className="truncate">{TYPE_LABEL[e.event_type]}</span>
           </div>
         ))}
+        {remaining > 0 && (
+          <div className="text-[10px] text-text-3 pl-3">+{remaining} още</div>
+        )}
       </div>
-    </div>
+    </button>
   );
+}
+
+/**
+ * Client-side mirror of lib/hr.computeMonthlyTotals — kept inline so the
+ * schedule page doesn't pull a server-only module. Logic must stay in sync.
+ */
+function computeMonthlyTotalsInline(
+  start: Date,
+  end: Date,
+  events: DayEvent[]
+): {
+  workedHours: number;
+  expectedHours: number;
+  paidLeaveDays: number;
+  unpaidLeaveDays: number;
+  sickDays: number;
+  overtimeHours: number;
+} {
+  const parseMin = (t: string) => {
+    const [h, m] = t.split(":");
+    return Number(h) * 60 + Number(m);
+  };
+  const byDate = new Map<string, DayEvent[]>();
+  for (const e of events) {
+    const arr = byDate.get(e.event_date) ?? [];
+    arr.push(e);
+    byDate.set(e.event_date, arr);
+  }
+
+  let workedHours = 0;
+  let expectedHours = 0;
+  let paidLeaveDays = 0;
+  let unpaidLeaveDays = 0;
+  let sickDays = 0;
+  let overtimeHours = 0;
+
+  const cur = new Date(start);
+  while (cur <= end) {
+    const iso = isoDate(cur);
+    const day = byDate.get(iso) ?? [];
+    const wd = isWeekday(cur);
+    if (wd) expectedHours += 8;
+
+    const off = day.find((e) =>
+      ["sick", "paid_leave", "unpaid_leave"].includes(e.event_type)
+    );
+    if (off) {
+      if (off.event_type === "paid_leave") paidLeaveDays += 1;
+      else if (off.event_type === "unpaid_leave") unpaidLeaveDays += 1;
+      else if (off.event_type === "sick") sickDays += 1;
+    } else {
+      const absences = day
+        .filter((e) => e.event_type === "absence" && e.start_time && e.end_time)
+        .map((e) => ({ start: parseMin(e.start_time!), end: parseMin(e.end_time!) }))
+        .sort((a, b) => a.start - b.start);
+      let absMin = 0;
+      let cursor = -1;
+      for (const a of absences) {
+        const s = Math.max(a.start, cursor);
+        if (a.end > s) absMin += a.end - s;
+        cursor = Math.max(cursor, a.end);
+      }
+      const base = wd ? 8 : 0;
+      const otMin = day
+        .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
+        .reduce((s, e) => s + (parseMin(e.end_time!) - parseMin(e.start_time!)), 0);
+      workedHours += Math.max(0, base - absMin / 60) + otMin / 60;
+      overtimeHours += otMin / 60;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return {
+    workedHours,
+    expectedHours,
+    paidLeaveDays,
+    unpaidLeaveDays,
+    sickDays,
+    overtimeHours,
+  };
 }
 
 function DayModalContent({
