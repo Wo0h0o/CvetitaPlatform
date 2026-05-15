@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
 interface SubmitBody {
   leave_type: "paid" | "unpaid";
   start_date: string;
+  end_date?: string | null;
   working_days: number;
   reason?: string | null;
   /**
@@ -94,6 +95,15 @@ export async function POST(req: NextRequest) {
   }
   if (!body.start_date || !/^\d{4}-\d{2}-\d{2}$/.test(body.start_date)) {
     return NextResponse.json({ error: "start_date must be YYYY-MM-DD" }, { status: 400 });
+  }
+  if (body.end_date && !/^\d{4}-\d{2}-\d{2}$/.test(body.end_date)) {
+    return NextResponse.json({ error: "end_date must be YYYY-MM-DD" }, { status: 400 });
+  }
+  if (body.end_date && body.end_date < body.start_date) {
+    return NextResponse.json(
+      { error: "end_date must be on or after start_date" },
+      { status: 400 }
+    );
   }
   const days = Number(body.working_days);
   if (!Number.isInteger(days) || days < 1 || days > 365) {
@@ -131,6 +141,7 @@ export async function POST(req: NextRequest) {
         organization_id: ctx.organizationId,
         leave_type: body.leave_type,
         start_date: body.start_date,
+        end_date: body.end_date ?? null,
         working_days: days,
         reason: body.reason ?? null,
         snapshot_full_name: profile!.full_name!,

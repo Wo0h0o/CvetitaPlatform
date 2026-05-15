@@ -17,7 +17,8 @@ import { join } from "path";
 
 export interface LeavePdfInput {
   leave_type: "paid" | "unpaid";
-  start_date: string; // YYYY-MM-DD
+  start_date: string;       // YYYY-MM-DD
+  end_date?: string | null; // YYYY-MM-DD — inclusive; omitted for legacy rows
   working_days: number;
   full_name: string;
   egn: string;
@@ -144,7 +145,8 @@ export async function generateLeavePdf(input: LeavePdfInput): Promise<Uint8Array
   y -= 22;
 
   // Main sentence — concrete numbers stand out in bold so the reader's
-  // eye lands on what matters: type, days, start date.
+  // eye lands on what matters: type, days, start date, and (when known)
+  // the end date.
   const leaveLabel = input.leave_type === "paid" ? "платен" : "неплатен";
   const main = `моля да ми разрешите да ползвам ${leaveLabel} отпуск в размер на`;
   const mainLines = wrap(main, regular, body, CONTENT_WIDTH);
@@ -158,9 +160,19 @@ export async function generateLeavePdf(input: LeavePdfInput): Promise<Uint8Array
   drawAt(`  работни дни, считано от`, MARGIN_LEFT + daysW, regular, body);
   y -= 16;
 
+  // Start date line. Append "до <end_date> г." when we have an end date,
+  // otherwise keep the legacy "г." closure so the sentence still reads.
   drawAt(formatDateBg(input.start_date), MARGIN_LEFT, bold, body);
-  const dateW = bold.widthOfTextAtSize(formatDateBg(input.start_date), body);
-  drawAt(" г.", MARGIN_LEFT + dateW, regular, body);
+  const startW = bold.widthOfTextAtSize(formatDateBg(input.start_date), body);
+  if (input.end_date) {
+    drawAt(" г.  до", MARGIN_LEFT + startW, regular, body);
+    const tailW = regular.widthOfTextAtSize(" г.  до  ", body);
+    drawAt(formatDateBg(input.end_date), MARGIN_LEFT + startW + tailW, bold, body);
+    const endW = bold.widthOfTextAtSize(formatDateBg(input.end_date), body);
+    drawAt(" г.", MARGIN_LEFT + startW + tailW + endW, regular, body);
+  } else {
+    drawAt(" г.", MARGIN_LEFT + startW, regular, body);
+  }
   y -= 40;
 
   // Signature block: city left, signature right

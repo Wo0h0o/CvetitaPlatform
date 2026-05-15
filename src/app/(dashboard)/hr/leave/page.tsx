@@ -127,6 +127,7 @@ export default function LeavePage() {
         body: JSON.stringify({
           leave_type: leaveType,
           start_date: startDate,
+          end_date: endDate,
           working_days: workingDays,
           reason: reason.trim() || null,
         }),

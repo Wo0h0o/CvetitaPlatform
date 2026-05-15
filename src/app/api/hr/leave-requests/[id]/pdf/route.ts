@@ -43,7 +43,7 @@ export async function GET(
     const { data: rec, error } = await supabase
       .from("hr_leave_requests")
       .select(
-        "id, user_id, leave_type, start_date, working_days, snapshot_full_name, snapshot_egn, snapshot_city, snapshot_address, snapshot_job_title, submitted_at, organization_id"
+        "id, user_id, leave_type, start_date, end_date, working_days, snapshot_full_name, snapshot_egn, snapshot_city, snapshot_address, snapshot_job_title, submitted_at, organization_id"
       )
       .eq("id", id)
       .maybeSingle();
@@ -69,6 +69,7 @@ export async function GET(
     const bytes = await generateLeavePdf({
       leave_type: rec.leave_type as "paid" | "unpaid",
       start_date: rec.start_date,
+      end_date: rec.end_date ?? null,
       working_days: rec.working_days,
       full_name: rec.snapshot_full_name,
       egn: rec.snapshot_egn,
