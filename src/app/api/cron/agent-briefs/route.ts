@@ -552,7 +552,7 @@ async function processMarketInner(
       market: market.marketCode,
       stop_reason: body.stop_reason,
       typeofCards: typeof rawCards,
-      ctor: (rawCards as { constructor?: { name?: string } })?.constructor?.name,
+      ctor: (rawCards as unknown as { constructor?: { name?: string } })?.constructor?.name,
       previewJson: JSON.stringify(rawCards).slice(0, 300),
     });
     return {
