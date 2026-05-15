@@ -153,7 +153,12 @@ export function ActionCard({ data, onAction }: ActionCardProps) {
                   ))}
                 </div>
               )}
-              <p className="text-[12px] text-text-2 leading-snug">{data.why}</p>
+              <p
+                className="text-[12px] text-text-2 leading-snug line-clamp-2"
+                title={data.why}
+              >
+                {data.why}
+              </p>
             </div>
             {data.target.marketCode && (
               <MarketFlag

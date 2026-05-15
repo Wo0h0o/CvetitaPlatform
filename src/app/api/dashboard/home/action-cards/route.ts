@@ -47,7 +47,8 @@ interface BriefRow {
   target_id: string;
   target_name: string | null;
   actions: ActionKey[] | null;
-  integration_account_id: string;
+  integration_account_id: string | null;
+  store_id: string | null;
 }
 
 // ============================================================
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from("agent_briefs")
       .select(
-        "id, severity, title, why, target_type, target_id, target_name, actions, integration_account_id"
+        "id, severity, title, why, target_type, target_id, target_name, actions, integration_account_id, store_id"
       )
       .eq("for_date", forDate)
       .eq("status", "pending")
@@ -83,31 +84,41 @@ export async function GET(req: NextRequest) {
     const severityRank: Record<Severity, number> = { red: 0, amber: 1, green: 2 };
     rows.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
 
-    // Build account→market map so each card knows where "Прегледай" should
-    // navigate to. resolveAllHomeMarkets is cached (60s TTL in-memory) so
-    // this is cheap on repeat reads.
+    // Build account→market and store→market maps so each card knows where
+    // "Прегледай" should navigate to. Product-cohort briefs (from
+    // agent-briefs cron) have a null integration_account_id but a non-null
+    // store_id — fall through to the store map so the flag still renders.
+    // resolveAllHomeMarkets is cached (60s TTL in-memory) so this is cheap.
     const markets = await resolveAllHomeMarkets();
     const marketByAccountId = new Map<string, string>();
+    const marketByStoreId = new Map<string, string>();
     for (const m of markets) {
+      marketByStoreId.set(m.storeId, m.marketCode);
       for (const b of m.bindings) {
         marketByAccountId.set(b.integrationAccountId, m.marketCode);
       }
     }
 
-    const cards: ActionCard[] = rows.slice(0, 10).map((r) => ({
-      id: r.id,
-      severity: r.severity,
-      title: r.title,
-      why: r.why,
-      target: {
-        type: r.target_type,
-        id: r.target_id,
-        name: r.target_name ?? "",
-        integrationAccountId: r.integration_account_id,
-        marketCode: marketByAccountId.get(r.integration_account_id),
-      },
-      actions: (r.actions ?? []) as ActionKey[],
-    }));
+    const cards: ActionCard[] = rows.slice(0, 10).map((r) => {
+      const marketCode =
+        (r.integration_account_id && marketByAccountId.get(r.integration_account_id)) ||
+        (r.store_id && marketByStoreId.get(r.store_id)) ||
+        undefined;
+      return {
+        id: r.id,
+        severity: r.severity,
+        title: r.title,
+        why: r.why,
+        target: {
+          type: r.target_type,
+          id: r.target_id,
+          name: r.target_name ?? "",
+          integrationAccountId: r.integration_account_id ?? undefined,
+          marketCode,
+        },
+        actions: (r.actions ?? []) as ActionKey[],
+      };
+    });
 
     const response: ActionCardsResponse = { cards };
     return NextResponse.json(response, {
