@@ -540,16 +540,35 @@ async function processMarketInner(
     return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: 0, skipped: "claude error" };
   }
 
+  setStep("claude-response-parse");
   const body = (await claudeRes.json()) as ClaudeResponse;
   const tool = body.content?.find(
     (c): c is ClaudeToolUseBlock => c.type === "tool_use" && c.name === "generate_product_cards"
   );
-  const cards = (tool?.input?.cards ?? []) as BriefCard[];
+  const rawCards = tool?.input?.cards;
 
+  if (!Array.isArray(rawCards)) {
+    logger.error("agent-briefs: tool returned non-array cards", {
+      market: market.marketCode,
+      stop_reason: body.stop_reason,
+      typeofCards: typeof rawCards,
+      ctor: (rawCards as { constructor?: { name?: string } })?.constructor?.name,
+      previewJson: JSON.stringify(rawCards).slice(0, 300),
+    });
+    return {
+      market: market.marketCode,
+      cohortsConsidered: cohorts.length,
+      cardsWritten: 0,
+      skipped: `cards-not-array typeof=${typeof rawCards} stop_reason=${body.stop_reason}`,
+    };
+  }
+
+  const cards = rawCards as BriefCard[];
   if (cards.length === 0) {
     return { market: market.marketCode, cohortsConsidered: cohorts.length, cardsWritten: 0, skipped: "claude 0 cards" };
   }
 
+  setStep("brief-rows-build");
   // Match each LLM card back to its cohort by product handle mentioned in title.
   // We rely on the prompt rule that the product name is in quotes. Fallback:
   // first cohort by spend.
