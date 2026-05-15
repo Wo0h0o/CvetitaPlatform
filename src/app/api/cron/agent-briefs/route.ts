@@ -138,7 +138,8 @@ const SYSTEM_PROMPT = `Ти си Meta Ads анализатор за Cvetita Herb
   * "amber" = mixed performance но никой не е катастрофа.
   * "green" = почти не я ползвай тук — резервирана за watcher-ите.
 - title: до 6 думи, ИМЕ НА ПРОДУКТА + кратко действие/проблем. Пример: „Левзея Макс: 2 от 5 реклами горят".
-- why: ЕДНО изречение, МАКС 100 символа. Само най-острото число + причина. Пример: „€68 в 14д, 0 поръчки — креатив V3 е изхабен, останалите 3 реклами носят ROAS 2.1x." Никакви списъци, никакви „освен това", никакви обяснения за scoring система. Целта е owner-ът да хване смисъла за 2 секунди.
+- why: ЕДНО изречение, МАКС 100 символа. Само най-острото число + причина. Пример: '€68 в 14д, 0 поръчки — креатив V3 е изхабен, останалите 3 реклами носят ROAS 2.1x.' Никакви списъци, никакви „освен това", никакви обяснения за scoring система. Целта е owner-ът да хване смисъла за 2 секунди.
+- КРИТИЧНО ЗА JSON: ВЪТРЕ В стойностите на title и why НЕ ПОЛЗВАЙ символа `"` (ASCII double quote) и НЕ ползвай Bulgarian-quote двойки „..." около имена на реклами/продукти. Ако трябва да цитираш име на ad/креатив, ползвай SINGLE quote: 'ne e himiq'. Несъответстващо отваряне-затваряне (типа „X") чупи JSON-а. Виж примера по-горе с ' кавички.
 - recommended_action.kind: pause / scale / review / reallocate. „reallocate" е препоръчителен когато имаш ясен winner — попълни target_ad_ids (losers) + reallocate_to_ad_id (winner). За action.note дай 1 изречение с алтернативен ход (напр. „или тествай новия hook от RO с този креатив").
 - actions масив: ["pause","dismiss"] за red, ["review","dismiss"] за amber.
 
@@ -552,20 +553,30 @@ async function processMarketInner(
   // Sonnet 4.6 occasionally hands us a JSON-encoded string instead of the
   // declared array (seen on BG with 3 cohorts, never on GR). Try once to
   // recover by parsing — if the result is an array we keep going.
+  // Fallback: if Claude mixes Bulgarian opening „ with ASCII closing "
+  // around an ad name, the JSON is malformed. Replace all curly-double
+  // quotes with single quotes and retry once before giving up.
   if (typeof rawCards === "string") {
-    try {
-      const parsed = JSON.parse(rawCards);
+    const tryParse = (s: string): unknown => {
+      try { return JSON.parse(s); } catch { return undefined; }
+    };
+    let parsed = tryParse(rawCards as string);
+    if (!Array.isArray(parsed)) {
+      const sanitized = (rawCards as string).replace(/[“”„‟]/g, "'");
+      parsed = tryParse(sanitized);
       if (Array.isArray(parsed)) {
-        logger.info("agent-briefs: recovered cards from JSON string", {
+        logger.info("agent-briefs: recovered cards after quote sanitization", {
           market: market.marketCode,
-          stringLen: rawCards.length,
           parsedLen: parsed.length,
         });
-        rawCards = parsed;
       }
-    } catch {
-      // Fall through to the not-array branch below for proper logging.
+    } else {
+      logger.info("agent-briefs: recovered cards from JSON string", {
+        market: market.marketCode,
+        parsedLen: parsed.length,
+      });
     }
+    if (Array.isArray(parsed)) rawCards = parsed;
   }
 
   if (!Array.isArray(rawCards)) {
