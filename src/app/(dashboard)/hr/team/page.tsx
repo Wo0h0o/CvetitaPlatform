@@ -18,6 +18,7 @@ interface Totals {
   unpaidLeaveDays: number;
   sickDays: number;
   overtimeHours: number;
+  holidayDays: number;
 }
 
 interface TeamWorker {
@@ -120,6 +121,7 @@ export default function TeamPage() {
                     <th className="text-right px-4 py-2 font-semibold text-text-2">Платен</th>
                     <th className="text-right px-4 py-2 font-semibold text-text-2">Неплатен</th>
                     <th className="text-right px-4 py-2 font-semibold text-text-2">Болничен</th>
+                    <th className="text-right px-4 py-2 font-semibold text-text-2">Празник</th>
                     <th className="text-right px-4 py-2 font-semibold text-text-2">Overtime</th>
                     <th className="text-right px-4 py-2 font-semibold text-text-2">График</th>
                   </tr>
@@ -148,6 +150,7 @@ export default function TeamPage() {
                         <td className="px-4 py-3 text-right tabular-nums">{t.paidLeaveDays}д</td>
                         <td className="px-4 py-3 text-right tabular-nums">{t.unpaidLeaveDays}д</td>
                         <td className="px-4 py-3 text-right tabular-nums">{t.sickDays}д</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-amber-700">{t.holidayDays}д</td>
                         <td className="px-4 py-3 text-right tabular-nums">{t.overtimeHours.toFixed(1)}ч</td>
                         <td className="px-4 py-3 text-right">
                           <Link

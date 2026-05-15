@@ -45,6 +45,7 @@ const COLOR_BY_TYPE: Record<string, string> = {
   absence: "FFFFEDD5",      // soft orange
   overtime: "FFD1FAE5",     // soft green
 };
+const HOLIDAY_COLOR = "FFFEF3C7"; // soft amber
 
 /**
  * GET /api/hr/export?month=YYYY-MM → .xlsx workbook with one sheet per worker
@@ -123,6 +124,19 @@ export async function GET(req: NextRequest) {
       eventsByUser.set(e.user_id, arr);
     }
 
+    // National holidays
+    const { data: holidays } = await supabase
+      .from("hr_holidays")
+      .select("holiday_date, label")
+      .eq("organization_id", ctx.organizationId)
+      .gte("holiday_date", startIso)
+      .lte("holiday_date", endIso);
+    const holidayByDate = new Map<string, string>();
+    for (const h of holidays ?? []) {
+      holidayByDate.set(h.holiday_date as string, h.label as string);
+    }
+    const holidaySet = new Set(holidayByDate.keys());
+
     // ---------- Build workbook ----------
     const wb = new ExcelJS.Workbook();
     wb.creator = "Цветита Командния Център";
@@ -139,6 +153,7 @@ export async function GET(req: NextRequest) {
       { header: "Платен отпуск (дни)", key: "paid", width: 18 },
       { header: "Неплатен отпуск (дни)", key: "unpaid", width: 20 },
       { header: "Болнични (дни)", key: "sick", width: 16 },
+      { header: "Празници (дни)", key: "holiday", width: 16 },
       { header: "Overtime (часове)", key: "overtime", width: 18 },
     ];
     summary.getRow(1).font = { bold: true };
@@ -153,7 +168,7 @@ export async function GET(req: NextRequest) {
     for (const uid of sortedWorkers) {
       const profile = profileByUser.get(uid);
       const events = eventsByUser.get(uid) ?? [];
-      const totals = computeMonthlyTotals(start, end, events);
+      const totals = computeMonthlyTotals(start, end, events, holidaySet);
       summary.addRow({
         name: profile?.full_name ?? emailByUser.get(uid) ?? "(без име)",
         role: profile?.job_title ?? "",
@@ -163,6 +178,7 @@ export async function GET(req: NextRequest) {
         paid: totals.paidLeaveDays,
         unpaid: totals.unpaidLeaveDays,
         sick: totals.sickDays,
+        holiday: totals.holidayDays,
         overtime: Number(totals.overtimeHours.toFixed(2)),
       });
     }
@@ -205,17 +221,38 @@ export async function GET(req: NextRequest) {
         const fullDayOff = dayEvents.find((e) =>
           ["sick", "paid_leave", "unpaid_leave"].includes(e.event_type)
         );
+        const holidayLabel = holidayByDate.get(iso);
+        const isHoliday = !!holidayLabel && !fullDayOff;
 
         const weekdayName = ["Нед", "Пон", "Вт", "Ср", "Чет", "Пет", "Съб"][cur.getDay()];
 
         let kind = wd ? "Работен" : "Уикенд";
-        const startCell = wd && !fullDayOff ? WORKDAY_START_HHMM : "";
-        const endCell = wd && !fullDayOff ? WORKDAY_END_HHMM : "";
+        let startCell = wd && !fullDayOff && !isHoliday ? WORKDAY_START_HHMM : "";
+        let endCell = wd && !fullDayOff && !isHoliday ? WORKDAY_END_HHMM : "";
         let notes = "";
+        // Holiday zeroes out the base; partial overtime still counts.
+        let hours = dayCalc.worked;
+        if (isHoliday) {
+          const parseMin = (t: string) => {
+            const [h, m] = t.split(":");
+            return Number(h) * 60 + Number(m);
+          };
+          const otMin = dayEvents
+            .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
+            .reduce(
+              (s, e) => s + (parseMin(e.end_time!) - parseMin(e.start_time!)),
+              0
+            );
+          hours = otMin / 60;
+        }
 
         if (fullDayOff) {
           kind = TYPE_LABEL[fullDayOff.event_type];
           notes = fullDayOff.reason ?? "";
+        } else if (isHoliday) {
+          kind = `Празник: ${holidayLabel}`;
+          startCell = "";
+          endCell = "";
         } else if (dayEvents.length > 0) {
           notes = dayEvents
             .map((e) => {
@@ -235,7 +272,7 @@ export async function GET(req: NextRequest) {
           kind,
           start: startCell,
           end: endCell,
-          hours: Number(dayCalc.worked.toFixed(2)),
+          hours: Number(hours.toFixed(2)),
           notes,
         });
 
@@ -246,8 +283,11 @@ export async function GET(req: NextRequest) {
               cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
             });
           }
+        } else if (isHoliday) {
+          row.eachCell((cell) => {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HOLIDAY_COLOR } };
+          });
         } else if (dayEvents.length > 0) {
-          // Partial day: tint the notes cell only by the strongest event type
           const overtime = dayEvents.find((e) => e.event_type === "overtime");
           const absence = dayEvents.find((e) => e.event_type === "absence");
           const pick = overtime ?? absence;
@@ -265,7 +305,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Totals row at the bottom
-      const totals = computeMonthlyTotals(start, end, eventsByUser.get(uid) ?? []);
+      const totals = computeMonthlyTotals(start, end, eventsByUser.get(uid) ?? [], holidaySet);
       ws.addRow({});
       const totalsRow = ws.addRow({
         date: "Общо",
@@ -274,7 +314,7 @@ export async function GET(req: NextRequest) {
         start: "",
         end: "",
         hours: Number(totals.workedHours.toFixed(2)),
-        notes: `Очаквани: ${totals.expectedHours}ч · Платен: ${totals.paidLeaveDays}д · Неплатен: ${totals.unpaidLeaveDays}д · Болничен: ${totals.sickDays}д · Overtime: ${totals.overtimeHours.toFixed(2)}ч`,
+        notes: `Очаквани: ${totals.expectedHours}ч · Платен: ${totals.paidLeaveDays}д · Неплатен: ${totals.unpaidLeaveDays}д · Болничен: ${totals.sickDays}д · Празници: ${totals.holidayDays}д · Overtime: ${totals.overtimeHours.toFixed(2)}ч`,
       });
       totalsRow.font = { bold: true };
     }

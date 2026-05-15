@@ -139,12 +139,16 @@ export function computeDayHours(
 
 /**
  * Sum effective worked hours for a list of events across the month.
- * Also returns counts of full-day-off categories for reporting.
+ * `holidays` is a set of YYYY-MM-DD strings for the org's national-holiday
+ * calendar. A holiday landing on a Mon–Fri drops the day's expected hours
+ * to zero (the worker is officially off) — overtime explicitly logged for
+ * that day still counts as worked.
  */
 export function computeMonthlyTotals(
   monthStart: Date,
   monthEnd: Date,
-  events: HrDayEvent[]
+  events: HrDayEvent[],
+  holidays: Set<string> = new Set()
 ): {
   workedHours: number;
   expectedHours: number;
@@ -152,6 +156,7 @@ export function computeMonthlyTotals(
   unpaidLeaveDays: number;
   sickDays: number;
   overtimeHours: number;
+  holidayDays: number;
 } {
   const byDate = new Map<string, HrDayEvent[]>();
   for (const e of events) {
@@ -166,27 +171,54 @@ export function computeMonthlyTotals(
   let unpaidLeaveDays = 0;
   let sickDays = 0;
   let overtimeHours = 0;
+  let holidayDays = 0;
 
   const cur = new Date(monthStart);
   while (cur <= monthEnd) {
     const iso = toIsoDate(cur);
     const dayEvents = byDate.get(iso) ?? [];
     const wd = isWorkday(cur);
-    if (wd) expectedHours += DEFAULT_WORKDAY_HOURS;
+    const isHoliday = holidays.has(iso);
 
-    const r = computeDayHours(cur, dayEvents);
-    workedHours += r.worked;
-    if (r.offType === "paid_leave") paidLeaveDays += 1;
-    if (r.offType === "unpaid_leave") unpaidLeaveDays += 1;
-    if (r.offType === "sick") sickDays += 1;
+    if (wd && !isHoliday) expectedHours += DEFAULT_WORKDAY_HOURS;
+    if (isHoliday && wd) holidayDays += 1;
 
-    overtimeHours += dayEvents
-      .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
-      .reduce(
-        (s, e) =>
-          s + (parseTimeToMinutes(e.end_time!) - parseTimeToMinutes(e.start_time!)),
-        0
-      ) / 60;
+    // Hours math: full-day off wins; otherwise we compute partials from
+    // base. Holiday days have base=0 (no expectation), but overtime on
+    // a holiday still adds to worked hours.
+    const fullDayOff = dayEvents.find((e) =>
+      ["sick", "paid_leave", "unpaid_leave"].includes(e.event_type)
+    );
+    if (fullDayOff) {
+      if (fullDayOff.event_type === "paid_leave") paidLeaveDays += 1;
+      if (fullDayOff.event_type === "unpaid_leave") unpaidLeaveDays += 1;
+      if (fullDayOff.event_type === "sick") sickDays += 1;
+    } else {
+      const base = wd && !isHoliday ? DEFAULT_WORKDAY_HOURS : 0;
+      const absences = dayEvents
+        .filter((e) => e.event_type === "absence" && e.start_time && e.end_time)
+        .map((e) => ({
+          start: parseTimeToMinutes(e.start_time!),
+          end: parseTimeToMinutes(e.end_time!),
+        }))
+        .sort((a, b) => a.start - b.start);
+      let absMin = 0;
+      let cursor = -1;
+      for (const a of absences) {
+        const s = Math.max(a.start, cursor);
+        if (a.end > s) absMin += a.end - s;
+        cursor = Math.max(cursor, a.end);
+      }
+      const otMin = dayEvents
+        .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
+        .reduce(
+          (s, e) =>
+            s + (parseTimeToMinutes(e.end_time!) - parseTimeToMinutes(e.start_time!)),
+          0
+        );
+      workedHours += Math.max(0, base - absMin / 60) + otMin / 60;
+      overtimeHours += otMin / 60;
+    }
 
     cur.setDate(cur.getDate() + 1);
   }
@@ -198,6 +230,7 @@ export function computeMonthlyTotals(
     unpaidLeaveDays,
     sickDays,
     overtimeHours,
+    holidayDays,
   };
 }
 

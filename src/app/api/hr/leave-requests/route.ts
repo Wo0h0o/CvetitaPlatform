@@ -145,21 +145,35 @@ export async function POST(req: NextRequest) {
     if (error) throw error;
 
     // Mirror the leave into hr_day_events so the schedule shows the absence
-    // right away. Skip if the caller explicitly opted out.
+    // right away. Skip dates that are already national holidays — the
+    // holiday tile communicates "no work" on its own and we don't want
+    // double bookkeeping.
     if (body.mark_in_schedule !== false) {
       const start = new Date(body.start_date + "T00:00:00");
       const eventType = body.leave_type === "paid" ? "paid_leave" : "unpaid_leave";
+
+      // Pull the org's holidays from start_date through start + ~2 years
+      // (covers the safety-loop horizon).
+      const horizon = new Date(start);
+      horizon.setDate(horizon.getDate() + 365 * 2);
+      const horizonIso = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, "0")}-${String(horizon.getDate()).padStart(2, "0")}`;
+      const { data: holidays } = await supabase
+        .from("hr_holidays")
+        .select("holiday_date")
+        .eq("organization_id", ctx.organizationId)
+        .gte("holiday_date", body.start_date)
+        .lte("holiday_date", horizonIso);
+      const holidaySet = new Set((holidays ?? []).map((h) => h.holiday_date as string));
+
       const dates: string[] = [];
       const cur = new Date(start);
       let remaining = days;
-      // Guard: cap iteration so a bad input can't loop forever
       let safety = 365 * 2;
       while (remaining > 0 && safety-- > 0) {
         const dow = cur.getDay();
-        if (dow >= 1 && dow <= 5) {
-          dates.push(
-            `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`
-          );
+        const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+        if (dow >= 1 && dow <= 5 && !holidaySet.has(iso)) {
+          dates.push(iso);
           remaining -= 1;
         }
         cur.setDate(cur.getDate() + 1);
@@ -178,11 +192,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Sanity (server-side, dev-time only): the count we generated should
-      // equal `days` unless the worker submitted with `start_date` so close
-      // to end-of-year that two years of weekdays still aren't enough.
-      // countWorkdays() lets us re-derive the same number if needed.
-      void countWorkdays;
+      void countWorkdays; // referenced for future use; keeps the import warm
     }
 
     return NextResponse.json({ request: inserted });

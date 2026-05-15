@@ -162,6 +162,22 @@ export default function SchedulePage() {
     { revalidateOnFocus: false }
   );
 
+  // Org-wide national holidays for the visible month. Cached for an hour
+  // since holidays rarely change.
+  const { data: holidaysData } = useSWR<{ holidays: Array<{ holiday_date: string; label: string; is_compensation: boolean }> }>(
+    `/api/hr/holidays?from=${fromIso}&to=${toIso}`,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 3600_000 }
+  );
+  const holidayByDate = useMemo(() => {
+    const m = new Map<string, { label: string; is_compensation: boolean }>();
+    for (const h of holidaysData?.holidays ?? []) {
+      m.set(h.holiday_date, { label: h.label, is_compensation: h.is_compensation });
+    }
+    return m;
+  }, [holidaysData]);
+  const holidaySet = useMemo(() => new Set(holidayByDate.keys()), [holidayByDate]);
+
   const eventsByDate = useMemo(() => {
     const m = new Map<string, DayEvent[]>();
     for (const e of eventsData?.events ?? []) {
@@ -237,8 +253,8 @@ export default function SchedulePage() {
   // workers viewing themselves (team endpoint is manager-gated).
   const kpi = useMemo(() => {
     if (!eventsData) return null;
-    return computeMonthlyTotalsInline(monthStart, monthEnd, eventsData.events);
-  }, [eventsData, monthStart, monthEnd]);
+    return computeMonthlyTotalsInline(monthStart, monthEnd, eventsData.events, holidaySet);
+  }, [eventsData, monthStart, monthEnd, holidaySet]);
 
   const today = new Date();
 
@@ -324,6 +340,9 @@ export default function SchedulePage() {
             {kpi.sickDays > 0 && (
               <span className="text-blue-700">{kpi.sickDays}д болн.</span>
             )}
+            {kpi.holidayDays > 0 && (
+              <span className="text-amber-700">{kpi.holidayDays}д празник</span>
+            )}
           </div>
         )}
       </div>
@@ -366,6 +385,7 @@ export default function SchedulePage() {
                     date={d}
                     isToday={isSameDay(d, today)}
                     events={eventsByDate.get(iso) ?? []}
+                    holiday={holidayByDate.get(iso) ?? null}
                     onClick={() => setModalDate(iso)}
                   />
                 );
@@ -382,6 +402,10 @@ export default function SchedulePage() {
             {TYPE_LABEL[t]}
           </span>
         ))}
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
+          Национален празник
+        </span>
       </div>
 
       <Modal
@@ -410,38 +434,54 @@ export default function SchedulePage() {
 }
 
 /**
- * Apple-like day tile. Renders one of three layouts:
- *   1. Full-day off: tile tinted with the type's pastel, label centred.
- *   2. Working day with partial events: 8h baseline + soft pills for
- *      absence/overtime, max 2 visible, rest collapsed into a "+N още" chip.
- *   3. Plain day (incl. weekend with no events): just the date and an hours
- *      hint ("8ч" for weekdays, "—" for weekends to signal "няма очакване").
+ * Apple-like day tile. Render priority (highest first):
+ *   1. Full-day off event (sick / paid_leave / unpaid_leave) — explicit worker
+ *      action wins over any default the calendar would have shown.
+ *   2. National holiday — tile tinted amber, festive label centred.
+ *      Partial events (absence / overtime) still render as pills on top.
+ *   3. Working day with partial events — 8h baseline + soft pills.
+ *   4. Plain day (incl. weekend with no events) — just date + hours hint.
  */
 function DayTile({
   date,
   isToday,
   events,
+  holiday,
   onClick,
 }: {
   date: Date;
   isToday: boolean;
   events: DayEvent[];
+  holiday: { label: string; is_compensation: boolean } | null;
   onClick: () => void;
 }) {
   const weekend = isWeekend(date);
   const fullDayOff = events.find((e) =>
     ["sick", "paid_leave", "unpaid_leave"].includes(e.event_type)
   );
+  const isHoliday = !!holiday && !fullDayOff;
 
-  // Effective hours (mirrors lib/hr.computeDayHours).
-  let worked = isWeekday(date) ? 8 : 0;
-  if (fullDayOff) {
+  // Effective hours (mirrors lib/hr.computeDayHours, holiday-aware).
+  let worked: number;
+  if (fullDayOff || isHoliday) {
+    // Holidays still let overtime accrue (work-on-holiday case).
     worked = 0;
+    if (isHoliday) {
+      const parseMin = (t: string) => {
+        const [h, m] = t.split(":");
+        return Number(h) * 60 + Number(m);
+      };
+      const otMin = events
+        .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
+        .reduce((s, e) => s + (parseMin(e.end_time!) - parseMin(e.start_time!)), 0);
+      worked = otMin / 60;
+    }
   } else {
     const parseMin = (t: string) => {
       const [h, m] = t.split(":");
       return Number(h) * 60 + Number(m);
     };
+    let base = isWeekday(date) ? 8 : 0;
     const absences = events
       .filter((e) => e.event_type === "absence" && e.start_time && e.end_time)
       .map((e) => ({ start: parseMin(e.start_time!), end: parseMin(e.end_time!) }))
@@ -456,16 +496,19 @@ function DayTile({
     const otMin = events
       .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
       .reduce((s, e) => s + (parseMin(e.end_time!) - parseMin(e.start_time!)), 0);
-    worked = Math.max(0, worked - absMin / 60) + otMin / 60;
+    base = Math.max(0, base - absMin / 60);
+    worked = base + otMin / 60;
   }
 
   const tileBase =
     "group rounded-xl shadow-sm hover:shadow-md transition-all duration-150 cursor-pointer min-h-[92px] sm:min-h-[112px] flex flex-col text-left";
   const tileTone = fullDayOff
     ? FULL_DAY_BG[fullDayOff.event_type]
-    : weekend
-      ? "bg-surface/70 hover:bg-surface"
-      : "bg-surface hover:bg-surface-2";
+    : isHoliday
+      ? "bg-amber-50 hover:bg-amber-100/80"
+      : weekend
+        ? "bg-surface/70 hover:bg-surface"
+        : "bg-surface hover:bg-surface-2";
 
   // Today indicator: small accent circle wrapping the date number.
   const dateNumber = isToday ? (
@@ -484,8 +527,16 @@ function DayTile({
 
   // Right-side hours hint.
   let hoursHint: React.ReactNode;
-  if (fullDayOff) {
+  if (fullDayOff || (isHoliday && events.length === 0)) {
     hoursHint = null; // The big centred label already tells the story.
+  } else if (isHoliday) {
+    // Holiday with overtime → show the overtime hours; otherwise nothing.
+    hoursHint =
+      worked > 0 ? (
+        <span className="text-[11px] tabular-nums text-amber-700 font-medium">
+          +{worked.toFixed(1)}ч
+        </span>
+      ) : null;
   } else if (weekend && events.length === 0) {
     hoursHint = <span className="text-[11px] text-text-3">—</span>;
   } else {
@@ -511,6 +562,53 @@ function DayTile({
             {TYPE_LABEL[fullDayOff.event_type]}
           </span>
         </div>
+      </button>
+    );
+  }
+
+  // National holiday: festive amber tile with the holiday name centred.
+  // Partial events (overtime / absence) are listed underneath the label so
+  // a worker who came in on a holiday still sees their overtime.
+  if (isHoliday && holiday) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${tileBase} ${tileTone} p-2.5 items-stretch`}
+        title={holiday.label}
+      >
+        <div className="flex items-center justify-between gap-1">
+          {dateNumber}
+          {hoursHint}
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center px-1 gap-1">
+          <span className="text-[11px] font-semibold text-amber-700 text-center leading-tight line-clamp-2">
+            {holiday.label}
+          </span>
+          {holiday.is_compensation && (
+            <span className="text-[9px] text-amber-600 uppercase tracking-wider">
+              Почивен ден
+            </span>
+          )}
+        </div>
+        {events.length > 0 && (
+          <div className="mt-1 space-y-0.5">
+            {events.slice(0, 1).map((e) => (
+              <div
+                key={e.id}
+                className="flex items-center gap-1 text-[10px] text-text-2 truncate"
+              >
+                <span
+                  className={`inline-block w-1.5 h-1.5 rounded-full ${TYPE_DOT[e.event_type]}`}
+                />
+                <span className="truncate">{TYPE_LABEL[e.event_type]}</span>
+              </div>
+            ))}
+            {events.length > 1 && (
+              <div className="text-[9px] text-text-3 pl-3">+{events.length - 1} още</div>
+            )}
+          </div>
+        )}
       </button>
     );
   }
@@ -559,11 +657,14 @@ function DayTile({
 /**
  * Client-side mirror of lib/hr.computeMonthlyTotals — kept inline so the
  * schedule page doesn't pull a server-only module. Logic must stay in sync.
+ * Holidays drop expected hours on Mon–Fri and zero the worker's base for
+ * that day; overtime explicitly logged on a holiday still counts.
  */
 function computeMonthlyTotalsInline(
   start: Date,
   end: Date,
-  events: DayEvent[]
+  events: DayEvent[],
+  holidays: Set<string>
 ): {
   workedHours: number;
   expectedHours: number;
@@ -571,6 +672,7 @@ function computeMonthlyTotalsInline(
   unpaidLeaveDays: number;
   sickDays: number;
   overtimeHours: number;
+  holidayDays: number;
 } {
   const parseMin = (t: string) => {
     const [h, m] = t.split(":");
@@ -589,13 +691,16 @@ function computeMonthlyTotalsInline(
   let unpaidLeaveDays = 0;
   let sickDays = 0;
   let overtimeHours = 0;
+  let holidayDays = 0;
 
   const cur = new Date(start);
   while (cur <= end) {
     const iso = isoDate(cur);
     const day = byDate.get(iso) ?? [];
     const wd = isWeekday(cur);
-    if (wd) expectedHours += 8;
+    const isHoliday = holidays.has(iso);
+    if (wd && !isHoliday) expectedHours += 8;
+    if (isHoliday && wd) holidayDays += 1;
 
     const off = day.find((e) =>
       ["sick", "paid_leave", "unpaid_leave"].includes(e.event_type)
@@ -616,7 +721,7 @@ function computeMonthlyTotalsInline(
         if (a.end > s) absMin += a.end - s;
         cursor = Math.max(cursor, a.end);
       }
-      const base = wd ? 8 : 0;
+      const base = wd && !isHoliday ? 8 : 0;
       const otMin = day
         .filter((e) => e.event_type === "overtime" && e.start_time && e.end_time)
         .reduce((s, e) => s + (parseMin(e.end_time!) - parseMin(e.start_time!)), 0);
@@ -633,6 +738,7 @@ function computeMonthlyTotalsInline(
     unpaidLeaveDays,
     sickDays,
     overtimeHours,
+    holidayDays,
   };
 }
 

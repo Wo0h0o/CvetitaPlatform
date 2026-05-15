@@ -66,27 +66,53 @@ export default function LeavePage() {
   const [showForm, setShowForm] = useState(false);
   const [leaveType, setLeaveType] = useState<"paid" | "unpaid">("paid");
   // Defaults to TODAY for both. User adjusts "До" to span more days; we
-  // derive working_days (Mon–Fri only) automatically since BG labour law
-  // counts leave in работни дни, not calendar days.
+  // derive working_days (Mon–Fri, holidays excluded) automatically since
+  // BG labour law counts leave in работни дни, не календарни.
   const [startDate, setStartDate] = useState(todayIso);
   const [endDate, setEndDate] = useState(todayIso);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Working days = Mon-Fri count in [startDate, endDate] inclusive.
-  const workingDays = useMemo(() => {
-    if (!startDate || !endDate || endDate < startDate) return 0;
+  // National holidays in the candidate range. We only fetch when the form
+  // is open and a valid range is set, to avoid pulling the whole table.
+  const { data: holidaysData } = useSWR<{ holidays: Array<{ holiday_date: string }> }>(
+    showForm && startDate && endDate && endDate >= startDate
+      ? `/api/hr/holidays?from=${startDate}&to=${endDate}`
+      : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 3600_000 }
+  );
+  const holidaySet = useMemo(
+    () => new Set((holidaysData?.holidays ?? []).map((h) => h.holiday_date)),
+    [holidaysData]
+  );
+
+  // Working days = Mon-Fri in [startDate, endDate] inclusive, MINUS any
+  // national holidays. Holidays inside the leave range don't consume a
+  // paid-leave day — the worker is already off.
+  const { workingDays, holidaysInRange } = useMemo(() => {
+    if (!startDate || !endDate || endDate < startDate) {
+      return { workingDays: 0, holidaysInRange: 0 };
+    }
     const a = new Date(startDate + "T00:00:00");
     const b = new Date(endDate + "T00:00:00");
-    let n = 0;
+    let workdays = 0;
+    let holidaysWd = 0;
     const cur = new Date(a);
     while (cur <= b) {
       const dow = cur.getDay();
-      if (dow >= 1 && dow <= 5) n += 1;
+      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+      if (dow >= 1 && dow <= 5) {
+        if (holidaySet.has(iso)) {
+          holidaysWd += 1;
+        } else {
+          workdays += 1;
+        }
+      }
       cur.setDate(cur.getDate() + 1);
     }
-    return n;
-  }, [startDate, endDate]);
+    return { workingDays: workdays, holidaysInRange: holidaysWd };
+  }, [startDate, endDate, holidaySet]);
 
   const handleSubmit = async () => {
     if (workingDays < 1) {
@@ -219,13 +245,18 @@ export default function LeavePage() {
               </div>
             </div>
 
-            <div className="text-[12px] text-text-2 bg-accent-soft/30 border border-accent/20 rounded-lg px-3 py-2 flex items-center justify-between">
+            <div className="text-[12px] text-text-2 bg-accent-soft/30 border border-accent/20 rounded-lg px-3 py-2 flex items-center justify-between flex-wrap gap-2">
               <span>
                 <span className="font-semibold text-accent">{workingDays}</span> работни дни
                 {workingDays > 0 && (
-                  <span className="text-text-3"> (уикенди не се броят)</span>
+                  <span className="text-text-3"> (уикенди{holidaysInRange > 0 ? " и празници" : ""} не се броят)</span>
                 )}
               </span>
+              {holidaysInRange > 0 && (
+                <span className="text-amber-700 text-[11px]">
+                  {holidaysInRange} национал{holidaysInRange === 1 ? "ен" : "ни"} празн{holidaysInRange === 1 ? "ик" : "ика"} в обхвата
+                </span>
+              )}
               {workingDays === 0 && (
                 <span className="text-orange text-[11px]">Избери поне един работен ден</span>
               )}

@@ -105,10 +105,25 @@ export async function GET(req: NextRequest) {
       eventsByUser.set(e.user_id, arr);
     }
 
+    // 4b. National holidays so the per-worker totals correctly drop
+    // expected hours on праздници и не приписват base работа.
+    const { data: holidays } = await supabase
+      .from("hr_holidays")
+      .select("holiday_date")
+      .eq("organization_id", ctx.organizationId)
+      .gte("holiday_date", startIso)
+      .lte("holiday_date", endIso);
+    const holidaySet = new Set((holidays ?? []).map((h) => h.holiday_date as string));
+
     // 5. Compose response.
     const workers = workerIds.map((uid) => {
       const profile = profileByUser.get(uid);
-      const totals = computeMonthlyTotals(start, end, eventsByUser.get(uid) ?? []);
+      const totals = computeMonthlyTotals(
+        start,
+        end,
+        eventsByUser.get(uid) ?? [],
+        holidaySet
+      );
       return {
         user_id: uid,
         email: emailByUser.get(uid) ?? null,
