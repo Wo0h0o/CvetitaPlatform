@@ -2,20 +2,34 @@
 
 import { use, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Card, CardBody, CardHeader } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { Badge } from "@/components/shared/Badge";
+import { Button } from "@/components/shared/Button";
 import { PageHeader } from "@/components/shared/PageHeader";
 import {
   ArrowLeft, Phone, Mail, MapPin, Package, Euro, Calendar, PhoneCall,
   StickyNote, AlertCircle, PhoneOff, Clock, CheckCircle2, XCircle,
   ArrowDownNarrowWide, ArrowUpNarrowWide, Truck, Home, Target,
+  ChevronLeft, ChevronRight,
   type LucideIcon,
 } from "lucide-react";
 import { LogEntryForm } from "../_components/LogEntryForm";
 import { ProfileSettings } from "../_components/ProfileSettings";
 import { UpsellWidget } from "../_components/UpsellWidget";
+
+// Keep in sync with the page size in CustomerListTab — the profile uses it
+// to compute the right `page` number when navigating "Списък".
+const COHORT_PAGE_SIZE = 50;
+
+interface NeighborRow {
+  phone_e164: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+}
 
 const fetcher = (url: string) => fetch(url).then(async (r) => {
   const json = await r.json();
@@ -175,6 +189,11 @@ function customerName(c: Customer): string {
   return full || c.email || c.phone_e164;
 }
 
+function neighbourLabel(n: NeighborRow): string {
+  const full = [n.first_name, n.last_name].filter(Boolean).join(" ").trim();
+  return full || n.email || n.phone_e164;
+}
+
 function itemTitle(item: LineItem): string {
   const base = item.title || item.name || "Артикул";
   return item.variant_title ? `${base} — ${item.variant_title}` : base;
@@ -229,9 +248,94 @@ export default function CustomerProfilePage({
   const phone = decodeURIComponent(phoneParam);
   const apiUrl = `/api/customers/${encodeURIComponent(phone)}`;
 
+  const router = useRouter();
+  const sp = useSearchParams();
+
   const { data, error, isLoading, mutate } = useSWR<ProfileData>(apiUrl, fetcher, {
     revalidateOnFocus: false,
   });
+
+  // Cohort navigation — when the operator came from the filtered list, the
+  // URL carries `i` (absolute index in the cohort) plus the filter params.
+  // We fetch a 3-record window centred on `i` to derive prev/next without
+  // pulling the whole list. If `i` is missing we fall back to the original
+  // "no cohort context" behaviour.
+  const indexParam = sp.get("i");
+  const cohortIndex = indexParam !== null ? Number(indexParam) : null;
+  const hasCohort = cohortIndex !== null && Number.isInteger(cohortIndex) && cohortIndex >= 0;
+
+  const cohortListUrl = useMemo(() => {
+    if (!hasCohort) return null;
+    const qs = new URLSearchParams();
+    for (const k of ["q", "filter", "sort", "from", "to"] as const) {
+      const v = sp.get(k);
+      if (v) qs.set(k, v);
+    }
+    if (!qs.get("filter")) qs.set("filter", "all");
+    if (!qs.get("sort")) qs.set("sort", "last_order_at");
+    qs.set("order", "desc");
+    // Window of up to 3 records around the current customer. When i=0 we
+    // start at offset=0 so the API doesn't need to handle negative offsets.
+    const offset = Math.max(0, cohortIndex! - 1);
+    qs.set("offset", String(offset));
+    qs.set("limit", "3");
+    return `/api/customers/list?${qs.toString()}`;
+  }, [hasCohort, cohortIndex, sp]);
+
+  const { data: cohortData } = useSWR<{ customers: NeighborRow[]; total: number }>(
+    cohortListUrl,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60_000 }
+  );
+
+  // Resolve prev/next from the window. The current customer should sit at
+  // index 1 of the array (when offset = i-1), or at index 0 when i = 0.
+  // If the URL-provided phone doesn't match what's at the expected slot,
+  // the cohort has shifted (somebody changed a filter or marked do_not_call
+  // between page loads); we hide the navigation rather than send the
+  // operator to a stale neighbour.
+  const cohortNav = useMemo(() => {
+    if (!hasCohort || !cohortData?.customers) return null;
+    const arr = cohortData.customers;
+    const expectedIdx = cohortIndex === 0 ? 0 : 1;
+    const current = arr[expectedIdx];
+    if (!current || current.phone_e164 !== phone) return null;
+    const prev = expectedIdx > 0 ? arr[expectedIdx - 1] : null;
+    const next = arr[expectedIdx + 1] ?? null;
+    return { prev, next, total: cohortData.total };
+  }, [hasCohort, cohortIndex, cohortData, phone]);
+
+  // Build hrefs that keep the same filter params; only `i` changes.
+  const cohortFilterQS = useMemo(() => {
+    const out = new URLSearchParams();
+    for (const k of ["q", "filter", "sort", "from", "to"] as const) {
+      const v = sp.get(k);
+      if (v) out.set(k, v);
+    }
+    return out;
+  }, [sp]);
+
+  const listHref = useMemo(() => {
+    if (!hasCohort) return "/customers";
+    const out = new URLSearchParams(cohortFilterQS.toString());
+    const page = Math.floor(cohortIndex! / COHORT_PAGE_SIZE);
+    if (page > 0) out.set("page", String(page));
+    const qs = out.toString();
+    return qs ? `/customers?${qs}` : "/customers";
+  }, [hasCohort, cohortFilterQS, cohortIndex]);
+
+  const neighbourHref = (neighbour: NeighborRow | null, delta: -1 | 1): string | null => {
+    if (!neighbour || cohortIndex === null) return null;
+    const out = new URLSearchParams(cohortFilterQS.toString());
+    out.set("i", String(cohortIndex + delta));
+    return `/customers/${encodeURIComponent(neighbour.phone_e164)}?${out.toString()}`;
+  };
+
+  const prevHref = cohortNav ? neighbourHref(cohortNav.prev, -1) : null;
+  const nextHref = cohortNav ? neighbourHref(cohortNav.next, 1) : null;
+
+  const goPrev = () => prevHref && router.push(prevHref);
+  const goNext = () => nextHref && router.push(nextHref);
 
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
@@ -272,7 +376,7 @@ export default function CustomerProfilePage({
             <p className="text-[14px] text-text mb-1">
               {error?.message === "Customer not found" ? "Клиентът не е намерен" : "Грешка при зареждане"}
             </p>
-            <Link href="/customers" className="text-[13px] text-accent hover:underline mt-3 inline-block">
+            <Link href={listHref} className="text-[13px] text-accent hover:underline mt-3 inline-block">
               ← Към списъка
             </Link>
           </div>
@@ -288,12 +392,42 @@ export default function CustomerProfilePage({
   return (
     <>
       <PageHeader title={customerName(customer)}>
-        <Link
-          href="/customers"
-          className="text-[13px] text-text-2 hover:text-text inline-flex items-center gap-1.5 transition-colors"
-        >
-          <ArrowLeft size={14} />Списък
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href={listHref}>
+            <Button variant="secondary" size="sm">
+              <ArrowLeft size={14} />Списък
+            </Button>
+          </Link>
+          {hasCohort && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={goPrev}
+                disabled={!prevHref}
+                aria-label="Предишен клиент"
+                title={cohortNav?.prev ? neighbourLabel(cohortNav.prev) : undefined}
+              >
+                <ChevronLeft size={14} />Предишен
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={goNext}
+                disabled={!nextHref}
+                aria-label="Следващ клиент"
+                title={cohortNav?.next ? neighbourLabel(cohortNav.next) : undefined}
+              >
+                Следващ<ChevronRight size={14} />
+              </Button>
+              {cohortNav && (
+                <span className="text-[12px] text-text-3 tabular-nums hidden sm:inline">
+                  {cohortIndex! + 1} от {cohortNav.total.toLocaleString("bg-BG")}
+                </span>
+              )}
+            </>
+          )}
+        </div>
       </PageHeader>
 
       {/* Hero / contact summary */}

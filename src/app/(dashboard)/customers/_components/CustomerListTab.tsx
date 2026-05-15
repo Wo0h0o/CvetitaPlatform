@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { Card, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
@@ -15,6 +16,13 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const PAGE_SIZE = 50;
+
+// Search/filter state lives in the URL so a click into a customer's profile
+// (and the click back) preserves the operator's working set. The list URL
+// also seeds the profile page with the same params + an absolute index `i`
+// so Prev/Next buttons can navigate the cohort.
+const DEFAULT_FILTER = "all";
+const DEFAULT_SORT = "last_order_at";
 
 const FILTERS = [
   { key: "all",            label: "Всички" },
@@ -93,44 +101,107 @@ function customerName(c: CustomerRow): string {
   return full || c.email || c.phone_e164;
 }
 
-function customerHref(phone: string): string {
-  return `/customers/${encodeURIComponent(phone)}`;
+/**
+ * Build a /customers/{phone} URL that carries the active list filters plus
+ * the customer's absolute index in the filtered cohort. The profile page
+ * uses these to render Prev/Next buttons and to send the operator back to
+ * the right page of the list.
+ */
+function customerHref(phone: string, params: URLSearchParams, absoluteIndex: number): string {
+  const sp = new URLSearchParams(params.toString());
+  sp.set("i", String(absoluteIndex));
+  return `/customers/${encodeURIComponent(phone)}?${sp.toString()}`;
+}
+
+/**
+ * Returns the subset of URL search params that describe the list filter
+ * state. We strip pagination (`page`) from the customer-row link because
+ * the profile page derives the right page from the absolute index `i`.
+ */
+function cohortParams(sp: URLSearchParams): URLSearchParams {
+  const out = new URLSearchParams();
+  for (const k of ["q", "filter", "sort", "from", "to"] as const) {
+    const v = sp.get(k);
+    if (v) out.set(k, v);
+  }
+  return out;
 }
 
 export function CustomerListTab() {
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filter, setFilter] = useState<typeof FILTERS[number]["key"]>("all");
-  const [sort, setSort] = useState<typeof SORTS[number]["key"]>("last_order_at");
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
-  const [page, setPage] = useState(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
 
-  // Debounce search
+  // Filter state derived from URL so it survives navigation to the profile
+  // and back. Defaults are elided from the URL to keep links clean.
+  const urlQ = sp.get("q") ?? "";
+  const urlFilter = (sp.get("filter") as typeof FILTERS[number]["key"]) || DEFAULT_FILTER;
+  const urlSort = (sp.get("sort") as typeof SORTS[number]["key"]) || DEFAULT_SORT;
+  const urlFrom = sp.get("from") ?? "";
+  const urlTo = sp.get("to") ?? "";
+  const urlPage = Math.max(0, Number(sp.get("page")) || 0);
+
+  // The search input is the one piece we keep local (for debounce).
+  const [search, setSearch] = useState(urlQ);
+  // Re-sync when the URL changes externally (e.g. back/forward).
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    setSearch(urlQ);
+  }, [urlQ]);
+
+  /**
+   * Patches the URL search params. Empty / default values are removed so
+   * `/customers` stays clean when no filter is set, and so SWR keys don't
+   * thrash on identity values.
+   */
+  const patchUrl = useCallback(
+    (patch: Record<string, string | number | undefined | null>, opts: { resetPage?: boolean } = {}) => {
+      const next = new URLSearchParams(sp.toString());
+      for (const [k, raw] of Object.entries(patch)) {
+        const v = raw == null ? "" : String(raw);
+        const isDefault =
+          v === "" ||
+          (k === "filter" && v === DEFAULT_FILTER) ||
+          (k === "sort" && v === DEFAULT_SORT) ||
+          (k === "page" && v === "0");
+        if (isDefault) next.delete(k);
+        else next.set(k, v);
+      }
+      if (opts.resetPage) next.delete("page");
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, sp]
+  );
+
+  // Debounced search → URL.
+  useEffect(() => {
+    if (search === urlQ) return;
+    const t = setTimeout(() => patchUrl({ q: search.trim() }, { resetPage: true }), 300);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, urlQ, patchUrl]);
 
-  // Reset to page 0 when filters/search/sort/dates change
-  useEffect(() => {
-    setPage(0);
-  }, [debouncedSearch, filter, sort, from, to]);
+  // Aliases so the rest of the render reads naturally.
+  const filter = urlFilter;
+  const sort = urlSort;
+  const from = urlFrom;
+  const to = urlTo;
+  const page = urlPage;
 
   const url = useMemo(() => {
-    const sp = new URLSearchParams();
-    if (debouncedSearch) sp.set("q", debouncedSearch);
-    sp.set("filter", filter);
-    sp.set("sort", sort);
-    sp.set("order", "desc");
-    sp.set("limit", String(PAGE_SIZE));
-    sp.set("offset", String(page * PAGE_SIZE));
-    if (from) sp.set("from", from);
-    if (to) sp.set("to", to);
-    return `/api/customers/list?${sp.toString()}`;
-  }, [debouncedSearch, filter, sort, from, to, page]);
+    const qs = new URLSearchParams();
+    if (urlQ) qs.set("q", urlQ);
+    qs.set("filter", filter);
+    qs.set("sort", sort);
+    qs.set("order", "desc");
+    qs.set("limit", String(PAGE_SIZE));
+    qs.set("offset", String(page * PAGE_SIZE));
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    return `/api/customers/list?${qs.toString()}`;
+  }, [urlQ, filter, sort, from, to, page]);
 
   const hasDateFilter = !!(from || to);
+  const cohortSp = useMemo(() => cohortParams(sp), [sp]);
 
   const { data, isLoading, error } = useSWR<ListResponse>(url, fetcher, {
     revalidateOnFocus: false,
@@ -165,7 +236,7 @@ export function CustomerListTab() {
             {FILTERS.map((f) => (
               <button
                 key={f.key}
-                onClick={() => setFilter(f.key)}
+                onClick={() => patchUrl({ filter: f.key }, { resetPage: true })}
                 className={`
                   px-3 py-1.5 text-[12px] font-medium rounded-full transition-colors
                   ${filter === f.key
@@ -185,7 +256,7 @@ export function CustomerListTab() {
               <input
                 type="date"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(e) => patchUrl({ from: e.target.value }, { resetPage: true })}
                 max={to || undefined}
                 className="bg-surface-2 border border-border rounded-md px-2 py-1.5 text-[12.5px] text-text focus:outline-none focus:border-accent"
               />
@@ -195,7 +266,7 @@ export function CustomerListTab() {
               <input
                 type="date"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
+                onChange={(e) => patchUrl({ to: e.target.value }, { resetPage: true })}
                 min={from || undefined}
                 className="bg-surface-2 border border-border rounded-md px-2 py-1.5 text-[12.5px] text-text focus:outline-none focus:border-accent"
               />
@@ -203,7 +274,7 @@ export function CustomerListTab() {
             {hasDateFilter && (
               <button
                 type="button"
-                onClick={() => { setFrom(""); setTo(""); }}
+                onClick={() => patchUrl({ from: "", to: "" }, { resetPage: true })}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12.5px] text-text-3 hover:text-text transition-colors"
               >
                 <X size={12} />Изчисти период
@@ -216,7 +287,7 @@ export function CustomerListTab() {
             <span>Сортирай по:</span>
             <select
               value={sort}
-              onChange={(e) => setSort(e.target.value as typeof SORTS[number]["key"])}
+              onChange={(e) => patchUrl({ sort: e.target.value }, { resetPage: true })}
               className="bg-surface-2 border border-border rounded-md px-2 py-1 text-[12px] text-text focus:outline-none focus:border-accent"
             >
               {SORTS.map((s) => (
@@ -268,13 +339,16 @@ export function CustomerListTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.map((c) => (
+                  {customers.map((c, idx) => (
                     <tr
                       key={c.phone_e164}
                       className="border-t border-border hover:bg-surface-2 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
-                        <Link href={customerHref(c.phone_e164)} className="block">
+                        <Link
+                          href={customerHref(c.phone_e164, cohortSp, page * PAGE_SIZE + idx)}
+                          className="block"
+                        >
                           <div className="font-medium text-text">{customerName(c)}</div>
                           <div className="text-[12px] text-text-3 flex items-center gap-1 mt-0.5">
                             <Phone size={11} />{c.phone_e164}
@@ -319,8 +393,12 @@ export function CustomerListTab() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {customers.map((c) => (
-              <Link key={c.phone_e164} href={customerHref(c.phone_e164)} className="block">
+            {customers.map((c, idx) => (
+              <Link
+                key={c.phone_e164}
+                href={customerHref(c.phone_e164, cohortSp, page * PAGE_SIZE + idx)}
+                className="block"
+              >
                 <Card hover>
                   <CardBody className="!p-4">
                     <div className="flex items-start justify-between gap-3 mb-2">
@@ -371,7 +449,7 @@ export function CustomerListTab() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                onClick={() => patchUrl({ page: Math.max(0, page - 1) })}
                 disabled={page === 0}
               >
                 <ChevronLeft size={14} />Назад
@@ -382,7 +460,7 @@ export function CustomerListTab() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                onClick={() => patchUrl({ page: Math.min(totalPages - 1, page + 1) })}
                 disabled={page >= totalPages - 1}
               >
                 Напред<ChevronRight size={14} />
