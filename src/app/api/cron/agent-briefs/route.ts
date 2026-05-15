@@ -448,9 +448,14 @@ async function processMarketInner(
   }
 
   setStep("payload-build");
-  // Verify cohort shape before .map/.slice chains
-  for (let i = 0; i < cohorts.length; i++) {
-    const c = cohorts[i];
+  // Defensive: rebuild cohorts as a real Array. We've seen a production
+  // failure where `cohorts.map is not a function` despite buildCohorts
+  // returning `[].slice()`. The most plausible cause is a stale bundle
+  // / minifier quirk turning the local into an array-like; spreading it
+  // here costs nothing and guarantees the .map call below has a method.
+  const cohortsArr = Array.isArray(cohorts) ? [...cohorts] : Array.from(cohorts as Iterable<ProductCohort>);
+  for (let i = 0; i < cohortsArr.length; i++) {
+    const c = cohortsArr[i];
     if (!Array.isArray(c.winners)) throw new Error(`cohort[${i}].winners not array typeof=${typeof c.winners}`);
     if (!Array.isArray(c.losers)) throw new Error(`cohort[${i}].losers not array typeof=${typeof c.losers}`);
     if (!Array.isArray(c.ads)) throw new Error(`cohort[${i}].ads not array typeof=${typeof c.ads}`);
@@ -463,7 +468,7 @@ async function processMarketInner(
       name: market.storeName,
     },
     period_days: 14,
-    cohorts: cohorts.map((c) => ({
+    cohorts: cohortsArr.map((c) => ({
       product_handle: c.product_handle,
       product_title: c.product_title,
       total_spend_14d: Math.round(c.total_spend_14d * 100) / 100,
