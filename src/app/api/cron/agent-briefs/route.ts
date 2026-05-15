@@ -545,7 +545,9 @@ async function processMarketInner(
   const tool = body.content?.find(
     (c): c is ClaudeToolUseBlock => c.type === "tool_use" && c.name === "generate_product_cards"
   );
-  let rawCards = tool?.input?.cards;
+  // Typed as unknown so the runtime guards below aren't narrowed to `never`
+  // by the BriefCard[] declared type — Sonnet 4.6 can hand back violations.
+  let rawCards: unknown = tool?.input?.cards;
 
   // Sonnet 4.6 occasionally hands us a JSON-encoded string instead of the
   // declared array (seen on BG with 3 cohorts, never on GR). Try once to
