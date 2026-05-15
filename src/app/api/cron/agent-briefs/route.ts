@@ -448,27 +448,49 @@ async function processMarketInner(
   }
 
   setStep("payload-build");
-  // Defensive: rebuild cohorts as a real Array. We've seen a production
-  // failure where `cohorts.map is not a function` despite buildCohorts
-  // returning `[].slice()`. The most plausible cause is a stale bundle
-  // / minifier quirk turning the local into an array-like; spreading it
-  // here costs nothing and guarantees the .map call below has a method.
-  const cohortsArr = Array.isArray(cohorts) ? [...cohorts] : Array.from(cohorts as Iterable<ProductCohort>);
-  for (let i = 0; i < cohortsArr.length; i++) {
-    const c = cohortsArr[i];
-    if (!Array.isArray(c.winners)) throw new Error(`cohort[${i}].winners not array typeof=${typeof c.winners}`);
-    if (!Array.isArray(c.losers)) throw new Error(`cohort[${i}].losers not array typeof=${typeof c.losers}`);
-    if (!Array.isArray(c.ads)) throw new Error(`cohort[${i}].ads not array typeof=${typeof c.ads}`);
+  // Imperative payload construction — earlier chained `.map()` versions
+  // failed in production with a minified `<X>.map is not a function`
+  // error that survived several rounds of guards. Building the array
+  // explicitly with for-loops sidesteps whatever transform was breaking
+  // the chained version and gives precise error messages if any nested
+  // field is malformed.
+  if (!Array.isArray(cohorts)) {
+    throw new Error(`cohorts-not-array typeof=${typeof cohorts} ctor=${(cohorts as { constructor?: { name?: string } })?.constructor?.name}`);
   }
-
-  // Compact JSON for the LLM (keep ad_id so it can reference + recommend reallocations)
-  const userPayload = {
-    market: {
-      code: market.marketCode,
-      name: market.storeName,
-    },
-    period_days: 14,
-    cohorts: cohortsArr.map((c) => ({
+  const cohortsPayload: unknown[] = [];
+  for (let i = 0; i < cohorts.length; i++) {
+    const c = cohorts[i];
+    if (!c) throw new Error(`cohort[${i}] is ${c}`);
+    setStep(`payload-build/cohort[${i}].winners (n=${c.winners?.length})`);
+    if (!Array.isArray(c.winners)) throw new Error(`cohort[${i}].winners not array typeof=${typeof c.winners}`);
+    const winnersTop = c.winners.slice(0, 3);
+    const winnersOut: unknown[] = [];
+    for (let j = 0; j < winnersTop.length; j++) {
+      const a = winnersTop[j];
+      winnersOut.push({
+        ad_id: a.ad_id,
+        ad_name: a.ad_name,
+        spend: Math.round(a.spend_14d * 100) / 100,
+        roas: Math.round(a.roas_14d * 100) / 100,
+        purchases: a.purchases_14d,
+      });
+    }
+    setStep(`payload-build/cohort[${i}].losers (n=${c.losers?.length})`);
+    if (!Array.isArray(c.losers)) throw new Error(`cohort[${i}].losers not array typeof=${typeof c.losers}`);
+    const losersTop = c.losers.slice(0, 5);
+    const losersOut: unknown[] = [];
+    for (let j = 0; j < losersTop.length; j++) {
+      const a = losersTop[j];
+      losersOut.push({
+        ad_id: a.ad_id,
+        ad_name: a.ad_name,
+        spend: Math.round(a.spend_14d * 100) / 100,
+        roas: Math.round(a.roas_14d * 100) / 100,
+        purchases: a.purchases_14d,
+        freq: Math.round(a.freq_avg * 100) / 100,
+      });
+    }
+    cohortsPayload.push({
       product_handle: c.product_handle,
       product_title: c.product_title,
       total_spend_14d: Math.round(c.total_spend_14d * 100) / 100,
@@ -476,23 +498,19 @@ async function processMarketInner(
       total_purchases_14d: c.total_purchases_14d,
       cohort_roas_14d: Math.round(c.cohort_roas_14d * 100) / 100,
       cohort_median_ad_roas: Math.round(c.cohort_median_ad_roas * 100) / 100,
-      winners: c.winners.slice(0, 3).map((a) => ({
-        ad_id: a.ad_id,
-        ad_name: a.ad_name,
-        spend: Math.round(a.spend_14d * 100) / 100,
-        roas: Math.round(a.roas_14d * 100) / 100,
-        purchases: a.purchases_14d,
-      })),
-      losers: c.losers.slice(0, 5).map((a) => ({
-        ad_id: a.ad_id,
-        ad_name: a.ad_name,
-        spend: Math.round(a.spend_14d * 100) / 100,
-        roas: Math.round(a.roas_14d * 100) / 100,
-        purchases: a.purchases_14d,
-        freq: Math.round(a.freq_avg * 100) / 100,
-      })),
+      winners: winnersOut,
+      losers: losersOut,
       precomputed_severity: c.severity,
-    })),
+    });
+  }
+  setStep("payload-build/done");
+  const userPayload = {
+    market: {
+      code: market.marketCode,
+      name: market.storeName,
+    },
+    period_days: 14,
+    cohorts: cohortsPayload,
   };
 
   const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
