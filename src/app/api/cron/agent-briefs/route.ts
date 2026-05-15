@@ -545,7 +545,26 @@ async function processMarketInner(
   const tool = body.content?.find(
     (c): c is ClaudeToolUseBlock => c.type === "tool_use" && c.name === "generate_product_cards"
   );
-  const rawCards = tool?.input?.cards;
+  let rawCards = tool?.input?.cards;
+
+  // Sonnet 4.6 occasionally hands us a JSON-encoded string instead of the
+  // declared array (seen on BG with 3 cohorts, never on GR). Try once to
+  // recover by parsing — if the result is an array we keep going.
+  if (typeof rawCards === "string") {
+    try {
+      const parsed = JSON.parse(rawCards);
+      if (Array.isArray(parsed)) {
+        logger.info("agent-briefs: recovered cards from JSON string", {
+          market: market.marketCode,
+          stringLen: rawCards.length,
+          parsedLen: parsed.length,
+        });
+        rawCards = parsed;
+      }
+    } catch {
+      // Fall through to the not-array branch below for proper logging.
+    }
+  }
 
   if (!Array.isArray(rawCards)) {
     logger.error("agent-briefs: tool returned non-array cards", {
