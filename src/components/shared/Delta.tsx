@@ -29,12 +29,15 @@ export function Delta({ pct, label = "спрямо пр. период", unit = "
     );
   }
 
-  // Treat absolute values under 0.05 as flat to avoid "↑ 0.0%" noise.
+  // Treat absolute values under 0.05 as flat to avoid "▲ 0.0%" noise.
   const isFlat = Math.abs(pct) < 0.05;
   const isPositive = pct > 0;
   const isGood = isFlat ? null : (inverse ? !isPositive : isPositive);
 
-  const arrow = isFlat ? "→" : isPositive ? "↑" : "↓";
+  // Triangle glyphs (▲ ▼) are the visual anchor for direction — they read
+  // faster than arrows and sit on the typographic baseline cleanly. Em-dash
+  // for flat keeps the row height stable without implying motion.
+  const marker = isFlat ? "—" : isPositive ? "▲" : "▼";
   const color =
     isGood === null ? "text-text-2" : isGood ? "text-accent" : "text-red";
 
@@ -43,9 +46,10 @@ export function Delta({ pct, label = "спрямо пр. период", unit = "
   return (
     <div className={`text-[12px] tabular-nums ${className}`}>
       <span className={`font-semibold ${color}`}>
-        {arrow} {formatted}{unit}
+        <span className="text-[10px] align-middle mr-0.5">{marker}</span>
+        {formatted}{unit}
       </span>
-      <span className="text-text-3 ml-1.5">{label}</span>
+      {label && <span className="text-text-3 ml-1.5">{label}</span>}
     </div>
   );
 }
