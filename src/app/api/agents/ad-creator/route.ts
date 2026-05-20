@@ -64,7 +64,9 @@ function buildSystemPrompt(settings: {
   hookStyle: string;
   language: string;
   formality: string;
+  customAvatarDescription: string;
 }): string {
+  const hasCustomAvatar = settings.customAvatarDescription.trim().length > 0;
   const lang: LanguageConfig = LANGUAGE_CONFIGS[settings.language] || LANGUAGE_CONFIGS.bg;
   const formalityRule = settings.formality === "formal" ? lang.formalityInstruction.formal : lang.formalityInstruction.informal;
   const intensityGuide: Record<number, string> = {
@@ -101,14 +103,32 @@ function buildSystemPrompt(settings: {
     stat: "HOOK СТИЛ — СТАТИСТИКА: Започни с шокиращо число. '70% от мъжете след 25 имат понижен тестостерон.' / '93% от българите вярват в силата на билките — но само 12% ги приемат правилно.' Числото трябва да е ВЕРИФИЦИРУЕМО и ИЗНЕНАДВАЩО.",
     pain: "HOOK СТИЛ — PAIN CALL-OUT: Назови болката директно в първото изречение. 'Ако се събуждаш уморен всяка сутрин, това не е нормално.' / 'Ако 3-тото кафе за деня ти е спасителна линия...' Точно описание на ежедневно преживяване, което потребителят РАЗПОЗНАВА.",
     curiosity: "HOOK СТИЛ — CURIOSITY GAP: Създай информационна празнина, която читателят ТРЯБВА да запълни. 'Единственото нещо, което 90% от мъжете след 30 не знаят за тестостерона...' / 'Българската билка, която учените тепърва проучват...' НЕ clickbait — обещанието трябва да се изпълни в текста.",
-    proof: "HOOK СТИЛ — SOCIAL PROOF: Започни с числово доказателство. '23,000+ клиенти вече се довериха.' / 'Над 5,000 мъже избраха TLZ през последните 6 месеца.' / '4.8/5 звезди от 1,200+ отзива.' Конкретни, верифицируеми числа.",
+    proof: "HOOK СТИЛ — SOCIAL PROOF: Започни с числово доказателство. 'Над 1 милион клиенти вече ни се довериха.' / 'Над 5,000 мъже избраха TLZ през последните 6 месеца.' / '4.8/5 звезди от 1,200+ отзива.' Конкретни, верифицируеми числа.",
     humor: "HOOK СТИЛ — DARK HUMOR: Самоирония, която чупи бариерата на вниманието. 'Тестостеронът ми напусна чата.' / 'Plot twist: тялото ти не е на 20 вече.' / 'Дъщеря ми ме пита защо съм уморен. Аз също.' ВАЖНО: хуморът трябва да идва от УВЕРЕН глас, не от отчаяние. След хумора — сериозно решение.",
   };
+
+  const PRESET_AVATARS_BLOCK = `== ЦЕЛЕВИ АВАТАРИ ==
+1. СТЕФАН — Performance Seeker (М 28-40): Трениращ, иска натурален тестостерон, удря плато. Продукти: TLZ, Tribulus Max, Leuzea. Език: директен, иска данни. Trigger: performance числа, механизми.
+2. МАРИЯ — Health-Conscious Parent (Ж 30-50): Управлява здравето на семейството, проучва. Продукти: мултивитамини, колаген, Omega 3, пробиотици. Език: топъл, търси доверие. Trigger: social proof от майки, "Произведено в България".
+3. ПЕТЪР — Proactive Health Manager (М 35-55): Наскоро здравно-осъзнат, скептичен. Продукти: Gluco Control, Detox, Nattokinase. Език: предпазлив, иска обяснения. Trigger: научна обосновка.
+4. ЕЛЕНА — Beauty & Wellness (Ж 25-45): Фокус външен вид + вътрешно здраве. Продукти: Collagen Smoothie, Спирулина. Език: аспирационен. Trigger: ingredient stories, lifestyle.
+5. ГЕОРГИ — Loyal Repeater (М 40-65): Съществуващ клиент. Продукти: TLZ refills + cross-sell. Език: фамилиарен. Trigger: удобство, лоялност.`;
+
+  const avatarSection = hasCustomAvatar
+    ? `== ЦЕЛЕВИ АВАТАР (custom от потребителя) ==
+${settings.customAvatarDescription.trim()}
+
+ВАЖНО: Този custom профил замества стандартните 5 персони. Пиши САМО за него. Адаптирай езика, болките, тригерите и продуктовите акценти спрямо това описание — не препращай към Стефан/Мария/Петър/Елена/Георги.`
+    : PRESET_AVATARS_BLOCK;
+
+  const avatarSettingLine = hasCustomAvatar
+    ? "• Аватар: Custom (виж секция ЦЕЛЕВИ АВАТАР по-горе)"
+    : `• Аватар: ${settings.avatar}`;
 
   return `Ти си РЕКЛАМЕН ТВОРЕЦ — AI копирайтър и креативен директор на Цветита Хербал.
 
 == КОМПАНИЯТА ==
-Цветита Хербал — 15 години на пазара, собствено българско производство по BDS стандарт, 23,000+ доволни клиенти. 200+ продукта в 21 категории. Продаваме през cvetitaherbal.com (Shopify). Валута: ВИНАГИ EUR.
+Цветита Хербал — 15 години на пазара, собствено българско производство по BDS стандарт, над 1 милион доволни клиенти. 200+ продукта в 21 категории. Продаваме през cvetitaherbal.com (Shopify). Валута: ВИНАГИ EUR.
 
 Ключови разграничители (използвай ги — правят копито НЕПОДМЕНЯЕМО):
 • Българско производство (не внос от Китай/Индия)
@@ -124,15 +144,10 @@ function buildSystemPrompt(settings: {
 
 Цени: единични 15-35 EUR, комбо 40-70 EUR, AOV 44 EUR, безплатна доставка над 60 EUR.
 
-== ЦЕЛЕВИ АВАТАРИ ==
-1. СТЕФАН — Performance Seeker (М 28-40): Трениращ, иска натурален тестостерон, удря плато. Продукти: TLZ, Tribulus Max, Leuzea. Език: директен, иска данни. Trigger: performance числа, механизми.
-2. МАРИЯ — Health-Conscious Parent (Ж 30-50): Управлява здравето на семейството, проучва. Продукти: мултивитамини, колаген, Omega 3, пробиотици. Език: топъл, търси доверие. Trigger: social proof от майки, "Произведено в България".
-3. ПЕТЪР — Proactive Health Manager (М 35-55): Наскоро здравно-осъзнат, скептичен. Продукти: Gluco Control, Detox, Nattokinase. Език: предпазлив, иска обяснения. Trigger: научна обосновка.
-4. ЕЛЕНА — Beauty & Wellness (Ж 25-45): Фокус външен вид + вътрешно здраве. Продукти: Collagen Smoothie, Спирулина. Език: аспирационен. Trigger: ingredient stories, lifestyle.
-5. ГЕОРГИ — Loyal Repeater (М 40-65): Съществуващ клиент. Продукти: TLZ refills + cross-sell. Език: фамилиарен. Trigger: удобство, лоялност.
+${avatarSection}
 
 == ТЕКУЩИ НАСТРОЙКИ ==
-• Аватар: ${settings.avatar}
+${avatarSettingLine}
 • Формат: ${settings.format}
 • Аудитория: ${settings.audience}
 • Интензивност: ${settings.intensity}/5 — ${intensityGuide[settings.intensity] || intensityGuide[3]}
@@ -521,6 +536,7 @@ export async function POST(req: NextRequest) {
     hookStyle: body.hookStyle || "curiosity",
     language: body.language || "bg",
     formality: body.formality || "informal",
+    customAvatarDescription: typeof body.customAvatarDescription === "string" ? body.customAvatarDescription : "",
   };
 
   const apiKey = process.env.CLAUDE_API_KEY;

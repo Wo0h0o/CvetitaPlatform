@@ -76,7 +76,7 @@ const BG: LanguageConfig = {
 • ВИНАГИ запетая пред "че": "Знаеш ли, че..."
 • ВИНАГИ запетая пред "който/която/което"
 • НЕ слагай запетая пред "и" в просто изречение
-• Тире с интервали от двете страни: "Натурално — без компромис — за теб"
+• БЕЗ em-dash (—): използвай къса тире (-), запетая или нов ред. "Натурално, без компромис, за теб" вместо "Натурално — без компромис — за теб"
 • Български кавички: „ " а не " "
 
 СЛОВОРЕД — ОРЪЖИЕ В БЪЛГАРСКИ:
@@ -98,7 +98,7 @@ const BG: LanguageConfig = {
 • Хуморът е trust механизъм — "Няма да те превърне в супергерой. Но ще спиш като човек."
 • Before-After-Bridge (storytelling > commanding)
 • Equation формат: "Нисък тестостерон = ниска мотивация, ниско либидо, ниска енергия"
-• Тире за ритъм: "Натурално — без компромис — за цялото семейство"
+• Ритъм чрез запетаи или нов ред (НЕ em-dash): "Натурално, без компромис, за цялото семейство"
 • "Без" statements за доверие: "без изкуствени консерванти", "без компромиси"
 • Конкретно наследство: "берано на 1400м" > "натурални съставки"
 • Мек CTA: "Опитай и ти" > "Купи сега!"
@@ -124,7 +124,7 @@ const BG: LanguageConfig = {
 • Слагаш запетая пред "че" и "който/която/което"
 • Махаш запетая пред "и" в просто изречение
 • Използваш български кавички: „ " а не " "
-• Тире с интервали: " — "
+• ЗАМЕНЯШ em-dash (—) с къса тире (-), запетая или нов ред — em-dash е ЗАБРАНЕН
 • Разбиваш прекалено дълги изречения
 • Оптимизираш словоред: ключовата полза в края на изречението (фокусна позиция)
 • Заменяш чуждици с български еквиваленти, когато съществуват
@@ -172,7 +172,7 @@ const BG: LanguageConfig = {
 
 ПРИМЕР 3 — Empathetic Hook (AquaSource, 5+ месеца active):
 "Всяка жена стига до този момент.
-Менопаузата не е край, а естествен етап от живота ни —
+Менопаузата не е край, а естествен етап от живота ни,
 време, в което тялото просто иска да му обърнем внимание."
 
 TRUST ДУМИ (използвай): натурален, чист, без добавки, българско производство, прозрачен състав
@@ -219,7 +219,7 @@ ZEICHENSETZUNG:
 • Komma vor Nebensätzen: "Wir wissen, dass Qualität zählt"
 • Komma vor Infinitivgruppen mit "zu": "um die Gesundheit zu unterstützen"
 • Deutsche Anführungszeichen: „ " und ‚ ' (NICHT " " oder ' ')
-• Gedankenstrich mit Leerzeichen: "Natürlich — ohne Kompromisse — für Sie"
+• KEIN Gedankenstrich (—): verwende Bindestrich (-), Komma oder Zeilenumbruch. "Natürlich, ohne Kompromisse, für Sie" statt "Natürlich — ohne Kompromisse — für Sie"
 
 STIL:
 • Deutsche Leser schätzen Detailtiefe und Fakten — oberflächliche Claims vermeiden
@@ -264,6 +264,7 @@ WAS DU TUST:
 • Korrigiere Satzstellung (V2 in Hauptsätzen, Verb-Letzt in Nebensätzen)
 • Korrigiere Kommasetzung (vor Nebensätzen, Infinitivgruppen)
 • Verwende deutsche Anführungszeichen: „ " statt " "
+• ERSETZE Gedankenstrich (—) durch Bindestrich (-), Komma oder Zeilenumbruch — Gedankenstrich ist VERBOTEN
 • Ersetze unnötige Anglizismen durch deutsche Alternativen
 • Ersetze "Machen" durch spezifischere Verben wo möglich
 • Korrigiere falsche Freunde und Denglisch
@@ -346,7 +347,7 @@ const EL: LanguageConfig = {
 • Ελληνικό ερωτηματικό: ; (ΟΧΙ ?)
 • Άνω τελεία: · (μεσαία τελεία, για παύση)
 • Ελληνικά εισαγωγικά: « » ΟΧΙ " "
-• Παύλα με κενά: " — "
+• ΧΩΡΙΣ παύλα (—): χρησιμοποίησε κόμμα, ενωτικό (-) ή νέα γραμμή — η παύλα ΑΠΑΓΟΡΕΥΕΤΑΙ
 
 ΣΤΥΛ:
 • Σύντομες, καθαρές προτάσεις — 2-3 ανά παράγραφο
@@ -381,6 +382,7 @@ const EL: LanguageConfig = {
 • Διόρθωσε ρηματικούς χρόνους (αόριστος vs ενεστώτας)
 • Χρησιμοποίησε ελληνικά εισαγωγικά « » αντί " "
 • Χρησιμοποίησε ελληνικό ερωτηματικό ; αντί ?
+• ΑΝΤΙΚΑΤΕΣΤΗΣΕ την παύλα (—) με κόμμα, ενωτικό (-) ή νέα γραμμή — η παύλα ΑΠΑΓΟΡΕΥΕΤΑΙ
 • Αντικατέστησε αγγλικές λέξεις με ελληνικές εναλλακτικές
 • Βελτίωσε ρυθμό: σύντομες, καθαρές προτάσεις
 • Βεβαιώσου ότι η προσφώνηση είναι συνεπής (μόνο "εσύ" Ή μόνο "εσείς")
@@ -420,7 +422,7 @@ const EL: LanguageConfig = {
 "Πολλοί έρχονται σε εμάς για πρώτη φορά με μια αμφιβολία.
 «Μήπως αυτό θα είναι ακόμα ένα συμπλήρωμα χωρίς αποτέλεσμα;»
 Ακριβώς εδώ αρχίζει η διαφορά.
-Δεν κυνηγάμε γρήγορα αποτελέσματα — χτίζουμε μακροχρόνια εμπιστοσύνη."
+Δεν κυνηγάμε γρήγορα αποτελέσματα, χτίζουμε μακροχρόνια εμπιστοσύνη."
 
 ΛΕΞΕΙΣ ΕΜΠΙΣΤΟΣΥΝΗΣ: φυσικό, αγνό, χωρίς πρόσθετα, ευρωπαϊκή παραγωγή, διαφανής σύνθεση
 ΛΕΞΕΙΣ ΣΚΕΠΤΙΚΙΣΜΟΥ (αποφυγή): εγγυημένο, θαυματουργό, μυστική φόρμουλα, επαναστατικό`,
@@ -465,7 +467,7 @@ PUNCTUAȚIE:
 • Ghilimele românești: „ " NU " "
 • Virgulă înaintea lui "că", "care", "când", "dacă"
 • Cratimă obligatorie: "într-un", "dintr-o", "s-a"
-• Linie de dialog: — (em dash)
+• FĂRĂ em-dash (—) în ad copy: folosește virgulă, cratimă (-) sau rând nou — em-dash este INTERZIS
 
 STIL:
 • Propoziții scurte, clare — 2-3 pe paragraf
@@ -501,6 +503,7 @@ CE FACI:
 • Corectează acordul subiect-predicat
 • Folosește ghilimele românești: „ " nu " "
 • Adaugă virgulă înaintea lui "că", "care", "când"
+• ÎNLOCUIEȘTE em-dash (—) cu virgulă, cratimă (-) sau rând nou — em-dash este INTERZIS
 • Verifică cratimele: "într-un", "s-a", "dintr-o"
 • Înlocuiește anglicismele cu alternative românești
 • Optimizează ritmul: propoziții scurte și clare
@@ -585,7 +588,7 @@ CONGIUNTIVO:
 PUNTEGGIATURA:
 • Virgolette italiane: « » oppure " " (mai ' ')
 • Virgola prima di "che" (relativo): "il prodotto, che contiene..."
-• Trattino con spazi: " — "
+• NIENTE trattino lungo (—): usa virgola, trattino breve (-) o capoverso — il trattino lungo è VIETATO
 
 STILE:
 • Frasi brevi e chiare — 2-3 per paragrafo
@@ -620,6 +623,7 @@ COSA FAI:
 • Correggi accenti (è/é, sì/si, già, più, può)
 • Correggi l'uso del congiuntivo dopo "penso che", "credo che"
 • Usa virgolette italiane: « » o " "
+• SOSTITUISCI il trattino lungo (—) con virgola, trattino breve (-) o capoverso — il trattino lungo è VIETATO
 • Sostituisci anglicismi con alternative italiane
 • Ottimizza il ritmo: frasi brevi e chiare
 • Verifica la coerenza del registro (tu/Lei)
@@ -659,7 +663,7 @@ ESEMPIO 2 — Fiducia:
 "Molti vengono da noi per la prima volta con un dubbio.
 «Sarà l'ennesimo integratore senza effetto?»
 Proprio qui comincia la differenza.
-Non inseguiamo risultati rapidi — costruiamo fiducia a lungo termine."
+Non inseguiamo risultati rapidi, costruiamo fiducia a lungo termine."
 
 PAROLE DI FIDUCIA: naturale, puro, senza additivi, prodotto in Europa, composizione trasparente
 PAROLE DA EVITARE: garantito, miracoloso, formula segreta, rivoluzionario`,
@@ -700,7 +704,7 @@ ACCENTS — OBLIGATOIRES :
 PONCTUATION FRANÇAISE :
 • Espace insécable AVANT : ; ? ! : (en français, contrairement à l'anglais)
 • Guillemets français : « » avec espaces intérieurs : « comme ceci »
-• Tiret cadratin avec espaces : " — "
+• PAS de tiret cadratin (—) : utilise la virgule, le tiret court (-) ou un retour à la ligne — le tiret cadratin est INTERDIT
 • Virgule avant "qui" (relative explicative) : "le produit, qui contient..."
 
 ACCORD :
@@ -742,6 +746,7 @@ CE QUE TU FAIS :
 • Corrige les élisions (l'homme, j'ai, n'est, qu'il)
 • Ajoute les espaces avant ; ? ! : (typographie française)
 • Utilise les guillemets français : « » avec espaces
+• REMPLACE le tiret cadratin (—) par virgule, tiret court (-) ou retour à la ligne — le tiret cadratin est INTERDIT
 • Corrige les accords (participe passé, adjectifs)
 • Remplace les anglicismes par des alternatives françaises
 • Vérifie le subjonctif après "il faut que", "pour que"
@@ -782,7 +787,7 @@ EXEMPLE 2 — Confiance :
 "Beaucoup viennent chez nous pour la première fois avec un doute.
 « Est-ce que ce sera encore un complément sans effet ? »
 C'est exactement là que commence la différence.
-Nous ne cherchons pas les résultats rapides — nous construisons la confiance sur le long terme."
+Nous ne cherchons pas les résultats rapides, nous construisons la confiance sur le long terme."
 
 MOTS DE CONFIANCE : naturel, pur, sans additifs, fabriqué en Europe, composition transparente
 MOTS À ÉVITER : garanti, miraculeux, formule secrète, révolutionnaire`,
@@ -816,7 +821,7 @@ CONSISTENCY:
 PUNCTUATION:
 • Double quotation marks: "like this" — not 'like this' for primary quotes
 • Single quotes for quotes within quotes: "She said 'hello'"
-• Em dash without spaces: "Natural—no compromise—for you" OR with spaces " — " (pick one, be consistent)
+• NO em-dash (—): use a regular hyphen (-), comma, or line break instead. "Natural, no compromise, for you" — em-dash is FORBIDDEN
 • Serial/Oxford comma: "Tribulus, Maca, and Milk Thistle"
 
 STYLE:
@@ -858,7 +863,8 @@ DOESN'T WORK:
 WHAT YOU DO:
 • Fix spelling consistency (British OR American, not mixed)
 • Fix grammar: subject-verb agreement, tense consistency, its/it's, affect/effect
-• Fix punctuation: Oxford comma consistency, proper quotation marks, em dashes
+• Fix punctuation: Oxford comma consistency, proper quotation marks
+• REPLACE em-dash (—) with hyphen (-), comma, or line break — em-dash is FORBIDDEN
 • Fix dangling modifiers and run-on sentences
 • Replace filler words: "actually", "really", "basically", "in fact"
 • Ensure parallel structure in lists
@@ -902,7 +908,7 @@ EXAMPLE 2 — Trust Hook:
 "Many come to us for the first time with one doubt.
 'Will this be yet another supplement with no effect?'
 That's exactly where the difference begins.
-We don't chase quick results — we build long-term trust."
+We don't chase quick results, we build long-term trust."
 
 TRUST WORDS (use): natural, pure, no additives, European-made, transparent composition, lab-tested
 SKEPTICISM WORDS (avoid): guaranteed, miraculous, secret formula, revolutionary, incredible`,
@@ -948,7 +954,7 @@ SLOVESA:
 INTERPUNKCE:
 • České uvozovky: „ " a ‚ ' (NE " ")
 • Čárka před "že", "který/která/které", "protože", "aby"
-• Pomlčka s mezerami: " — "
+• BEZ pomlčky (—): používej čárku, spojovník (-) nebo nový řádek — pomlčka je ZAKÁZÁNA
 
 STYL:
 • Krátké, jasné věty — 2-3 na odstavec
@@ -985,6 +991,7 @@ CO DĚLÁŠ:
 • Opravuješ slovesný vid (dokonavý vs nedokonavý)
 • Používáš české uvozovky: „ " místo " "
 • Přidáváš čárku před "že", "který", "protože", "aby"
+• NAHRAZUJEŠ pomlčku (—) čárkou, spojovníkem (-) nebo novým řádkem — pomlčka je ZAKÁZÁNA
 • Nahrazuješ anglicismy českými alternativami
 • Kontroluješ pozici zvratného "se/si" (nikdy na začátku věty)
 • Optimalizuješ rytmus: krátké, jasné věty
@@ -1024,7 +1031,7 @@ PŘÍKLAD 2 — Důvěra:
 "Mnozí k nám přicházejí poprvé s jednou pochybností.
 „Bude tohle zas další doplněk bez účinku?"
 Právě tady začíná rozdíl.
-Nehoníme rychlé výsledky — budujeme dlouhodobou důvěru."
+Nehoníme rychlé výsledky, budujeme dlouhodobou důvěru."
 
 SLOVA DŮVĚRY: přírodní, čistý, bez přísad, vyrobeno v Evropě, transparentní složení
 SLOVA K VYHNUTÍ: zaručený, zázračný, tajná formule, revoluční`,

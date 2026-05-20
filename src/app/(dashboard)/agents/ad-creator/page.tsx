@@ -31,12 +31,16 @@ const STEPS: { id: Step; label: string; num: number }[] = [
 ];
 
 // --- Settings ---
+const CUSTOM_AVATAR_ID = "custom";
+const CUSTOM_AVATAR_MIN_CHARS = 30;
+
 const AVATARS = [
   { id: "Стефан (Performance Seeker, М 28-40)", label: "Стефан", tag: "М 28-40", emoji: "\ud83d\udcaa", desc: "Трениращ, удря плато. Иска данни и наука за натурален тестостерон." },
   { id: "Мария (Health-Conscious Parent, Ж 30-50)", label: "Мария", tag: "Ж 30-50", emoji: "\ud83d\udc69\u200d\ud83d\udc67", desc: "Защитава семейството. Проучва преди покупка, търси доверие." },
   { id: "Петър (Proactive Health Manager, М 35-55)", label: "Петър", tag: "М 35-55", emoji: "\ud83e\ude7a", desc: "Наскоро здравно-осъзнат. Скептичен, иска механизми и обяснения." },
   { id: "Елена (Beauty & Wellness, Ж 25-45)", label: "Елена", tag: "Ж 25-45", emoji: "\u2728", desc: "Външен вид + вътрешно здраве. Instagram-influenced, чисти съставки." },
   { id: "Георги (Loyal Repeater, М 40-65)", label: "Георги", tag: "М 40-65", emoji: "\ud83d\udd04", desc: "Лоялен клиент, купува месечно. Иска удобство и cross-sell." },
+  { id: CUSTOM_AVATAR_ID, label: "Свой", tag: "Опиши", emoji: "✍️", desc: "Опиши таргет аудиторията със свои думи: кои са, какво ги вълнува, какво купуват." },
 ];
 const FORMATS = [
   { id: "Meta Feed Ad", label: "Meta Feed" }, { id: "Instagram Stories/Reels", label: "Stories/Reels" },
@@ -222,14 +226,17 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
 }
 
 // --- Step 2: Settings ---
-function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality }: {
+function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality, customAvatarDescription, setCustomAvatarDescription }: {
   avatar: string; setAvatar: (v: string) => void; format: string; setFormat: (v: string) => void;
   audience: string; setAudience: (v: string) => void;
   intensity: number; setIntensity: (v: number) => void;
   additionalInput: string; setAdditionalInput: (v: string) => void;
   language: string; setLanguage: (v: string) => void;
   formality: string; setFormality: (v: string) => void;
+  customAvatarDescription: string; setCustomAvatarDescription: (v: string) => void;
 }) {
+  const customCharCount = customAvatarDescription.trim().length;
+  const customRemaining = Math.max(0, CUSTOM_AVATAR_MIN_CHARS - customCharCount);
   return (
     <div>
       <h2 className="text-[18px] font-semibold text-text mb-1">Настрой кампанията</h2>
@@ -252,23 +259,51 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudie
 
         {/* Formality toggle */}
         <PillGroup options={FORMALITY_OPTIONS} value={formality} onChange={setFormality} label="Обръщение" />
-        {/* Avatar cards — vertical card style, single row */}
+        {/* Avatar cards — 5 предефинирани + Custom */}
         <div>
           <div className="text-[13px] font-semibold text-text mb-2">Аватар — за кого пишем?</div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {AVATARS.map((a) => (
-              <button key={a.id} onClick={() => setAvatar(a.id)}
-                className={`flex flex-col items-center text-center p-4 rounded-xl transition-all cursor-pointer border-2 ${
-                  avatar === a.id ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
-                }`}
-              >
-                <span className="text-[28px] mb-2">{a.emoji}</span>
-                <span className={`text-[13px] font-semibold ${avatar === a.id ? "text-purple" : "text-text"}`}>{a.label}</span>
-                <span className="text-[12px] text-text-2 mb-1.5">{a.tag}</span>
-                <p className="text-[11px] text-text-2 leading-snug">{a.desc}</p>
-              </button>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {AVATARS.map((a) => {
+              const isCustom = a.id === CUSTOM_AVATAR_ID;
+              const isSelected = avatar === a.id;
+              return (
+                <button key={a.id} onClick={() => setAvatar(a.id)}
+                  className={`flex flex-col items-center text-center p-4 rounded-xl transition-all cursor-pointer border-2 ${
+                    isSelected ? "border-purple bg-purple/5 ring-2 ring-purple/20" : isCustom ? "border-dashed border-border bg-surface hover:border-purple/40" : "border-border bg-surface hover:border-purple/30"
+                  }`}
+                >
+                  <span className="text-[28px] mb-2">{a.emoji}</span>
+                  <span className={`text-[13px] font-semibold ${isSelected ? "text-purple" : "text-text"}`}>{a.label}</span>
+                  <span className="text-[12px] text-text-2 mb-1.5">{a.tag}</span>
+                  <p className="text-[11px] text-text-2 leading-snug">{a.desc}</p>
+                </button>
+              );
+            })}
           </div>
+
+          {avatar === CUSTOM_AVATAR_ID && (
+            <div className="mt-3 p-4 rounded-xl bg-purple/5 border border-purple/20">
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="custom-avatar" className="text-[12px] font-semibold text-text">
+                  Опиши таргета на тази реклама
+                </label>
+                <span className={`text-[11px] ${customRemaining > 0 ? "text-text-3" : "text-purple"}`}>
+                  {customRemaining > 0 ? `още ${customRemaining} символа` : `${customCharCount} символа ✓`}
+                </span>
+              </div>
+              <textarea
+                id="custom-avatar"
+                value={customAvatarDescription}
+                onChange={(e) => setCustomAvatarDescription(e.target.value)}
+                placeholder="Напр. Жени 35-50, които наскоро родиха второ дете. Опитват се да възстановят формата си, но времето е дефицит. Скептични към fitness индустрията, доверяват се на доказателства и природни състави."
+                rows={4}
+                className="w-full px-4 py-2.5 rounded-xl bg-surface border border-border text-[13px] text-text outline-none focus:border-purple resize-none"
+              />
+              <p className="text-[11px] text-text-3 mt-2 leading-snug">
+                Колкото по-конкретно (възраст, пол, болка, какво вече купуват, какво ги спира), толкова по-точно копи. Минимум {CUSTOM_AVATAR_MIN_CHARS} символа.
+              </p>
+            </div>
+          )}
         </div>
 
         <PillGroup options={FORMATS} value={format} onChange={setFormat} label="Формат на рекламата" />
@@ -448,7 +483,7 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality }: {
+function GenerateStep({ product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality, customAvatarDescription }: {
   product: SlimProduct; avatar: string; format: string;
   audience: string; intensity: number; creativeType: string;
   archetype: string; aggressiveness: number; hookStyle: string;
@@ -458,6 +493,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
   additionalInput: string;
   hasCopyGenerated: boolean; setHasCopyGenerated: (v: boolean) => void;
   language: string; formality: string;
+  customAvatarDescription: string;
 }) {
   const [loading, setLoading] = useState(false);
   const [expandedVariant, setExpandedVariant] = useState<number | null>(null);
@@ -469,8 +505,12 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
     setVariants([]);
     setSelectedVariants(new Set());
 
+    const avatarLabel = avatar === CUSTOM_AVATAR_ID
+      ? "Custom (виж секцията ЦЕЛЕВИ АВАТАР в системния промпт)"
+      : (AVATARS.find((a) => a.id === avatar)?.label || avatar);
+
     const settingsContext = [
-      `[Настройки: Аватар: ${AVATARS.find((a) => a.id === avatar)?.label}`,
+      `[Настройки: Аватар: ${avatarLabel}`,
       `Формат: ${FORMATS.find((f) => f.id === format)?.label}`,
       `Аудитория: ${AUDIENCES.find((a) => a.id === audience)?.label}`,
       `Archetype: ${ARCHETYPES.find((a) => a.id === archetype)?.label}`,
@@ -495,6 +535,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
           product: product.handle,
           creativeType, archetype, aggressiveness, hookStyle,
           language, formality,
+          customAvatarDescription: avatar === CUSTOM_AVATAR_ID ? customAvatarDescription.trim() : "",
         }),
       });
       if (!res.ok) {
@@ -530,7 +571,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
       setGeneratedContent("\u26a0\ufe0f Грешка при генериране. Опитай отново.");
     }
     setLoading(false);
-  }, [product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, additionalInput, language, formality, setGeneratedContent, setVariants, setSelectedVariants]);
+  }, [product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, additionalInput, language, formality, customAvatarDescription, setGeneratedContent, setVariants, setSelectedVariants]);
 
   // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
@@ -767,6 +808,7 @@ export default function AdCreatorPage() {
   const [step, setStep] = useState<Step>("product");
   const [selectedProduct, setSelectedProduct] = useState<SlimProduct | null>(null);
   const [avatar, setAvatar] = useState(AVATARS[0].id);
+  const [customAvatarDescription, setCustomAvatarDescription] = useState("");
   const [format, setFormat] = useState(FORMATS[0].id);
   const [intensity, setIntensity] = useState(3);
   const [audience, setAudience] = useState(AUDIENCES[0].id);
@@ -785,7 +827,7 @@ export default function AdCreatorPage() {
 
   const canNext: Record<Step, boolean> = {
     product: !!selectedProduct,
-    settings: true,
+    settings: avatar !== CUSTOM_AVATAR_ID || customAvatarDescription.trim().length >= CUSTOM_AVATAR_MIN_CHARS,
     "creative-type": true,
     generate: variants.length > 0 && selectedVariants.size > 0,
     visuals: false,
@@ -837,6 +879,8 @@ export default function AdCreatorPage() {
             additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
             language={language} setLanguage={setLanguage}
             formality={formality} setFormality={setFormality}
+            customAvatarDescription={customAvatarDescription}
+            setCustomAvatarDescription={setCustomAvatarDescription}
           />
         )}
         {step === "creative-type" && (
@@ -856,6 +900,7 @@ export default function AdCreatorPage() {
             additionalInput={additionalInput}
             hasCopyGenerated={hasCopyGenerated} setHasCopyGenerated={setHasCopyGenerated}
             language={language} formality={formality}
+            customAvatarDescription={customAvatarDescription}
           />
         )}
         {step === "visuals" && (
