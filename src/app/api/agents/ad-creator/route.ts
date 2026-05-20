@@ -52,6 +52,22 @@ const WEB_SEARCH_TOOL = {
 
 // ---- System prompt ----
 
+// Архетипови комплементи за Horizontal A/B mode — когато потребителят избере N1,
+// генерираме 4 различни варианта: избрания + 3 комплементарни, които разширяват
+// творческия диапазон в различни посоки (loss aversion → identity → expert → social).
+const ARCHETYPE_COMPLEMENTS: Record<string, string[]> = {
+  pas: ["mirror", "ugc", "expert"],
+  mirror: ["pas", "beforeafter", "ugc"],
+  enemy: ["pas", "expert", "ingredient"],
+  ingredient: ["origin", "expert", "ritual"],
+  ugc: ["mirror", "beforeafter", "pas"],
+  expert: ["ingredient", "comparison", "pas"],
+  comparison: ["expert", "ingredient", "beforeafter"],
+  ritual: ["origin", "ingredient", "mirror"],
+  origin: ["ingredient", "ritual", "expert"],
+  beforeafter: ["mirror", "ugc", "pas"],
+};
+
 function buildSystemPrompt(settings: {
   avatar: string;
   format: string;
@@ -65,6 +81,7 @@ function buildSystemPrompt(settings: {
   language: string;
   formality: string;
   customAvatarDescription: string;
+  horizontalAB: boolean;
 }): string {
   const hasCustomAvatar = settings.customAvatarDescription.trim().length > 0;
   const lang: LanguageConfig = LANGUAGE_CONFIGS[settings.language] || LANGUAGE_CONFIGS.bg;
@@ -125,6 +142,26 @@ ${settings.customAvatarDescription.trim()}
     ? "• Аватар: Custom (виж секция ЦЕЛЕВИ АВАТАР по-горе)"
     : `• Аватар: ${settings.avatar}`;
 
+  // Horizontal A/B: 4-те варианта ползват 4 различни archetype-а (избран + 3 комплементарни).
+  // Без horizontalAB: 4 варианта на същия archetype с различни ъгли/hook-ове.
+  const primaryArchetype = settings.archetype in archetypeGuide ? settings.archetype : "pas";
+  const horizontalArchetypes = settings.horizontalAB
+    ? [primaryArchetype, ...(ARCHETYPE_COMPLEMENTS[primaryArchetype] || ARCHETYPE_COMPLEMENTS.pas)].slice(0, 4)
+    : [primaryArchetype];
+
+  const archetypeSection = settings.horizontalAB
+    ? `== CREATIVE ARCHETYPES (Horizontal A/B mode) ==
+ВНИМАНИЕ: Horizontal A/B mode е АКТИВЕН. Генерирай 4 варианта, ВСЕКИ с РАЗЛИЧЕН archetype от списъка по-долу. Вариант A = първият, B = вторият, и т.н. Покажи името на archetype-а в заглавието на всеки вариант (напр. "## Вариант A: PAS — [кратко име]").
+
+${horizontalArchetypes.map((id, i) => `--- Archetype ${String.fromCharCode(65 + i)} (${id.toUpperCase()}) ---
+${archetypeGuide[id]}`).join("\n\n")}`
+    : `== CREATIVE ARCHETYPE ==
+${archetypeGuide[primaryArchetype]}`;
+
+  const variantsBehaviorRule = settings.horizontalAB
+    ? "3. ВИНАГИ давай точно 4 варианта (A/B/C/D). В Horizontal A/B mode: ВСЕКИ вариант ползва РАЗЛИЧЕН archetype (виж секцията CREATIVE ARCHETYPES по-горе). Не повтаряй същата рамка."
+    : "3. ВИНАГИ давай точно 4 варианта (A/B/C/D test ready). Всеки с различен ъгъл или hook.";
+
   return `Ти си РЕКЛАМЕН ТВОРЕЦ — AI копирайтър и креативен директор на Цветита Хербал.
 
 == КОМПАНИЯТА ==
@@ -154,8 +191,7 @@ ${avatarSettingLine}
 • Тип креатив: ${settings.creativeType}
 • Избран продукт: ${settings.product ? `handle="${settings.product}" — ЗАДЪЛЖИТЕЛНО извикай get_product_details за пълна информация преди да пишеш копи` : "Не е избран — попитай потребителя или използвай search_products"}
 
-== CREATIVE ARCHETYPE ==
-${archetypeGuide[settings.archetype] || archetypeGuide.pas}
+${archetypeSection}
 
 == АГРЕСИВНОСТ ==
 ${aggressivenessGuide[settings.aggressiveness] || aggressivenessGuide[3]}
@@ -218,7 +254,7 @@ ${lang.complianceWording}
 == ПОВЕДЕНИЕ ==
 1. Write ALL ad copy in ${lang.nativeName} (${lang.label}). The output MUST be entirely in ${lang.nativeName} — not in Bulgarian or English (unless the selected language IS Bulgarian or English). Internal labels like "## Вариант A" stay in Bulgarian for parsing.
 2. Използвай search_products / get_product_details за реални данни — НИКОГА не измисляй продуктови характеристики
-3. ВИНАГИ давай точно 4 варианта (A/B/C/D test ready). Всеки с различен ъгъл или hook.
+${variantsBehaviorRule}
 4. При Meta реклами — Hook в първите 125 символа, Headline до 40 символа
 5. Без discount-first messaging, без фалшива спешност
 
@@ -537,6 +573,7 @@ export async function POST(req: NextRequest) {
     language: body.language || "bg",
     formality: body.formality || "informal",
     customAvatarDescription: typeof body.customAvatarDescription === "string" ? body.customAvatarDescription : "",
+    horizontalAB: body.horizontalAB === true,
   };
 
   const apiKey = process.env.CLAUDE_API_KEY;
