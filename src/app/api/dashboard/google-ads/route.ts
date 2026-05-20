@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireAuth } from "@/lib/api-auth";
-import { fetchWithTimeout } from "@/lib/fetch-utils";
 import { getDateRange, type DatePreset } from "@/lib/dates";
+import { runReport, isGA4Configured, type GA4Row } from "@/lib/ga4";
+import { isBrandCampaign, isVideoCampaign } from "@/lib/google-ads-classifier";
 
 // Pulls Google Ads cost/revenue via the GA4 Data API. Requires the GA4
 // property to be linked to a Google Ads account (verified by the probe
@@ -11,86 +12,6 @@ import { getDateRange, type DatePreset } from "@/lib/dates";
 // The GA4 row keyed "(not set)" is a non-Google-Ads-attribution bucket
 // (organic/direct/email purchases). It must be filtered out — otherwise
 // the aggregate ROAS becomes wildly inflated (we saw 12x vs real ~3.8x).
-
-const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || "348042832";
-const CLIENT_ID = process.env.GA4_CLIENT_ID;
-const CLIENT_SECRET = process.env.GA4_CLIENT_SECRET;
-const REFRESH_TOKEN = process.env.GA4_REFRESH_TOKEN;
-
-let cachedToken: { access_token: string; expires_at: number } | null = null;
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < cachedToken.expires_at - 60_000) {
-    return cachedToken.access_token;
-  }
-  const res = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID!,
-      client_secret: CLIENT_SECRET!,
-      refresh_token: REFRESH_TOKEN!,
-      grant_type: "refresh_token",
-    }),
-  }, 10_000);
-  const data = await res.json();
-  cachedToken = { access_token: data.access_token, expires_at: Date.now() + data.expires_in * 1000 };
-  return cachedToken.access_token;
-}
-
-interface GA4Row {
-  dimensionValues?: { value: string }[];
-  metricValues?: { value: string }[];
-}
-
-async function runReport(
-  metrics: string[],
-  dimensions: string[],
-  startDate: string,
-  endDate: string,
-  limit = 50,
-  orderBys?: Record<string, unknown>[]
-): Promise<GA4Row[]> {
-  const token = await getAccessToken();
-  const res = await fetchWithTimeout(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dateRanges: [{ startDate, endDate }],
-        metrics: metrics.map((name) => ({ name })),
-        dimensions: dimensions.map((name) => ({ name })),
-        orderBys: orderBys || [{ metric: { metricName: metrics[0] }, desc: true }],
-        limit,
-      }),
-    },
-    15_000
-  );
-  if (!res.ok) throw new Error(`GA4: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  return data.rows || [];
-}
-
-// Brand campaigns intercept users who already know the brand and inflate
-// last-click attribution. Separating them prevents non-brand prospecting
-// decisions from being skewed by brand-search performance.
-//
-// Caveat: naming convention here is "NonBrand" (no space) for prospecting,
-// which a naive /brand/i regex catches as "Brand" and inverts the entire
-// dashboard. The negative lookbehind excludes any non/non-/non brand prefix
-// before requiring "brand" as a whole word.
-function isBrandCampaign(name: string): boolean {
-  if (/non[\s-]?brand/i.test(name)) return false;
-  return /\bbrand\b/i.test(name);
-}
-
-// Demand Gen / video campaigns are view-through-heavy; last-click ROAS
-// undersells them. Flag so the UI can render a tooltip explaining the
-// attribution caveat instead of users panicking at 0x ROAS.
-function isVideoCampaign(name: string): boolean {
-  return /demand\s*gen|\bvideo\b/i.test(name);
-}
 
 interface CampaignRow {
   name: string;
@@ -232,7 +153,7 @@ export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
 
-  if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
+  if (!isGA4Configured()) {
     return NextResponse.json({ error: "GA4 not configured" }, { status: 200 });
   }
 
@@ -243,44 +164,48 @@ export async function GET(req: NextRequest) {
     const range = getDateRange(preset, customFrom, customTo);
 
     const [currentRows, previousRows, dailyRows] = await Promise.all([
-      runReport(ADS_METRICS, ["sessionGoogleAdsCampaignName"], range.from, range.to, 50),
-      runReport(ADS_METRICS, ["sessionGoogleAdsCampaignName"], range.compFrom, range.compTo, 50),
+      runReport({
+        metrics: ADS_METRICS,
+        dimensions: ["sessionGoogleAdsCampaignName"],
+        startDate: range.from,
+        endDate: range.to,
+        limit: 50,
+      }),
+      runReport({
+        metrics: ADS_METRICS,
+        dimensions: ["sessionGoogleAdsCampaignName"],
+        startDate: range.compFrom,
+        endDate: range.compTo,
+        limit: 50,
+      }),
       // Daily series for the chart. GA4 quirk: advertiserAd* metrics are
-      // session-scoped — querying them with `date` alone returns HTTP 400
-      // ("Please add sessionCampaignName to make the request compatible").
+      // session-scoped — querying them with `date` alone returns HTTP 400.
       // We add sessionGoogleAdsCampaignName as a second dimension and
-      // aggregate by date in code below. limit 2000 covers 90d × ~22
-      // campaigns with headroom.
-      runReport(
-        ADS_METRICS,
-        ["date", "sessionGoogleAdsCampaignName"],
-        range.from,
-        range.to,
-        2000,
-        [{ dimension: { dimensionName: "date" }, desc: false }]
-      ),
+      // aggregate by date below. limit 2000 covers 90d × ~22 campaigns.
+      runReport({
+        metrics: ADS_METRICS,
+        dimensions: ["date", "sessionGoogleAdsCampaignName"],
+        startDate: range.from,
+        endDate: range.to,
+        limit: 2000,
+        orderBys: [{ dimension: { dimensionName: "date" }, desc: false }],
+      }),
     ]);
 
     const current = processCampaignRows(currentRows);
     const previous = processCampaignRows(previousRows);
 
     // Per-campaign previous-period lookup. The table needs delta vs previous
-    // per row; we key by campaign name. Campaigns that didn't exist in the
-    // prior period simply won't match and the UI renders a dash.
+    // per row; we key by campaign name. Campaigns that didn't exist prior
+    // simply won't match and the UI renders a dash.
     const previousCampaigns: Record<string, { spend: number; revenue: number; roas: number; purchases: number }> = {};
     for (const c of previous.campaigns) {
-      previousCampaigns[c.name] = {
-        spend: c.spend,
-        revenue: c.revenue,
-        roas: c.roas,
-        purchases: c.purchases,
-      };
+      previousCampaigns[c.name] = { spend: c.spend, revenue: c.revenue, roas: c.roas, purchases: c.purchases };
     }
 
     // Daily aggregate. Each row is one (date, campaign) pair — we collapse
-    // by date and skip the (not set) campaign bucket so the chart's ROAS
-    // matches the overview ROAS exactly (same exclusion rule as
-    // processCampaignRows). Sort ascending for left-to-right time flow.
+    // by date and skip the (not set) bucket so the chart's ROAS matches the
+    // overview ROAS exactly (same exclusion rule as processCampaignRows).
     const dailyMap = new Map<string, { date: string; spend: number; clicks: number; impressions: number; purchases: number; revenue: number }>();
     for (const r of dailyRows) {
       const date = r.dimensionValues?.[0]?.value || "";

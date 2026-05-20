@@ -15,8 +15,8 @@ import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import { MiniKpi } from "@/components/shared/MiniKpi";
 import { Delta, calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/swr";
+import { fmtMoneyShort, fmtInt, fmtPct, fmtRoas, fmtGA4Date } from "@/lib/format";
 
 interface Bucket {
   spend: number;
@@ -80,18 +80,6 @@ interface GoogleAdsData {
 type SortKey = "spend" | "roas" | "purchases" | "ctr";
 type ViewFilter = "all" | "brand" | "non-brand";
 
-const fmtMoneyShort = (n: number) => Math.round(n).toLocaleString("bg-BG") + " €";
-const fmtInt = (n: number) => Math.round(n).toLocaleString("bg-BG");
-const fmtPct = (n: number, digits = 1) => (n * 100).toFixed(digits) + "%";
-const fmtRoas = (n: number) => n.toFixed(2) + "x";
-
-// GA4's `date` dim is "YYYYMMDD". For the chart axis we want a compact
-// "DD.MM" so a 30-day window still reads cleanly at narrow widths.
-function fmtChartDate(d: string): string {
-  if (d.length !== 8) return d;
-  return `${d.slice(6, 8)}.${d.slice(4, 6)}`;
-}
-
 export default function GoogleAdsPage() {
   const { queryString } = useDateRange();
   const [sortKey, setSortKey] = useState<SortKey>("spend");
@@ -139,7 +127,7 @@ export default function GoogleAdsPage() {
     const daily = data?.dailyOverview;
     if (!daily) return [];
     return daily.map((d) => ({
-      date: fmtChartDate(d.date),
+      date: fmtGA4Date(d.date),
       spend: d.spend,
       roas: d.spend > 0 ? d.revenue / d.spend : 0,
     }));

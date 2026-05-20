@@ -1,78 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireAuth } from "@/lib/api-auth";
-import { fetchWithTimeout } from "@/lib/fetch-utils";
 import { getDateRange, type DatePreset } from "@/lib/dates";
-
-const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || "348042832";
-const CLIENT_ID = process.env.GA4_CLIENT_ID;
-const CLIENT_SECRET = process.env.GA4_CLIENT_SECRET;
-const REFRESH_TOKEN = process.env.GA4_REFRESH_TOKEN;
-
-let cachedToken: { access_token: string; expires_at: number } | null = null;
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < cachedToken.expires_at - 60_000) {
-    return cachedToken.access_token;
-  }
-  const res = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID!,
-      client_secret: CLIENT_SECRET!,
-      refresh_token: REFRESH_TOKEN!,
-      grant_type: "refresh_token",
-    }),
-  }, 10_000);
-  const data = await res.json();
-  cachedToken = { access_token: data.access_token, expires_at: Date.now() + data.expires_in * 1000 };
-  return cachedToken.access_token;
-}
-
-interface GA4Row {
-  dimensionValues?: { value: string }[];
-  metricValues?: { value: string }[];
-}
-
-async function runReport(
-  metrics: string[],
-  dimensions: string[],
-  startDate: string,
-  endDate: string,
-  limit?: number,
-  /** Optional GA4 dimensionFilter — passed through verbatim. */
-  dimensionFilter?: Record<string, unknown>
-): Promise<GA4Row[]> {
-  const token = await getAccessToken();
-  const body: Record<string, unknown> = {
-    dateRanges: [{ startDate, endDate }],
-    metrics: metrics.map((name) => ({ name })),
-    dimensions: dimensions.map((name) => ({ name })),
-    orderBys: [{ metric: { metricName: metrics[0] }, desc: true }],
-  };
-  if (limit) body.limit = limit;
-  if (dimensionFilter) body.dimensionFilter = dimensionFilter;
-
-  const res = await fetchWithTimeout(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    },
-    15_000
-  );
-  if (!res.ok) throw new Error(`GA4: ${res.status}`);
-  const data = await res.json();
-  return data.rows || [];
-}
+import { runReport, isGA4Configured, type GA4Row } from "@/lib/ga4";
 
 export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
 
-  if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
+  if (!isGA4Configured()) {
     return NextResponse.json({ error: "GA4 not configured" }, { status: 200 });
   }
 
@@ -84,11 +20,6 @@ export async function GET(req: NextRequest) {
     const start = range.from;
     const end = range.to;
 
-    // Same 5 metrics on the previous equal-length period — used by the UI
-    // to render the design-contract delta (§4). dates.ts already produces
-    // compFrom/compTo; we just consume them. Kept as a separate runReport
-    // (not multi-dateRange) because the response shape stays simpler and
-    // agent-context.ts can keep reading `overview.sessions` as a number.
     const overviewMetrics = ["sessions", "totalUsers", "engagementRate", "keyEvents", "ecommercePurchases"];
     // Standard GA4 e-commerce event names — the dataLayer on cvetitaherbal.com
     // sends these via Shopify's GA4 integration. If a store doesn't track them,
@@ -115,29 +46,58 @@ export async function GET(req: NextRequest) {
       // Direct / Referral / ...). Kept because agent-context.ts feeds it
       // into AI prompts as an executive summary; changing the shape would
       // break every downstream agent that consumes business context.
-      runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
+      runReport({
+        metrics: ["sessions", "totalUsers", "engagementRate"],
+        dimensions: ["sessionDefaultChannelGroup"],
+        startDate: start, endDate: end, limit: 8,
+      }),
       // sessionSourceMedium — granular acquisition source (google/organic vs
-      // google/cpc vs bing/organic). This is what the /traffic UI renders,
-      // because the page's job-to-be-done is "откъде идват и как се държат"
-      // where granularity matters. Paid-channel deep-dive lives on /google-ads.
-      runReport(["sessions", "totalUsers", "engagementRate", "ecommercePurchases"], ["sessionSourceMedium"], start, end, 12),
-      runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
-      runReport(["sessions", "totalUsers"], ["deviceCategory"], start, end),
-      runReport(overviewMetrics, [], start, end),
-      runReport(overviewMetrics, [], range.compFrom, range.compTo),
-      runReport(["eventCount"], ["eventName"], start, end, undefined, funnelFilter),
-      runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, undefined, funnelFilter),
-      runReport(["eventCount", "totalUsers"], ["eventName"], start, end, 10),
-      runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, 50),
+      // google/cpc vs bing/organic). This is what the /traffic UI renders.
+      runReport({
+        metrics: ["sessions", "totalUsers", "engagementRate", "ecommercePurchases"],
+        dimensions: ["sessionSourceMedium"],
+        startDate: start, endDate: end, limit: 12,
+      }),
+      runReport({
+        metrics: ["sessions", "engagementRate", "keyEvents"],
+        dimensions: ["pagePath"],
+        startDate: start, endDate: end, limit: 10,
+      }),
+      runReport({
+        metrics: ["sessions", "totalUsers"],
+        dimensions: ["deviceCategory"],
+        startDate: start, endDate: end,
+      }),
+      runReport({ metrics: overviewMetrics, startDate: start, endDate: end }),
+      runReport({ metrics: overviewMetrics, startDate: range.compFrom, endDate: range.compTo }),
+      runReport({
+        metrics: ["eventCount"],
+        dimensions: ["eventName"],
+        startDate: start, endDate: end,
+        dimensionFilter: funnelFilter,
+      }),
+      runReport({
+        metrics: ["eventCount"],
+        dimensions: ["eventName"],
+        startDate: range.compFrom, endDate: range.compTo,
+        dimensionFilter: funnelFilter,
+      }),
+      runReport({
+        metrics: ["eventCount", "totalUsers"],
+        dimensions: ["eventName"],
+        startDate: start, endDate: end, limit: 10,
+      }),
+      runReport({
+        metrics: ["eventCount"],
+        dimensions: ["eventName"],
+        startDate: range.compFrom, endDate: range.compTo, limit: 50,
+      }),
       // Daily time series — feeds the hero-strip sparklines. Same 5 overview
       // metrics, broken down by date so each MiniKpi can render its own trend.
-      // runReport's default orderBy is the first metric desc; we sort by date
-      // client-side after parsing (GA4 doesn't take dimension-only orderBys
-      // when a metric orderBy is also implicit).
-      runReport(overviewMetrics, ["date"], start, end),
+      runReport({ metrics: overviewMetrics, dimensions: ["date"], startDate: start, endDate: end }),
     ]);
 
-    // Channel Group (kept for agent-context.ts backward compat — see comment above).
+    // Channel Group (kept for agent-context.ts backward compat).
     const channels = channelRows.map((r) => ({
       channel: r.dimensionValues?.[0]?.value || "Unknown",
       sessions: parseInt(r.metricValues?.[0]?.value || "0"),
@@ -201,10 +161,7 @@ export async function GET(req: NextRequest) {
     const funnel = rowsToMap(funnelRows);
     const previousFunnel = rowsToMap(prevFunnelRows);
 
-    // Top events: list of {name, count, users} for the current period plus
-    // a lookup map of previous counts so the UI can compute per-event delta
-    // without a second pass. We pull top 50 previous to cover edge cases
-    // where event rank shifts between periods.
+    // Top events list + previous-period lookup map (top 50 covers shifts).
     const topEvents = topEventsRows.map((r) => ({
       name: r.dimensionValues?.[0]?.value || "unknown",
       count: parseInt(r.metricValues?.[0]?.value || "0"),
@@ -213,9 +170,7 @@ export async function GET(req: NextRequest) {
     const previousTopEvents = rowsToMap(prevTopEventsRows);
 
     // Daily time series. GA4's `date` dimension comes back as "YYYYMMDD"
-    // strings; we sort asc so the sparkline reads left-to-right as time
-    // moves forward. Engagement rate is a fraction in GA4 (0–1), so we
-    // keep it raw — the UI presents it consistently with the hero metric.
+    // strings; we sort asc so the sparkline reads left-to-right.
     const dailyOverview = dailyRows
       .map((r) => ({
         date: r.dimensionValues?.[0]?.value || "",

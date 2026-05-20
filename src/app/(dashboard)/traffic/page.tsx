@@ -11,8 +11,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { DonutChart, FunnelChart, type FunnelStep } from "@/components/charts";
 import { MiniKpi } from "@/components/shared/MiniKpi";
 import { calcDeltaPct, calcDeltaPp, Delta } from "@/components/shared/Delta";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/swr";
 
 interface OverviewMetrics {
   sessions: number;
