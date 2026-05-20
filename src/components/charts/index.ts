@@ -4,3 +4,4 @@ export { BarChartCard } from "./BarChartCard";
 export { DonutChart } from "./DonutChart";
 export { SparkLine } from "./SparkLine";
 export { HeatmapGrid } from "./HeatmapGrid";
+export { FunnelChart, type FunnelStep } from "./FunnelChart";

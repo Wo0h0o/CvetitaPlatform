@@ -40,7 +40,9 @@ async function runReport(
   dimensions: string[],
   startDate: string,
   endDate: string,
-  limit?: number
+  limit?: number,
+  /** Optional GA4 dimensionFilter — passed through verbatim. */
+  dimensionFilter?: Record<string, unknown>
 ): Promise<GA4Row[]> {
   const token = await getAccessToken();
   const body: Record<string, unknown> = {
@@ -50,6 +52,7 @@ async function runReport(
     orderBys: [{ metric: { metricName: metrics[0] }, desc: true }],
   };
   if (limit) body.limit = limit;
+  if (dimensionFilter) body.dimensionFilter = dimensionFilter;
 
   const res = await fetchWithTimeout(
     `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
@@ -87,12 +90,34 @@ export async function GET(req: NextRequest) {
     // (not multi-dateRange) because the response shape stays simpler and
     // agent-context.ts can keep reading `overview.sessions` as a number.
     const overviewMetrics = ["sessions", "totalUsers", "engagementRate", "keyEvents", "ecommercePurchases"];
-    const [channelRows, pageRows, deviceRows, overviewRows, prevOverviewRows] = await Promise.all([
+    // Standard GA4 e-commerce event names — the dataLayer on cvetitaherbal.com
+    // sends these via Shopify's GA4 integration. If a store doesn't track them,
+    // the UI renders an empty state explaining what's missing.
+    const FUNNEL_EVENTS = ["view_item", "add_to_cart", "begin_checkout", "purchase"];
+    const funnelFilter = {
+      filter: { fieldName: "eventName", inListFilter: { values: FUNNEL_EVENTS } },
+    };
+
+    const [
+      channelRows,
+      pageRows,
+      deviceRows,
+      overviewRows,
+      prevOverviewRows,
+      funnelRows,
+      prevFunnelRows,
+      topEventsRows,
+      prevTopEventsRows,
+    ] = await Promise.all([
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
       runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
       runReport(["sessions", "totalUsers"], ["deviceCategory"], start, end),
       runReport(overviewMetrics, [], start, end),
       runReport(overviewMetrics, [], range.compFrom, range.compTo),
+      runReport(["eventCount"], ["eventName"], start, end, undefined, funnelFilter),
+      runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, undefined, funnelFilter),
+      runReport(["eventCount", "totalUsers"], ["eventName"], start, end, 10),
+      runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, 50),
     ]);
 
     const channels = channelRows.map((r) => ({
@@ -128,6 +153,31 @@ export async function GET(req: NextRequest) {
     const overview = parseOverview(overviewRows);
     const previousOverview = parseOverview(prevOverviewRows);
 
+    // Funnel: collapse the filtered event rows into a {event_name: count}
+    // map so the UI can render steps in a fixed display order regardless of
+    // how GA4 sorted them. Missing events default to 0 (handled in UI).
+    const rowsToMap = (rows: GA4Row[]): Record<string, number> => {
+      const m: Record<string, number> = {};
+      for (const r of rows) {
+        const name = r.dimensionValues?.[0]?.value;
+        if (name) m[name] = parseInt(r.metricValues?.[0]?.value || "0");
+      }
+      return m;
+    };
+    const funnel = rowsToMap(funnelRows);
+    const previousFunnel = rowsToMap(prevFunnelRows);
+
+    // Top events: list of {name, count, users} for the current period plus
+    // a lookup map of previous counts so the UI can compute per-event delta
+    // without a second pass. We pull top 50 previous to cover edge cases
+    // where event rank shifts between periods.
+    const topEvents = topEventsRows.map((r) => ({
+      name: r.dimensionValues?.[0]?.value || "unknown",
+      count: parseInt(r.metricValues?.[0]?.value || "0"),
+      users: parseInt(r.metricValues?.[1]?.value || "0"),
+    }));
+    const previousTopEvents = rowsToMap(prevTopEventsRows);
+
     return NextResponse.json(
       {
         period: range.label,
@@ -137,6 +187,10 @@ export async function GET(req: NextRequest) {
         channels,
         topPages,
         devices,
+        funnel,
+        previousFunnel,
+        topEvents,
+        previousTopEvents,
       },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );

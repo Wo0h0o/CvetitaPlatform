@@ -8,9 +8,9 @@ import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
-import { DonutChart } from "@/components/charts";
+import { DonutChart, FunnelChart, type FunnelStep } from "@/components/charts";
 import { MiniKpi } from "@/components/shared/MiniKpi";
-import { calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
+import { calcDeltaPct, calcDeltaPp, Delta } from "@/components/shared/Delta";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -30,8 +30,22 @@ interface TrafficData {
   channels: { channel: string; sessions: number; users: number; engagementRate: number }[];
   topPages: { page: string; sessions: number; engagementRate: number; conversions: number }[];
   devices: { device: string; sessions: number; users: number }[];
+  funnel?: Record<string, number>;
+  previousFunnel?: Record<string, number>;
+  topEvents?: { name: string; count: number; users: number }[];
+  previousTopEvents?: Record<string, number>;
   error?: string;
 }
+
+// Display order + БГ labels for the standard GA4 e-commerce funnel.
+// Keeping these here (not in the API response) means the UI controls
+// presentation and the API stays a clean data layer.
+const FUNNEL_DISPLAY: { name: string; label: string }[] = [
+  { name: "view_item", label: "Преглед на продукт" },
+  { name: "add_to_cart", label: "Добавяне в количка" },
+  { name: "begin_checkout", label: "Започнат checkout" },
+  { name: "purchase", label: "Покупка" },
+];
 
 type PageSortKey = "sessions" | "engagementRate" | "conversions";
 
@@ -116,6 +130,27 @@ export default function TrafficPage() {
       }
     : null;
 
+  // Funnel steps: keep display order fixed even if GA4 returns events in
+  // a different sequence. Missing events show 0 (FunnelChart handles
+  // the all-zero empty state with a setup hint).
+  const funnelMap = data?.funnel || {};
+  const prevFunnelMap = data?.previousFunnel || {};
+  const funnelSteps: FunnelStep[] = FUNNEL_DISPLAY.map((f) => ({
+    name: f.name,
+    label: f.label,
+    count: funnelMap[f.name] ?? 0,
+    deltaPct: data?.previousFunnel ? calcDeltaPct(funnelMap[f.name] ?? 0, prevFunnelMap[f.name] ?? 0) : null,
+  }));
+  const firstStep = funnelSteps[0]?.count ?? 0;
+  const lastStep = funnelSteps[funnelSteps.length - 1]?.count ?? 0;
+  const overallConv = firstStep > 0 ? (lastStep / firstStep) * 100 : 0;
+  const prevFirst = prevFunnelMap[FUNNEL_DISPLAY[0].name] ?? 0;
+  const prevLast = prevFunnelMap[FUNNEL_DISPLAY[FUNNEL_DISPLAY.length - 1].name] ?? 0;
+  const prevConv = prevFirst > 0 ? (prevLast / prevFirst) * 100 : 0;
+  const overallConvDelta = data?.previousFunnel && prevFirst > 0
+    ? overallConv - prevConv
+    : null;
+
   return (
     <>
       <PageHeader title="Трафик & SEO">
@@ -154,6 +189,51 @@ export default function TrafficPage() {
           value={String(ov?.conversions || 0)}
           delta={deltas ? { pct: deltas.conversions } : undefined}
         />
+      </div>
+
+      {/* Funnel + Events — е-commerce поведение преди channel split */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <Card className="lg:col-span-2">
+          <CardHeader>Покупка фуния</CardHeader>
+          <CardBody>
+            <FunnelChart
+              steps={funnelSteps}
+              overallConversionPct={overallConv}
+              overallConversionDelta={overallConvDelta}
+            />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>Топ събития</CardHeader>
+          <CardBody>
+            {data?.topEvents && data.topEvents.length > 0 ? (
+              <div className="space-y-2.5">
+                {data.topEvents.slice(0, 8).map((ev) => {
+                  const prev = data.previousTopEvents?.[ev.name];
+                  const deltaPct = data.previousTopEvents !== undefined && prev !== undefined
+                    ? calcDeltaPct(ev.count, prev)
+                    : null;
+                  return (
+                    <div key={ev.name} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] text-text truncate font-mono">{ev.name}</div>
+                        {deltaPct !== null && (
+                          <Delta pct={deltaPct} label="" className="mt-0.5" />
+                        )}
+                      </div>
+                      <div className="text-[13px] text-text-2 tabular-nums whitespace-nowrap">
+                        {ev.count.toLocaleString("bg-BG")}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-center py-8 text-[13px] text-text-2">Няма данни за събития</p>
+            )}
+          </CardBody>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
