@@ -4,24 +4,29 @@ import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
-import { Users, MousePointerClick, Eye, ShoppingCart, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import { DonutChart } from "@/components/charts";
 import { MiniKpi } from "@/components/shared/MiniKpi";
+import { calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+interface OverviewMetrics {
+  sessions: number;
+  users: number;
+  engagementRate: number;
+  conversions: number;
+  purchases: number;
+}
+
 interface TrafficData {
   period: string;
-  overview: {
-    sessions: number;
-    users: number;
-    engagementRate: number;
-    conversions: number;
-    purchases: number;
-  };
+  compare?: { from: string; to: string; label: string };
+  overview: OverviewMetrics;
+  previousOverview?: OverviewMetrics;
   channels: { channel: string; sessions: number; users: number; engagementRate: number }[];
   topPages: { page: string; sessions: number; engagementRate: number; conversions: number }[];
   devices: { device: string; sessions: number; users: number }[];
@@ -30,8 +35,12 @@ interface TrafficData {
 
 type PageSortKey = "sessions" | "engagementRate" | "conversions";
 
+// Single accent for the dominant slice, neutral greys for the rest —
+// design contract §1: categories never get their own accent color.
+const DEVICE_PALETTE = ["#22c55e", "#aeaeb2", "#d1d1d6"];
+
 export default function TrafficPage() {
-  const { queryString, label } = useDateRange();
+  const { queryString } = useDateRange();
   const [pageSortKey, setPageSortKey] = useState<PageSortKey>("sessions");
   const [pageSortDir, setPageSortDir] = useState<"desc" | "asc">("desc");
 
@@ -92,7 +101,20 @@ export default function TrafficPage() {
   }
 
   const ov = data?.overview;
+  const prev = data?.previousOverview;
   const totalSessions = data?.channels?.reduce((s, c) => s + c.sessions, 0) || 1;
+
+  // Deltas live in the page, not the API — keeps the response a flat shape
+  // that agent-context.ts can still treat as plain numbers (see contract §8).
+  const deltas = prev
+    ? {
+        sessions: calcDeltaPct(ov?.sessions ?? 0, prev.sessions),
+        users: calcDeltaPct(ov?.users ?? 0, prev.users),
+        engagementRate: calcDeltaPp(ov?.engagementRate ?? 0, prev.engagementRate),
+        purchases: calcDeltaPct(ov?.purchases ?? 0, prev.purchases),
+        conversions: calcDeltaPct(ov?.conversions ?? 0, prev.conversions),
+      }
+    : null;
 
   return (
     <>
@@ -100,35 +122,61 @@ export default function TrafficPage() {
         <DateRangePicker />
       </PageHeader>
 
-      {/* Overview KPIs */}
+      {/* Overview KPIs — hero layout, no icons, with delta (contract §3, §4) */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <MiniKpi icon={Eye} label={`Сесии (${label})`} value={ov?.sessions?.toLocaleString("bg-BG") || "0"} />
-        <MiniKpi icon={Users} label="Потребители" value={ov?.users?.toLocaleString("bg-BG") || "0"} />
-        <MiniKpi icon={MousePointerClick} label="Engagement" value={`${((ov?.engagementRate || 0) * 100).toFixed(1)}%`} />
-        <MiniKpi icon={ShoppingCart} label="Покупки" value={String(ov?.purchases || 0)} />
-        <MiniKpi icon={ShoppingCart} label="Конверсии" value={String(ov?.conversions || 0)} />
+        <MiniKpi
+          hero
+          label="Сесии"
+          value={ov?.sessions?.toLocaleString("bg-BG") || "0"}
+          delta={deltas ? { pct: deltas.sessions } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Потребители"
+          value={ov?.users?.toLocaleString("bg-BG") || "0"}
+          delta={deltas ? { pct: deltas.users } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Engagement"
+          value={`${((ov?.engagementRate || 0) * 100).toFixed(1)}%`}
+          delta={deltas ? { pct: deltas.engagementRate, unit: "pp" } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Покупки"
+          value={String(ov?.purchases || 0)}
+          delta={deltas ? { pct: deltas.purchases } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Конверсии"
+          value={String(ov?.conversions || 0)}
+          delta={deltas ? { pct: deltas.conversions } : undefined}
+        />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        {/* Channels */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        {/* Channels — neutral bars (share, not growth) per contract §1 */}
         <Card className="lg:col-span-2">
-          <CardHeader>Трафик по канали</CardHeader>
+          <CardHeader>Канали</CardHeader>
           <CardBody>
             <div className="space-y-3">
-              {data?.channels && data.channels.length > 0 ? data.channels.map((ch) => {
+              {data?.channels && data.channels.length > 0 ? data.channels.map((ch, idx) => {
                 const pct = (ch.sessions / totalSessions) * 100;
+                const isTop = idx === 0;
                 return (
                   <div key={ch.channel}>
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[13px] font-medium text-text">{ch.channel}</span>
-                      <span className="text-[13px] text-text-2">
-                        {ch.sessions.toLocaleString("bg-BG")} сесии
-                        <span className="text-text-2 ml-2">({pct.toFixed(1)}%)</span>
+                      <span className="text-[13px] text-text-2 tabular-nums">
+                        {ch.sessions.toLocaleString("bg-BG")}
+                        <span className="text-text-3 ml-2">{pct.toFixed(1)}%</span>
                       </span>
                     </div>
-                    <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+                    <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-accent rounded-full transition-all duration-500"
+                        className={`h-full rounded-full transition-all duration-500 ${isTop ? "bg-accent" : "bg-text-3"}`}
                         style={{ width: `${Math.min(pct, 100)}%` }}
                       />
                     </div>
@@ -141,19 +189,19 @@ export default function TrafficPage() {
           </CardBody>
         </Card>
 
-        {/* Devices — Donut Chart */}
+        {/* Devices — single-accent donut per contract §1 */}
         <DonutChart
           data={(data?.devices || []).map((d) => ({ device: d.device.charAt(0).toUpperCase() + d.device.slice(1), sessions: d.sessions }))}
           nameKey="device"
           valueKey="sessions"
           title="Устройства"
           height={220}
-          colors={["#007aff", "#22c55e", "#ff9500"]}
+          colors={DEVICE_PALETTE}
           formatValue={(v) => `${v.toLocaleString("bg-BG")} сесии`}
         />
       </div>
 
-      {/* Top Pages */}
+      {/* Top Pages — drill-down density per contract §5 */}
       <Card>
         <CardHeader action={
           <div className="flex items-center gap-1">
@@ -186,11 +234,11 @@ export default function TrafficPage() {
                   key={p.page}
                   className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
                 >
-                  <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
+                  <div className="col-span-1 text-[12px] font-bold text-text-3 tabular-nums">{i + 1}</div>
                   <div className="col-span-6 text-[13px] text-text truncate font-mono">{p.page}</div>
-                  <div className="col-span-2 text-right text-[13px] text-text-2">{p.sessions.toLocaleString("bg-BG")}</div>
-                  <div className="col-span-2 text-right text-[13px] text-text-2">{(p.engagementRate * 100).toFixed(1)}%</div>
-                  <div className="col-span-1 text-right text-[13px] font-semibold text-text">{p.conversions}</div>
+                  <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">{p.sessions.toLocaleString("bg-BG")}</div>
+                  <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">{(p.engagementRate * 100).toFixed(1)}%</div>
+                  <div className="col-span-1 text-right text-[13px] font-semibold text-text tabular-nums">{p.conversions}</div>
                 </div>
               )) : (
                 <p className="text-center py-8 text-[13px] text-text-2">Няма данни за страници</p>
@@ -202,4 +250,3 @@ export default function TrafficPage() {
     </>
   );
 }
-

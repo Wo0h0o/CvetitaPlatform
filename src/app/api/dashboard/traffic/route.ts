@@ -81,11 +81,18 @@ export async function GET(req: NextRequest) {
     const start = range.from;
     const end = range.to;
 
-    const [channelRows, pageRows, deviceRows, overviewRows] = await Promise.all([
+    // Same 5 metrics on the previous equal-length period — used by the UI
+    // to render the design-contract delta (§4). dates.ts already produces
+    // compFrom/compTo; we just consume them. Kept as a separate runReport
+    // (not multi-dateRange) because the response shape stays simpler and
+    // agent-context.ts can keep reading `overview.sessions` as a number.
+    const overviewMetrics = ["sessions", "totalUsers", "engagementRate", "keyEvents", "ecommercePurchases"];
+    const [channelRows, pageRows, deviceRows, overviewRows, prevOverviewRows] = await Promise.all([
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
       runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
       runReport(["sessions", "totalUsers"], ["deviceCategory"], start, end),
-      runReport(["sessions", "totalUsers", "engagementRate", "keyEvents", "ecommercePurchases"], [], start, end),
+      runReport(overviewMetrics, [], start, end),
+      runReport(overviewMetrics, [], range.compFrom, range.compTo),
     ]);
 
     const channels = channelRows.map((r) => ({
@@ -108,17 +115,29 @@ export async function GET(req: NextRequest) {
       users: parseInt(r.metricValues?.[1]?.value || "0"),
     }));
 
-    const ov = overviewRows[0]?.metricValues || [];
-    const overview = {
-      sessions: parseInt(ov[0]?.value || "0"),
-      users: parseInt(ov[1]?.value || "0"),
-      engagementRate: parseFloat(ov[2]?.value || "0"),
-      conversions: parseInt(ov[3]?.value || "0"),
-      purchases: parseInt(ov[4]?.value || "0"),
+    const parseOverview = (rows: GA4Row[]) => {
+      const v = rows[0]?.metricValues || [];
+      return {
+        sessions: parseInt(v[0]?.value || "0"),
+        users: parseInt(v[1]?.value || "0"),
+        engagementRate: parseFloat(v[2]?.value || "0"),
+        conversions: parseInt(v[3]?.value || "0"),
+        purchases: parseInt(v[4]?.value || "0"),
+      };
     };
+    const overview = parseOverview(overviewRows);
+    const previousOverview = parseOverview(prevOverviewRows);
 
     return NextResponse.json(
-      { period: range.label, overview, channels, topPages, devices },
+      {
+        period: range.label,
+        compare: { from: range.compFrom, to: range.compTo, label: "пр. период" },
+        overview,
+        previousOverview,
+        channels,
+        topPages,
+        devices,
+      },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );
   } catch (error) {
