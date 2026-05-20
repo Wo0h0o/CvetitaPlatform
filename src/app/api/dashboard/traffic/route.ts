@@ -98,16 +98,9 @@ export async function GET(req: NextRequest) {
       filter: { fieldName: "eventName", inListFilter: { values: FUNNEL_EVENTS } },
     };
 
-    // Google Ads campaign metrics — flow through GA4 when property is linked
-    // to a Google Ads account. probe-google-ads-via-ga4.mjs confirmed these
-    // dimensions/metrics are populated for property 348042832 (2026-05-20).
-    // If no link / no spend, all metrics return 0 and UI renders an empty
-    // state pointing the user to GA4 → Product Links → Google Ads.
-    const adsDims = ["sessionGoogleAdsCampaignName"];
-    const adsMetrics = ["advertiserAdCost", "advertiserAdClicks", "advertiserAdImpressions", "ecommercePurchases", "totalRevenue"];
-
     const [
       channelRows,
+      sourceMediumRows,
       pageRows,
       deviceRows,
       overviewRows,
@@ -116,11 +109,18 @@ export async function GET(req: NextRequest) {
       prevFunnelRows,
       topEventsRows,
       prevTopEventsRows,
-      googleAdsRows,
-      prevGoogleAdsRows,
       dailyRows,
     ] = await Promise.all([
+      // Channel Group — coarse aggregation (Organic Search / Paid Search /
+      // Direct / Referral / ...). Kept because agent-context.ts feeds it
+      // into AI prompts as an executive summary; changing the shape would
+      // break every downstream agent that consumes business context.
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
+      // sessionSourceMedium — granular acquisition source (google/organic vs
+      // google/cpc vs bing/organic). This is what the /traffic UI renders,
+      // because the page's job-to-be-done is "откъде идват и как се държат"
+      // where granularity matters. Paid-channel deep-dive lives on /google-ads.
+      runReport(["sessions", "totalUsers", "engagementRate", "ecommercePurchases"], ["sessionSourceMedium"], start, end, 12),
       runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
       runReport(["sessions", "totalUsers"], ["deviceCategory"], start, end),
       runReport(overviewMetrics, [], start, end),
@@ -129,8 +129,6 @@ export async function GET(req: NextRequest) {
       runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, undefined, funnelFilter),
       runReport(["eventCount", "totalUsers"], ["eventName"], start, end, 10),
       runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, 50),
-      runReport(adsMetrics, adsDims, start, end, 25),
-      runReport(adsMetrics, adsDims, range.compFrom, range.compTo, 25),
       // Daily time series — feeds the hero-strip sparklines. Same 5 overview
       // metrics, broken down by date so each MiniKpi can render its own trend.
       // runReport's default orderBy is the first metric desc; we sort by date
@@ -139,12 +137,29 @@ export async function GET(req: NextRequest) {
       runReport(overviewMetrics, ["date"], start, end),
     ]);
 
+    // Channel Group (kept for agent-context.ts backward compat — see comment above).
     const channels = channelRows.map((r) => ({
       channel: r.dimensionValues?.[0]?.value || "Unknown",
       sessions: parseInt(r.metricValues?.[0]?.value || "0"),
       users: parseInt(r.metricValues?.[1]?.value || "0"),
       engagementRate: parseFloat(r.metricValues?.[2]?.value || "0"),
     }));
+
+    // Source/Medium rows keep both the raw GA4 value (e.g. "google / organic")
+    // and parsed source+medium fields so the UI can render whichever fits.
+    const sourceMedium = sourceMediumRows.map((r) => {
+      const raw = r.dimensionValues?.[0]?.value || "(direct) / (none)";
+      const [source = "", medium = ""] = raw.split(" / ");
+      return {
+        sourceMedium: raw,
+        source,
+        medium,
+        sessions: parseInt(r.metricValues?.[0]?.value || "0"),
+        users: parseInt(r.metricValues?.[1]?.value || "0"),
+        engagementRate: parseFloat(r.metricValues?.[2]?.value || "0"),
+        purchases: parseInt(r.metricValues?.[3]?.value || "0"),
+      };
+    });
 
     const topPages = pageRows.map((r) => ({
       page: r.dimensionValues?.[0]?.value || "/",
@@ -197,35 +212,6 @@ export async function GET(req: NextRequest) {
     }));
     const previousTopEvents = rowsToMap(prevTopEventsRows);
 
-    // Google Ads — per-campaign + totals. Drop rows with zero spend AND zero
-    // clicks (GA4 sometimes returns (not set) rows for sessions that touched
-    // a Google Ads campaign cookie but had no actual ad activity).
-    const parseAdsRows = (rows: GA4Row[]) => {
-      const campaigns = rows
-        .map((r) => ({
-          name: r.dimensionValues?.[0]?.value || "(not set)",
-          spend: parseFloat(r.metricValues?.[0]?.value || "0"),
-          clicks: parseInt(r.metricValues?.[1]?.value || "0"),
-          impressions: parseInt(r.metricValues?.[2]?.value || "0"),
-          purchases: parseInt(r.metricValues?.[3]?.value || "0"),
-          revenue: parseFloat(r.metricValues?.[4]?.value || "0"),
-        }))
-        .filter((c) => c.spend > 0 || c.clicks > 0);
-      const totals = campaigns.reduce(
-        (acc, c) => ({
-          spend: acc.spend + c.spend,
-          clicks: acc.clicks + c.clicks,
-          impressions: acc.impressions + c.impressions,
-          purchases: acc.purchases + c.purchases,
-          revenue: acc.revenue + c.revenue,
-        }),
-        { spend: 0, clicks: 0, impressions: 0, purchases: 0, revenue: 0 }
-      );
-      return { campaigns, totals };
-    };
-    const googleAds = parseAdsRows(googleAdsRows);
-    const previousGoogleAds = parseAdsRows(prevGoogleAdsRows);
-
     // Daily time series. GA4's `date` dimension comes back as "YYYYMMDD"
     // strings; we sort asc so the sparkline reads left-to-right as time
     // moves forward. Engagement rate is a fraction in GA4 (0–1), so we
@@ -248,14 +234,13 @@ export async function GET(req: NextRequest) {
         overview,
         previousOverview,
         channels,
+        sourceMedium,
         topPages,
         devices,
         funnel,
         previousFunnel,
         topEvents,
         previousTopEvents,
-        googleAds,
-        previousGoogleAds,
         dailyOverview,
       },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
