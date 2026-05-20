@@ -161,7 +161,9 @@ export default function GoogleAdsPage() {
         <MiniKpi icon={Eye} label="CTR" value={fmtPct(ov?.ctr || 0, 2)} />
       </div>
 
-      {/* Brand vs Non-Brand split */}
+      {/* Brand vs Non-Brand split. Apple-style cards: subtle hairline ring on
+          the share pill (no pastel fill), tabular nums on KPI values, ROAS
+          carries the only color signal (tier-coded). Restraint > saturation. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         {[
           { key: "brand" as const, data: split?.brand, label: "Brand", icon: Crown, hint: "Хора, които вече знаят Cvetita и търсят името. Високите ROAS числа са естествени — не са знак, че campaign-ите 'работят'." },
@@ -172,12 +174,8 @@ export default function GoogleAdsPage() {
           return (
             <Card key={key}>
               <CardHeader action={
-                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
-                  tier === "good" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  : tier === "watch" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                }`}>
-                  {b.sharePct.toFixed(0)}% от spend-а
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium text-text-2 ring-1 ring-inset ring-border/60 tabular-nums">
+                  {b.sharePct.toFixed(1)}% от spend-а
                 </span>
               }>
                 <div className="flex items-center gap-2">
@@ -186,38 +184,39 @@ export default function GoogleAdsPage() {
                 </div>
               </CardHeader>
               <CardBody>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                   <div>
-                    <div className="text-[11px] text-text-3 mb-0.5">Spend</div>
-                    <div className="text-[14px] font-semibold text-text">{fmtMoney(b.spend)}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">Spend</div>
+                    <div className="text-[15px] font-semibold text-text tabular-nums">{fmtMoney(b.spend)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-text-3 mb-0.5">Revenue</div>
-                    <div className="text-[14px] font-semibold text-text">{fmtMoney(b.revenue)}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">Revenue</div>
+                    <div className="text-[15px] font-semibold text-text tabular-nums">{fmtMoney(b.revenue)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-text-3 mb-0.5">ROAS</div>
-                    <div className={`text-[16px] ${TIER_STYLES[tier]}`}>{fmtRoas(b.roas)}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">ROAS</div>
+                    <div className={`text-[17px] tabular-nums ${TIER_STYLES[tier]}`}>{fmtRoas(b.roas)}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-text-3 mb-0.5">Покупки</div>
-                    <div className="text-[14px] font-semibold text-text">{fmtInt(b.purchases)}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">Покупки</div>
+                    <div className="text-[15px] font-semibold text-text tabular-nums">{fmtInt(b.purchases)}</div>
                   </div>
                 </div>
-                <p className="text-[11px] text-text-3 leading-snug mt-3 pt-3 border-t border-border">{hint}</p>
+                <p className="text-[11px] text-text-3 leading-snug mt-4 pt-3 border-t border-border">{hint}</p>
               </CardBody>
             </Card>
           );
         })}
       </div>
 
-      {/* Video-attribution warning callout */}
+      {/* Video-attribution warning. Subtle amber tint via ring + 8% bg —
+          flag, not alarm. */}
       {hasVideoCampaigns && (
         <Card className="mb-4">
           <CardBody>
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                <Info size={16} className="text-amber-600 dark:text-amber-400" />
+              <div className="w-8 h-8 rounded-lg bg-amber-500/8 ring-1 ring-inset ring-amber-500/25 flex items-center justify-center flex-shrink-0">
+                <Info size={15} className="text-amber-600 dark:text-amber-400" />
               </div>
               <div>
                 <div className="text-[13px] font-semibold text-text mb-1">Demand Gen / Video кампании</div>
