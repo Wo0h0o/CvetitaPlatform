@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import useSWR from "swr";
+import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
+import { ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
 import type { DatePreset } from "@/lib/dates";
@@ -61,6 +64,13 @@ interface TopStripResponse {
       shopifyRevenue: number;
     };
   };
+  /** Trailing-14d series for each metric — feeds hero card area charts. */
+  series14d: {
+    business: { revenue: number[]; orders: number[]; aov: number[] };
+    ads: { spend: number[]; revenue: number[]; roas: number[]; attribution: number[] };
+    googleAds: { spend: number[]; revenue: number[]; purchases: number[]; roas: number[] } | null;
+    crossPlatform: { cac: number[]; netAfterAds: number[] };
+  };
   anomalyCount: number;
   freshAsOf: string;
   error?: string;
@@ -98,86 +108,145 @@ function fmtRoas(n: number): string {
   return n.toFixed(2);
 }
 
-// ============================================================
-// Tile — single metric, optional sub-text for composability hints.
-// ============================================================
-
-interface TileProps {
+/**
+ * HeroCard — Stripe-style big-number + chart + drill-down link, all on one
+ * card. The chart sits at ~50% of card height and carries the visual
+ * weight; the number stays leading the eye but isn't fighting for space.
+ *
+ * Used for time-series metrics (spend, revenue, orders, CAC, ROAS). For
+ * pure composition (Channel mix) we keep ChannelMixTile, and for "no series
+ * available" metrics we fall back to the compact Tile.
+ *
+ * `drillTo` is a route the card navigates to on click — Stripe pattern:
+ * cards aren't just display, they're entry points. The card is wrapped in
+ * a <Link>; the chart, value, and label all become tap targets.
+ */
+interface HeroCardProps {
   label: string;
   value: string;
   vsTypical: number | null;
-  projected: string | null;
   typicalLabel: string;
-  /** Hide the delta/projected row entirely (e.g. ROAS — ratio, not cumulative). */
+  /** Trailing-14d daily values for the area chart. Min 2 to render. */
+  series: number[];
+  /** Hide the delta line entirely (ratio metrics — ROAS, AOV, attribution). */
   hideDelta?: boolean;
-  /**
-   * Free-form small line directly under the value. Used for composability
-   * hints (e.g. "428 EUR / 240 EUR" for ROAS, "428 от 794 EUR" for
-   * attribution). Stays subtle so the primary number still leads the eye.
-   */
-  subText?: string;
-  /**
-   * Label shown when `vsTypical` is null. Defaults to "още рано" (today
-   * pacing semantics — too early to project); range mode passes "няма
-   * сравнение" because there's no time-of-day signal to wait for.
-   */
+  /** Label shown when vsTypical is null. */
   nullLabel?: string;
-  /**
-   * Flip the colour logic for metrics where lower is better (CAC, bounce,
-   * cost-per-thing). A positive vsTypical (going up) is then RED, not green.
-   */
+  /** Flip colour logic for lower-is-better metrics (CAC). */
   inverseDelta?: boolean;
+  /** Free-form sub-text below the value (composability hints). */
+  subText?: string;
+  /** Drill-down destination + visible link label. Both required together. */
+  drillTo?: { href: string; label: string };
 }
 
-function Tile({
+function HeroCard({
   label,
   value,
   vsTypical,
-  projected,
   typicalLabel,
-  hideDelta,
-  subText,
+  series,
+  hideDelta = false,
   nullLabel = "още рано",
   inverseDelta = false,
-}: TileProps) {
-  let deltaNode: React.ReactNode;
-  if (hideDelta) {
-    deltaNode = null;
-  } else if (vsTypical === null) {
-    deltaNode = <span className="text-text-3">{nullLabel}</span>;
-  } else {
-    // Triangle glyphs match the analytics surface (see shared Delta.tsx,
-    // design contract §4). ▲ for up, ▼ for down, em-dash within the noise
-    // band so flat days don't claim a direction. ±3% threshold gates colour
-    // because matched-hour pacing is noisier than period-to-period delta.
-    const isFlat = Math.abs(vsTypical) < 1;
-    const arrow = isFlat ? "—" : vsTypical > 0 ? "▲" : "▼";
-    const isGood = inverseDelta ? vsTypical < -3 : vsTypical > 3;
-    const isBad = inverseDelta ? vsTypical > 3 : vsTypical < -3;
-    const color = isGood ? "text-accent" : isBad ? "text-red" : "text-text-2";
-    deltaNode = (
-      <span className={`${color} tabular-nums`}>
-        <span className="text-[10px] align-middle mr-0.5">{arrow}</span>
-        {Math.abs(vsTypical)}% vs {typicalLabel}
-      </span>
-    );
+  subText,
+  drillTo,
+}: HeroCardProps) {
+  // Delta rendering — same triangle convention as Tile + shared Delta.tsx.
+  let deltaNode: React.ReactNode = null;
+  if (!hideDelta) {
+    if (vsTypical === null) {
+      deltaNode = <span className="text-text-3">{nullLabel}</span>;
+    } else {
+      const isFlat = Math.abs(vsTypical) < 1;
+      const arrow = isFlat ? "—" : vsTypical > 0 ? "▲" : "▼";
+      const isGood = inverseDelta ? vsTypical < -3 : vsTypical > 3;
+      const isBad = inverseDelta ? vsTypical > 3 : vsTypical < -3;
+      const color = isGood ? "text-accent" : isBad ? "text-red" : "text-text-2";
+      deltaNode = (
+        <span className={`${color} tabular-nums`}>
+          <span className="text-[10px] align-middle mr-0.5">{arrow}</span>
+          {Math.abs(vsTypical)}% vs {typicalLabel}
+        </span>
+      );
+    }
   }
 
-  // `projected` is intentionally not rendered — user requested the deeper
-  // tiles to free vertical space. The API still returns it; once we find a
-  // surface where end-of-day forecast adds real value we can wire it back.
-  void projected;
+  // Series → Recharts shape. Skip the chart entirely if we don't have at
+  // least 2 points (a single dot has nothing useful to show).
+  const chartData = series.length >= 2 ? series.map((v, i) => ({ i, v })) : null;
 
-  return (
-    <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col gap-2 min-h-[110px]">
-      <div className="text-[13px] font-semibold text-text">{label}</div>
-      <div className="text-[28px] md:text-[32px] font-bold tracking-tight text-text leading-none">
+  const cardInner = (
+    <>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="text-[13px] font-semibold text-text">{label}</div>
+        {drillTo && (
+          <span className="inline-flex items-center gap-0.5 text-[11px] text-text-3 group-hover:text-text-2 transition-colors">
+            {drillTo.label}
+            <ArrowRight size={11} />
+          </span>
+        )}
+      </div>
+      <div className="text-[28px] md:text-[32px] font-bold tracking-tight text-text leading-none tabular-nums">
         {value}
       </div>
       {subText && (
-        <div className="text-[11px] text-text-3 leading-tight">{subText}</div>
+        <div className="text-[11px] text-text-3 leading-tight mt-1">{subText}</div>
       )}
-      <div className="text-[12px] mt-auto">{deltaNode}</div>
+      {deltaNode && (
+        <div className="text-[12px] mt-1.5">{deltaNode}</div>
+      )}
+      {chartData && (
+        <div className="h-[90px] -mx-2 mt-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+              <defs>
+                <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Tooltip
+                contentStyle={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  fontSize: 11,
+                  boxShadow: "var(--shadow-md)",
+                  padding: "4px 8px",
+                }}
+                labelFormatter={() => ""}
+                formatter={(v) => [Number(v ?? 0).toLocaleString("bg-BG", { maximumFractionDigits: 2 }), label]}
+              />
+              <Area
+                type="monotone"
+                dataKey="v"
+                stroke="var(--accent)"
+                strokeWidth={1.5}
+                fill="url(#heroFill)"
+                isAnimationActive={false}
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </>
+  );
+
+  if (drillTo) {
+    return (
+      <Link
+        href={drillTo.href}
+        className="group bg-surface rounded-xl shadow-sm p-5 flex flex-col min-h-[220px] hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      >
+        {cardInner}
+      </Link>
+    );
+  }
+  return (
+    <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col min-h-[220px]">
+      {cardInner}
     </div>
   );
 }
@@ -205,7 +274,7 @@ interface ChannelMixTileProps {
 function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTileProps) {
   if (shopifyRevenue <= 0) {
     return (
-      <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[120px] flex flex-col gap-2">
+      <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col gap-2">
         <div className="text-[13px] font-semibold text-text">Микс на каналите</div>
         <div className="text-[13px] text-text-3 mt-auto">няма Shopify приходи още</div>
       </div>
@@ -213,7 +282,7 @@ function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTi
   }
 
   return (
-    <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[120px] flex flex-col gap-3">
+    <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-text">Микс на каналите</div>
       <div className="flex h-2 rounded-full overflow-hidden bg-surface-2">
         <div
@@ -264,10 +333,11 @@ function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTi
 
 function TileSkeleton() {
   return (
-    <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[120px]">
+    <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col">
       <Skeleton className="h-3 w-20 mb-3" />
-      <Skeleton className="h-8 w-28 mb-2" />
-      <Skeleton className="h-3 w-32" />
+      <Skeleton className="h-8 w-32 mb-2" />
+      <Skeleton className="h-3 w-28 mb-4" />
+      <Skeleton className="h-[80px] w-full mt-auto" />
     </div>
   );
 }
@@ -383,7 +453,10 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     );
   }
 
-  const { business, ads, googleAds, crossPlatform } = data;
+  const { business, ads, googleAds, crossPlatform, series14d } = data;
+  const businessDrill = { href: "/sales", label: "Виж продажби" };
+  const adsDrill = { href: "/ads", label: "Виж реклами" };
+  const googleAdsDrill = { href: "/google-ads", label: "Виж Google Ads" };
 
   // === Ads section trim text — composability hints ===
   // ROAS sub-text shows the two numbers it divides, so the operator can
@@ -431,32 +504,24 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
   return (
     <>
       <SectionShell title={overallTitle} description={OVERALL_DESC}>
-        <Tile
+        <HeroCard
           label="Цена за поръчка"
           value={fmtEur(crossPlatform.cac.value)}
           vsTypical={crossPlatform.cac.vsTypical}
-          projected={
-            crossPlatform.cac.projected !== null
-              ? fmtEur(crossPlatform.cac.projected)
-              : null
-          }
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
           subText="(Meta + Google разход) / поръчки"
           inverseDelta
+          series={series14d.crossPlatform.cac}
         />
-        <Tile
+        <HeroCard
           label="Нето след реклами"
           value={fmtEur(crossPlatform.netAfterAds.value)}
           vsTypical={crossPlatform.netAfterAds.vsTypical}
-          projected={
-            crossPlatform.netAfterAds.projected !== null
-              ? fmtEur(crossPlatform.netAfterAds.projected)
-              : null
-          }
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
           subText="Shopify − Meta − Google разход"
+          series={series14d.crossPlatform.netAfterAds}
         />
         <ChannelMixTile
           meta={crossPlatform.channelMix.meta}
@@ -467,37 +532,32 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
       </SectionShell>
 
       <SectionShell title={businessTitle} description={BUSINESS_DESC}>
-        <Tile
+        <HeroCard
           label="Приходи"
           value={fmtEur(business.revenue.value)}
           vsTypical={business.revenue.vsTypical}
-          projected={
-            business.revenue.projected !== null
-              ? fmtEur(business.revenue.projected)
-              : null
-          }
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
+          series={series14d.business.revenue}
+          drillTo={businessDrill}
         />
-        <Tile
+        <HeroCard
           label="Поръчки"
           value={fmtInt(business.orders.value)}
           vsTypical={business.orders.vsTypical}
-          projected={
-            business.orders.projected !== null
-              ? fmtInt(business.orders.projected)
-              : null
-          }
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
+          series={series14d.business.orders}
+          drillTo={businessDrill}
         />
-        <Tile
+        <HeroCard
           label="Средна стойност"
           value={fmtEur(business.aov.value)}
           vsTypical={null}
-          projected={null}
           typicalLabel={typicalLabel}
           hideDelta
+          series={series14d.business.aov}
+          drillTo={businessDrill}
         />
       </SectionShell>
 
@@ -520,69 +580,65 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           </>
         }
       >
-        <Tile
+        <HeroCard
           label="Разход"
           value={fmtEur(ads.spend.value)}
           vsTypical={ads.spend.vsTypical}
-          projected={
-            ads.spend.projected !== null ? fmtEur(ads.spend.projected) : null
-          }
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
+          series={series14d.ads.spend}
+          drillTo={adsDrill}
         />
-        <Tile
+        <HeroCard
           label="ROAS"
           value={fmtRoas(ads.roas.value)}
           subText={roasSub}
           vsTypical={null}
-          projected={null}
           typicalLabel={typicalLabel}
           hideDelta
+          series={series14d.ads.roas}
+          drillTo={adsDrill}
         />
-        <Tile
+        <HeroCard
           label="Атрибуция"
           value={attributionValue}
           subText={attributionSub}
           vsTypical={null}
-          projected={null}
           typicalLabel={typicalLabel}
           hideDelta
+          series={series14d.ads.attribution}
+          drillTo={adsDrill}
         />
       </SectionShell>
 
-      {googleAds && (
+      {googleAds && series14d.googleAds && (
         <SectionShell title={googleAdsTitle} description={GOOGLE_ADS_DESC}>
-          <Tile
+          <HeroCard
             label="Разход"
             value={fmtEur(googleAds.spend.value)}
             vsTypical={googleAds.spend.vsTypical}
-            projected={
-              googleAds.spend.projected !== null
-                ? fmtEur(googleAds.spend.projected)
-                : null
-            }
             typicalLabel={typicalLabel}
             nullLabel={nullLabel}
+            series={series14d.googleAds.spend}
+            drillTo={googleAdsDrill}
           />
-          <Tile
+          <HeroCard
             label="ROAS"
             value={fmtRoas(googleAds.roas.value)}
             vsTypical={null}
-            projected={null}
             typicalLabel={typicalLabel}
             hideDelta
+            series={series14d.googleAds.roas}
+            drillTo={googleAdsDrill}
           />
-          <Tile
+          <HeroCard
             label="Покупки"
             value={fmtInt(googleAds.purchases.value)}
             vsTypical={googleAds.purchases.vsTypical}
-            projected={
-              googleAds.purchases.projected !== null
-                ? fmtInt(googleAds.purchases.projected)
-                : null
-            }
             typicalLabel={typicalLabel}
             nullLabel={nullLabel}
+            series={series14d.googleAds.purchases}
+            drillTo={googleAdsDrill}
           />
         </SectionShell>
       )}

@@ -7,6 +7,7 @@ import {
   sofiaDate,
   sofiaHoursElapsed,
   shiftDate,
+  lastNDates,
   resolveDateWindow,
   type DateWindow,
   type DateWindowPreset,
@@ -119,6 +120,26 @@ interface TopStripResponse {
       other: { revenue: number; pct: number };
       shopifyRevenue: number;
     };
+  };
+  /**
+   * Daily series for the trailing 14 days ending at `window.to` (or today
+   * for "today" mode). Each array has exactly 14 elements, oldest first,
+   * zero-filled for missing days. Feeds the hero-card area charts on the
+   * home dashboard (Stripe pattern: big number + chart on same card).
+   *
+   * Anchor stays at 14 days regardless of the selected preset so the chart
+   * shape is a stable visual baseline — comparing "today" to "30d" doesn't
+   * change the chart's horizontal span.
+   *
+   * Computed ratios (AOV, ROAS, attribution pct, CAC) are derived per-day
+   * inside the route so the UI doesn't have to recompute them from raw
+   * series and risk drift.
+   */
+  series14d: {
+    business: { revenue: number[]; orders: number[]; aov: number[] };
+    ads: { spend: number[]; revenue: number[]; roas: number[]; attribution: number[] };
+    googleAds: { spend: number[]; revenue: number[]; purchases: number[]; roas: number[] } | null;
+    crossPlatform: { cac: number[]; netAfterAds: number[] };
   };
   anomalyCount: number;
   freshAsOf: string;
@@ -271,6 +292,70 @@ function sumShopify(
 }
 
 /**
+ * Build the trailing-14d series block that feeds the home hero-card charts.
+ * One pass over the date anchor produces every series (raw + derived ratio
+ * metrics) so the UI doesn't have to recompute them and drift.
+ *
+ * `includeGoogleAds` mirrors the response's `googleAds: null` decision: if
+ * the live section is hidden we suppress the series too, so the UI never
+ * gets a half-populated chart strip.
+ */
+function buildSeries14d(
+  dates14d: string[],
+  shopifyByDate: Map<string, { revenue: number; orders: number }>,
+  metaByDate: Map<string, { spend: number; revenue: number; purchases: number }>,
+  googleAdsByDate: Map<string, { spend: number; revenue: number; purchases: number }>,
+  includeGoogleAds: boolean
+): TopStripResponse["series14d"] {
+  const revenueS: number[] = [];
+  const ordersS: number[] = [];
+  const aovS: number[] = [];
+  const metaSpendS: number[] = [];
+  const metaRevenueS: number[] = [];
+  const metaRoasS: number[] = [];
+  const attributionS: number[] = [];
+  const gaSpendS: number[] = [];
+  const gaRevenueS: number[] = [];
+  const gaPurchasesS: number[] = [];
+  const gaRoasS: number[] = [];
+  const cacS: number[] = [];
+  const netS: number[] = [];
+
+  for (const d of dates14d) {
+    const sho = shopifyByDate.get(d) ?? { revenue: 0, orders: 0 };
+    const m = metaByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 };
+    const g = googleAdsByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 };
+
+    revenueS.push(sho.revenue);
+    ordersS.push(sho.orders);
+    aovS.push(sho.orders > 0 ? sho.revenue / sho.orders : 0);
+
+    metaSpendS.push(m.spend);
+    metaRevenueS.push(m.revenue);
+    metaRoasS.push(m.spend > 0 ? m.revenue / m.spend : 0);
+    attributionS.push(sho.revenue > 0 ? (m.revenue / sho.revenue) * 100 : 0);
+
+    gaSpendS.push(g.spend);
+    gaRevenueS.push(g.revenue);
+    gaPurchasesS.push(g.purchases);
+    gaRoasS.push(g.spend > 0 ? g.revenue / g.spend : 0);
+
+    const totalSpend = m.spend + g.spend;
+    cacS.push(sho.orders > 0 ? totalSpend / sho.orders : 0);
+    netS.push(sho.revenue - totalSpend);
+  }
+
+  return {
+    business: { revenue: revenueS, orders: ordersS, aov: aovS },
+    ads: { spend: metaSpendS, revenue: metaRevenueS, roas: metaRoasS, attribution: attributionS },
+    googleAds: includeGoogleAds
+      ? { spend: gaSpendS, revenue: gaRevenueS, purchases: gaPurchasesS, roas: gaRoasS }
+      : null,
+    crossPlatform: { cac: cacS, netAfterAds: netS },
+  };
+}
+
+/**
  * Build the channelMix composition snapshot — what % of Shopify revenue
  * each paid source claimed (Meta, Google), with the remainder bucketed as
  * "other" (organic / email / direct / referral / partial attribution).
@@ -329,6 +414,12 @@ export async function GET(req: NextRequest) {
       comparisonDates = expandRange(window.compFrom, window.compTo);
       datesToFetch = [...windowDates, ...comparisonDates];
     }
+
+    // Trailing-14d anchor for the chart strip — independent of selected
+    // preset so chart shape stays a stable visual baseline. Union with the
+    // pacing/comparison dates we already plan to fetch (deduped below).
+    const dates14d = lastNDates(14, window.to);
+    datesToFetch = Array.from(new Set([...datesToFetch, ...dates14d]));
 
     // Anomaly count: pending red/amber briefs for today — independent of
     // window selection; the alert pill always reflects "right now".
@@ -525,6 +616,13 @@ export async function GET(req: NextRequest) {
           netAfterAds: netTempo,
           channelMix,
         },
+        series14d: buildSeries14d(
+          dates14d,
+          shopifyByDate,
+          metaByDate,
+          googleAdsByDate,
+          googleAdsSection !== null
+        ),
         anomalyCount: anomalyRaw ?? 0,
         freshAsOf: latestFetched ?? now.toISOString(),
       };
@@ -616,6 +714,13 @@ export async function GET(req: NextRequest) {
           netAfterAds: buildRangeTempo(netCurrent, netPrev),
           channelMix,
         },
+        series14d: buildSeries14d(
+          dates14d,
+          shopifyByDate,
+          metaByDate,
+          googleAdsByDate,
+          googleAdsSection !== null
+        ),
         anomalyCount: anomalyRaw ?? 0,
         freshAsOf: latestFetched ?? now.toISOString(),
       };
