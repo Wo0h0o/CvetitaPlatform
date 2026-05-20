@@ -6,6 +6,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
 import { ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
+import { fmtBgDate } from "@/lib/format";
 import type { DatePreset } from "@/lib/dates";
 
 // ============================================================
@@ -60,12 +61,15 @@ interface TopStripResponse {
     channelMix: {
       meta: { revenue: number; pct: number };
       googleAds: { revenue: number; pct: number };
+      /** Lower-bound revenue both platforms claim (cross-attribution). */
+      mixed: { revenue: number; pct: number };
       other: { revenue: number; pct: number };
       shopifyRevenue: number;
     };
   };
   /** Trailing-14d series for each metric — feeds hero card area charts. */
   series14d: {
+    dates: string[];
     business: { revenue: number[]; orders: number[]; aov: number[] };
     ads: { spend: number[]; revenue: number[]; roas: number[]; attribution: number[] };
     googleAds: { spend: number[]; revenue: number[]; purchases: number[]; roas: number[] } | null;
@@ -128,6 +132,12 @@ interface HeroCardProps {
   typicalLabel: string;
   /** Trailing-14d daily values for the area chart. Min 2 to render. */
   series: number[];
+  /**
+   * ISO dates aligned with `series` indices (oldest first). Tooltip shows
+   * the corresponding day in БГ short form ("21 май"). Length should match
+   * `series` — if mismatched we fall back to index-only labels.
+   */
+  dates?: string[];
   /** Hide the delta line entirely (ratio metrics — ROAS, AOV, attribution). */
   hideDelta?: boolean;
   /** Label shown when vsTypical is null. */
@@ -138,6 +148,12 @@ interface HeroCardProps {
   subText?: string;
   /** Drill-down destination + visible link label. Both required together. */
   drillTo?: { href: string; label: string };
+  /**
+   * Optional formatter for the tooltip value. Defaults to a plain БГ-locale
+   * number. Pass `fmtEur` / `fmtRoas` etc. so the tooltip reads in the
+   * same unit as the headline number.
+   */
+  valueFormatter?: (n: number) => string;
 }
 
 function HeroCard({
@@ -146,11 +162,13 @@ function HeroCard({
   vsTypical,
   typicalLabel,
   series,
+  dates,
   hideDelta = false,
   nullLabel = "още рано",
   inverseDelta = false,
   subText,
   drillTo,
+  valueFormatter,
 }: HeroCardProps) {
   // Delta rendering — same triangle convention as Tile + shared Delta.tsx.
   let deltaNode: React.ReactNode = null;
@@ -172,9 +190,19 @@ function HeroCard({
     }
   }
 
-  // Series → Recharts shape. Skip the chart entirely if we don't have at
-  // least 2 points (a single dot has nothing useful to show).
-  const chartData = series.length >= 2 ? series.map((v, i) => ({ i, v })) : null;
+  // Series → Recharts shape. We zip the value series with the date series
+  // when lengths agree so the tooltip can label by day; otherwise we fall
+  // back to index-only (rare — happens only if backend shipped mismatched
+  // arrays). Skip the chart entirely if we don't have at least 2 points.
+  const chartData =
+    series.length >= 2
+      ? series.map((v, i) => ({
+          i,
+          v,
+          date: dates && dates.length === series.length ? dates[i] : null,
+        }))
+      : null;
+  const formatValue = valueFormatter ?? ((n: number) => n.toLocaleString("bg-BG", { maximumFractionDigits: 2 }));
 
   const cardInner = (
     <>
@@ -213,10 +241,13 @@ function HeroCard({
                   borderRadius: 8,
                   fontSize: 11,
                   boxShadow: "var(--shadow-md)",
-                  padding: "4px 8px",
+                  padding: "6px 10px",
                 }}
-                labelFormatter={() => ""}
-                formatter={(v) => [Number(v ?? 0).toLocaleString("bg-BG", { maximumFractionDigits: 2 }), label]}
+                labelFormatter={(_, payload) => {
+                  const date = payload?.[0]?.payload?.date as string | null | undefined;
+                  return date ? fmtBgDate(date) : "";
+                }}
+                formatter={(v) => [formatValue(Number(v ?? 0)), label]}
               />
               <Area
                 type="monotone"
@@ -252,26 +283,32 @@ function HeroCard({
 }
 
 /**
- * ChannelMix tile — composition snapshot instead of a single hero number.
- * Three stacked horizontal segments (Meta · Google · Organic), each
- * proportional to its share of Shopify revenue. Below the bar: legend with
- * absolute EUR values for context.
+ * ChannelMix tile — composition snapshot with FOUR exclusive segments that
+ * sum to 100%: Meta only · Google only · Смесена (overlap) · Друго.
  *
- * Per design contract §1 we resist category accent colours; here we use
- * accent only for the "Organic / друго" slice — that's the part the
- * operator's business KEEPS, and visually anchoring it as positive carries
- * meaning ("the bigger the green, the less you're paying for revenue").
- * Meta and Google use neutral greys at different opacities — distinguish
- * without colour-coding categories.
+ * The mixed segment is rendered with a diagonal stripe pattern blending
+ * Meta's and Google's neutral tones — visually saying "this is both" without
+ * inventing a category colour (design contract §1 — no per-source accent).
+ * Other (organic/email/direct) keeps the accent green: it's revenue the
+ * business KEEPS, so visually anchoring it as positive carries meaning.
  */
 interface ChannelMixTileProps {
   meta: { revenue: number; pct: number };
   googleAds: { revenue: number; pct: number };
+  mixed: { revenue: number; pct: number };
   other: { revenue: number; pct: number };
   shopifyRevenue: number;
 }
 
-function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTileProps) {
+// Striped pattern used for the "mixed" segment — alternating bands of the
+// two paid-channel tones. Inlined as a style object because Tailwind doesn't
+// have a built-in for arbitrary repeating-gradients.
+const MIXED_STRIPE: React.CSSProperties = {
+  backgroundImage:
+    "repeating-linear-gradient(45deg, var(--text-3) 0, var(--text-3) 4px, var(--text-2) 4px, var(--text-2) 8px)",
+};
+
+function ChannelMixTile({ meta, googleAds, mixed, other, shopifyRevenue }: ChannelMixTileProps) {
   if (shopifyRevenue <= 0) {
     return (
       <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col gap-2">
@@ -296,12 +333,17 @@ function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTi
           title={`Google: ${googleAds.pct}%`}
         />
         <div
+          className="transition-all"
+          style={{ width: `${mixed.pct}%`, ...MIXED_STRIPE }}
+          title={`Смесена атрибуция: ${mixed.pct}%`}
+        />
+        <div
           className="bg-accent transition-all"
           style={{ width: `${other.pct}%` }}
           title={`Друго: ${other.pct}%`}
         />
       </div>
-      <div className="grid grid-cols-3 gap-2 text-[11px] mt-auto">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-3 text-[11px] mt-auto">
         <div>
           <div className="flex items-center gap-1.5 text-text-2">
             <span className="inline-block h-2 w-2 rounded-full bg-text-3" />
@@ -317,6 +359,18 @@ function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTi
           </div>
           <div className="text-[13px] font-semibold text-text tabular-nums">{googleAds.pct}%</div>
           <div className="text-text-3 tabular-nums">{fmtEur(googleAds.revenue)}</div>
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5 text-text-2">
+            <span
+              className="inline-block h-2 w-2 rounded-sm"
+              style={MIXED_STRIPE}
+              aria-hidden
+            />
+            Смесена
+          </div>
+          <div className="text-[13px] font-semibold text-text tabular-nums">{mixed.pct}%</div>
+          <div className="text-text-3 tabular-nums">{fmtEur(mixed.revenue)}</div>
         </div>
         <div>
           <div className="flex items-center gap-1.5 text-text-2">
@@ -457,6 +511,11 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
   const businessDrill = { href: "/sales", label: "Виж продажби" };
   const adsDrill = { href: "/ads", label: "Виж реклами" };
   const googleAdsDrill = { href: "/google-ads", label: "Виж Google Ads" };
+  // Series shares one date axis across every HeroCard (trailing-14d anchor).
+  const seriesDates = series14d.dates;
+  // Per-tile value formatters so the tooltip reads in the same unit as the
+  // headline number — EUR / x / int / pp — not a raw locale string.
+  const fmtPctVal = (n: number) => `${Math.round(n)}%`;
 
   // === Ads section trim text — composability hints ===
   // ROAS sub-text shows the two numbers it divides, so the operator can
@@ -513,6 +572,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           subText="(Meta + Google разход) / поръчки"
           inverseDelta
           series={series14d.crossPlatform.cac}
+          dates={seriesDates}
+          valueFormatter={fmtEur}
         />
         <HeroCard
           label="Нето след реклами"
@@ -522,10 +583,13 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           nullLabel={nullLabel}
           subText="Shopify − Meta − Google разход"
           series={series14d.crossPlatform.netAfterAds}
+          dates={seriesDates}
+          valueFormatter={fmtEur}
         />
         <ChannelMixTile
           meta={crossPlatform.channelMix.meta}
           googleAds={crossPlatform.channelMix.googleAds}
+          mixed={crossPlatform.channelMix.mixed}
           other={crossPlatform.channelMix.other}
           shopifyRevenue={crossPlatform.channelMix.shopifyRevenue}
         />
@@ -539,6 +603,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
           series={series14d.business.revenue}
+          dates={seriesDates}
+          valueFormatter={fmtEur}
           drillTo={businessDrill}
         />
         <HeroCard
@@ -548,6 +614,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
           series={series14d.business.orders}
+          dates={seriesDates}
+          valueFormatter={fmtInt}
           drillTo={businessDrill}
         />
         <HeroCard
@@ -557,6 +625,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           typicalLabel={typicalLabel}
           hideDelta
           series={series14d.business.aov}
+          dates={seriesDates}
+          valueFormatter={fmtEur}
           drillTo={businessDrill}
         />
       </SectionShell>
@@ -587,6 +657,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
           series={series14d.ads.spend}
+          dates={seriesDates}
+          valueFormatter={fmtEur}
           drillTo={adsDrill}
         />
         <HeroCard
@@ -597,6 +669,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           typicalLabel={typicalLabel}
           hideDelta
           series={series14d.ads.roas}
+          dates={seriesDates}
+          valueFormatter={fmtRoas}
           drillTo={adsDrill}
         />
         <HeroCard
@@ -607,6 +681,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           typicalLabel={typicalLabel}
           hideDelta
           series={series14d.ads.attribution}
+          dates={seriesDates}
+          valueFormatter={fmtPctVal}
           drillTo={adsDrill}
         />
       </SectionShell>
@@ -620,6 +696,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             typicalLabel={typicalLabel}
             nullLabel={nullLabel}
             series={series14d.googleAds.spend}
+            dates={seriesDates}
+            valueFormatter={fmtEur}
             drillTo={googleAdsDrill}
           />
           <HeroCard
@@ -629,6 +707,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             typicalLabel={typicalLabel}
             hideDelta
             series={series14d.googleAds.roas}
+            dates={seriesDates}
+            valueFormatter={fmtRoas}
             drillTo={googleAdsDrill}
           />
           <HeroCard
@@ -638,6 +718,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             typicalLabel={typicalLabel}
             nullLabel={nullLabel}
             series={series14d.googleAds.purchases}
+            dates={seriesDates}
+            valueFormatter={fmtInt}
             drillTo={googleAdsDrill}
           />
         </SectionShell>

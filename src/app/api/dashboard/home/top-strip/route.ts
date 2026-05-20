@@ -114,8 +114,18 @@ interface TopStripResponse {
     cac: TempoMetric;
     netAfterAds: TempoMetric;
     channelMix: {
+      /** Revenue attributed only to Meta (after removing the mixed overlap). */
       meta: { revenue: number; pct: number };
+      /** Revenue attributed only to Google (after removing the mixed overlap). */
       googleAds: { revenue: number; pct: number };
+      /**
+       * Lower-bound estimate of orders where Meta AND Google both claim
+       * attribution. Computed via inclusion-exclusion: max(0, M + G − Shopify).
+       * This is the MINIMUM provable overlap (actual cross-attribution may
+       * be higher); we report the floor so business owners see a real number,
+       * not zero, when M + G > Shopify revenue.
+       */
+      mixed: { revenue: number; pct: number };
       /** Shopify revenue minus all paid attribution — organic/email/direct. */
       other: { revenue: number; pct: number };
       shopifyRevenue: number;
@@ -123,9 +133,9 @@ interface TopStripResponse {
   };
   /**
    * Daily series for the trailing 14 days ending at `window.to` (or today
-   * for "today" mode). Each array has exactly 14 elements, oldest first,
-   * zero-filled for missing days. Feeds the hero-card area charts on the
-   * home dashboard (Stripe pattern: big number + chart on same card).
+   * for "today" mode). `dates` is the ISO date for each index in the value
+   * arrays (Sofia-anchored); the rest are 14-element arrays oldest first,
+   * zero-filled for missing days. Feeds the hero-card area charts.
    *
    * Anchor stays at 14 days regardless of the selected preset so the chart
    * shape is a stable visual baseline — comparing "today" to "30d" doesn't
@@ -136,6 +146,7 @@ interface TopStripResponse {
    * series and risk drift.
    */
   series14d: {
+    dates: string[];
     business: { revenue: number[]; orders: number[]; aov: number[] };
     ads: { spend: number[]; revenue: number[]; roas: number[]; attribution: number[] };
     googleAds: { spend: number[]; revenue: number[]; purchases: number[]; roas: number[] } | null;
@@ -307,6 +318,7 @@ function buildSeries14d(
   googleAdsByDate: Map<string, { spend: number; revenue: number; purchases: number }>,
   includeGoogleAds: boolean
 ): TopStripResponse["series14d"] {
+  const dates: string[] = [];
   const revenueS: number[] = [];
   const ordersS: number[] = [];
   const aovS: number[] = [];
@@ -322,6 +334,7 @@ function buildSeries14d(
   const netS: number[] = [];
 
   for (const d of dates14d) {
+    dates.push(d);
     const sho = shopifyByDate.get(d) ?? { revenue: 0, orders: 0 };
     const m = metaByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 };
     const g = googleAdsByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 };
@@ -346,6 +359,7 @@ function buildSeries14d(
   }
 
   return {
+    dates,
     business: { revenue: revenueS, orders: ordersS, aov: aovS },
     ads: { spend: metaSpendS, revenue: metaRevenueS, roas: metaRoasS, attribution: attributionS },
     googleAds: includeGoogleAds
@@ -357,27 +371,69 @@ function buildSeries14d(
 
 /**
  * Build the channelMix composition snapshot — what % of Shopify revenue
- * each paid source claimed (Meta, Google), with the remainder bucketed as
- * "other" (organic / email / direct / referral / partial attribution).
+ * each paid source claimed, split into FOUR exclusive segments that sum
+ * to 100% (modulo rounding):
  *
- * "Other" is clamped to 0+ because Meta + Google attribution can briefly
- * exceed Shopify revenue at the edges (Meta credits a purchase before the
- * matching Shopify webhook lands) — we'd rather hide the over-attribution
- * here than render a negative slice. The attribution tile in the Meta
- * section is where the operator sees that warning.
+ *   meta       — only Meta claims this revenue
+ *   googleAds  — only Google claims this revenue
+ *   mixed      — BOTH platforms claim it (overlap; cross-attribution)
+ *   other      — neither claims it (organic / direct / email / referral)
+ *
+ * Math: inclusion-exclusion on two attribution windows.
+ *
+ *   mixed_lower_bound = max(0, M + G − Shopify)
+ *
+ * This is the MINIMUM provable overlap — the slice both platforms
+ * physically must have double-counted given the totals. Actual overlap
+ * may be higher (depending on hidden journey patterns), but we can't
+ * derive that from aggregates alone. So `mixed` is a floor, not the truth.
+ *
+ *   meta_unique   = max(0, M − mixed)
+ *   google_unique = max(0, G − mixed)
+ *   other         = max(0, Shopify − meta_unique − google_unique − mixed)
+ *
+ * When M + G ≤ Shopify, mixed = 0 and the segments behave like the old
+ * 3-way split. When M + G > Shopify, the surplus is correctly attributed
+ * to `mixed` instead of being silently clamped away.
+ *
+ * Rounding: we percent each segment from the same Shopify denominator,
+ * then nudge the largest segment so the percentages sum to exactly 100.
+ * Without that step, four rounded values often land at 99% or 101%.
  */
 function buildChannelMix(
   shopifyRevenue: number,
   metaRevenue: number,
   googleAdsRevenue: number
 ): TopStripResponse["crossPlatform"]["channelMix"] {
-  const otherRaw = shopifyRevenue - metaRevenue - googleAdsRevenue;
-  const other = Math.max(0, otherRaw);
   const total = shopifyRevenue > 0 ? shopifyRevenue : 1;
+  const mixedRev = Math.max(0, metaRevenue + googleAdsRevenue - shopifyRevenue);
+  const metaUnique = Math.max(0, metaRevenue - mixedRev);
+  const googleUnique = Math.max(0, googleAdsRevenue - mixedRev);
+  const otherRev = Math.max(0, shopifyRevenue - metaUnique - googleUnique - mixedRev);
+
+  const pct = (rev: number) => Math.round((rev / total) * 100);
+  const pcts = {
+    meta: pct(metaUnique),
+    googleAds: pct(googleUnique),
+    mixed: pct(mixedRev),
+    other: pct(otherRev),
+  };
+  // Force-sum to 100 by nudging the largest segment. Avoids "Meta 55% +
+  // Google 46% + Mixed 1% = 102%" rounding artefacts.
+  const sum = pcts.meta + pcts.googleAds + pcts.mixed + pcts.other;
+  if (sum !== 100 && shopifyRevenue > 0) {
+    const drift = 100 - sum;
+    const largestKey = (Object.keys(pcts) as (keyof typeof pcts)[]).reduce((a, b) =>
+      pcts[a] >= pcts[b] ? a : b
+    );
+    pcts[largestKey] += drift;
+  }
+
   return {
-    meta: { revenue: metaRevenue, pct: Math.round((metaRevenue / total) * 100) },
-    googleAds: { revenue: googleAdsRevenue, pct: Math.round((googleAdsRevenue / total) * 100) },
-    other: { revenue: other, pct: Math.round((other / total) * 100) },
+    meta: { revenue: metaUnique, pct: pcts.meta },
+    googleAds: { revenue: googleUnique, pct: pcts.googleAds },
+    mixed: { revenue: mixedRev, pct: pcts.mixed },
+    other: { revenue: otherRev, pct: pcts.other },
     shopifyRevenue,
   };
 }
