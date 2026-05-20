@@ -321,7 +321,11 @@ function ChannelMixTile({ meta, googleAds, mixed, other, shopifyRevenue }: Chann
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-text">Микс на каналите</div>
-      <div className="flex h-2 rounded-full overflow-hidden bg-surface-2">
+      {/* h-3 + gap-x-px: 1.5x по-висок bar за повече визуална тежест; 1px
+          gap-овете показват surface-2 фона зад flex children-а и работят
+          като crisp разделители без да добавяме border (избягваме оverflow
+          edge cases при 0% сегменти). */}
+      <div className="flex h-3 rounded-full overflow-hidden bg-surface-2 gap-x-px">
         <div
           className="bg-text-3 transition-all"
           style={{ width: `${meta.pct}%` }}
