@@ -13,7 +13,7 @@ import {
 } from "@/lib/sofia-date";
 import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
 import { EARLY_DAY_THRESHOLD_HOURS } from "@/components/dashboard/store-state";
-import { fetchGoogleAdsByDate, sumGoogleAds } from "@/lib/google-ads-by-date";
+import { fetchGoogleAdsByDateAllMarkets, sumGoogleAds } from "@/lib/google-ads-by-date";
 
 // ============================================================
 // Types
@@ -298,7 +298,7 @@ export async function GET(req: NextRequest) {
           .in("severity", ["red", "amber"])
           .eq("status", "pending"),
         fetchShopifyByDate(datesToFetch),
-        fetchGoogleAdsByDate(datesToFetch),
+        fetchGoogleAdsByDateAllMarkets(datesToFetch),
       ]);
 
     if (error) {

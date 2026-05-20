@@ -1,5 +1,8 @@
 import { logger } from "./logger";
 import { runReport, isGA4Configured } from "./ga4";
+import { GA4_BOUND_MARKETS, getGA4PropertyForMarket } from "./google-ads-markets";
+
+type DailyAds = { spend: number; revenue: number; purchases: number };
 
 /**
  * Fetch Google Ads metrics from GA4 for a set of dates, returned keyed by
@@ -16,16 +19,19 @@ import { runReport, isGA4Configured } from "./ga4";
  *     so callers can index the map with the same date strings they use for
  *     Meta and Shopify.
  *
+ * `propertyId` defaults to the env GA4_PROPERTY_ID (BG). Stores route
+ * passes per-market IDs from `google-ads-markets.ts`; top-strip uses
+ * `fetchGoogleAdsByDateAllMarkets` to merge across every bound market.
+ *
  * Returns an empty map on any failure — callers should treat this as "no
  * Google Ads data for this period", not as a hard error. Logs the error for
- * ops visibility. Used by both /api/dashboard/home/top-strip (aggregate
- * across all markets) and /api/dashboard/home/stores (per-store, BG only
- * for now since we only have one GA4 property bound).
+ * ops visibility.
  */
 export async function fetchGoogleAdsByDate(
-  dates: string[]
-): Promise<Map<string, { spend: number; revenue: number; purchases: number }>> {
-  const byDate = new Map<string, { spend: number; revenue: number; purchases: number }>();
+  dates: string[],
+  propertyId?: string
+): Promise<Map<string, DailyAds>> {
+  const byDate = new Map<string, DailyAds>();
   if (!isGA4Configured() || dates.length === 0) return byDate;
 
   const sorted = [...dates].sort();
@@ -43,6 +49,7 @@ export async function fetchGoogleAdsByDate(
       // affect aggregation correctness; helps debugging.
       orderBys: [{ dimension: { dimensionName: "date" }, desc: false }],
       limit: 5000,
+      propertyId,
     });
 
     for (const r of rows) {
@@ -77,9 +84,9 @@ export async function fetchGoogleAdsByDate(
 
 /** Sum across a subset of dates from a byDate map. */
 export function sumGoogleAds(
-  byDate: Map<string, { spend: number; revenue: number; purchases: number }>,
+  byDate: Map<string, DailyAds>,
   dates: string[]
-): { spend: number; revenue: number; purchases: number } {
+): DailyAds {
   const out = { spend: 0, revenue: 0, purchases: 0 };
   for (const d of dates) {
     const row = byDate.get(d);
@@ -89,4 +96,42 @@ export function sumGoogleAds(
     out.purchases += row.purchases;
   }
   return out;
+}
+
+/**
+ * Fan out across every market with a bound GA4 property and merge the
+ * per-property byDate maps into one. Used by top-strip to aggregate the
+ * global Google Ads section.
+ *
+ * One GA4 call per property, in parallel — fast and resilient (one failed
+ * property doesn't take down the others, since fetchGoogleAdsByDate
+ * swallows errors and returns an empty map).
+ */
+export async function fetchGoogleAdsByDateAllMarkets(
+  dates: string[]
+): Promise<Map<string, DailyAds>> {
+  if (GA4_BOUND_MARKETS.length === 0 || dates.length === 0) {
+    return new Map<string, DailyAds>();
+  }
+
+  const perMarket = await Promise.all(
+    GA4_BOUND_MARKETS.map((market) => {
+      const propertyId = getGA4PropertyForMarket(market);
+      return propertyId
+        ? fetchGoogleAdsByDate(dates, propertyId)
+        : Promise.resolve(new Map<string, DailyAds>());
+    })
+  );
+
+  const merged = new Map<string, DailyAds>();
+  for (const m of perMarket) {
+    for (const [date, val] of m) {
+      const existing = merged.get(date) ?? { spend: 0, revenue: 0, purchases: 0 };
+      existing.spend += val.spend;
+      existing.revenue += val.revenue;
+      existing.purchases += val.purchases;
+      merged.set(date, existing);
+    }
+  }
+  return merged;
 }

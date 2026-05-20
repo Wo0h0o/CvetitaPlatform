@@ -17,11 +17,7 @@ import {
 // the home dashboard renders, so the type must stay in sync.
 import type { BorderLevel } from "@/components/dashboard/store-state";
 import { fetchGoogleAdsByDate, sumGoogleAds } from "@/lib/google-ads-by-date";
-
-// Markets that have a GA4 property bound under our OAuth. Only BG for now —
-// the other markets either don't have a GA4 property or their property isn't
-// linked to our refresh token. UI renders dash for these rows.
-const GA4_BOUND_MARKETS = new Set(["bg"]);
+import { getGA4PropertyForMarket } from "@/lib/google-ads-markets";
 
 // ============================================================
 // Types
@@ -164,10 +160,11 @@ async function buildStoreCard(
   );
 
   const storeSchema = `store_${market.marketCode}`;
-  // Google Ads only for markets with a GA4 property bound — currently BG.
-  // For every other market we resolve with an empty map so the rest of the
-  // pipeline doesn't branch on conditional types; the final payload is null.
-  const ga4Bound = GA4_BOUND_MARKETS.has(market.marketCode);
+  // Google Ads only for markets with a GA4 property bound — currently BG + GR.
+  // getGA4PropertyForMarket returns null for unbound markets; we resolve them
+  // with an empty map so the rest of the pipeline doesn't branch on
+  // conditional types, and the final payload is null.
+  const ga4PropertyId = getGA4PropertyForMarket(market.marketCode);
 
   const [insightsRes, accountsRes, shopifyWindowRes, googleAdsByDate] = await Promise.all([
     supabaseAdmin
@@ -188,8 +185,8 @@ async function buildStoreCard(
       p_schema: storeSchema,
       p_dates: windowDates,
     }),
-    ga4Bound
-      ? fetchGoogleAdsByDate(windowDates)
+    ga4PropertyId
+      ? fetchGoogleAdsByDate(windowDates, ga4PropertyId)
       : Promise.resolve(new Map<string, { spend: number; revenue: number; purchases: number }>()),
   ]);
 
@@ -282,7 +279,7 @@ async function buildStoreCard(
   // is empty for those (resolved above), so calling sumGoogleAds is safe;
   // we just gate the assembly so the UI gets a clean "no data" signal.
   let googleAds: StoreCardPayload["googleAds"] = null;
-  if (ga4Bound) {
+  if (ga4PropertyId) {
     const ga = sumGoogleAds(googleAdsByDate, windowDates);
     if (ga.spend > 0 || ga.revenue > 0 || ga.purchases > 0) {
       googleAds = {

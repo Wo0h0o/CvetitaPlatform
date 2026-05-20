@@ -58,6 +58,12 @@ export interface RunReportOptions {
   orderBys?: GA4OrderBy[];
   /** GA4 dimensionFilter object — passed through verbatim. */
   dimensionFilter?: GA4DimensionFilter;
+  /**
+   * Property ID override. Defaults to env GA4_PROPERTY_ID (= BG / cvetitaherbal.com).
+   * Multi-market routes (stores, top-strip) pass per-market IDs from
+   * `lib/google-ads-markets.ts` to fan out across all bound storefronts.
+   */
+  propertyId?: string;
 }
 
 export function isGA4Configured(): boolean {
@@ -119,8 +125,9 @@ export async function runReport(opts: RunReportOptions): Promise<GA4Row[]> {
   if (opts.limit) body.limit = opts.limit;
   if (opts.dimensionFilter) body.dimensionFilter = opts.dimensionFilter;
 
+  const propertyId = opts.propertyId || GA4_PROPERTY_ID;
   const res = await fetchWithTimeout(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
