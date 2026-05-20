@@ -65,12 +65,17 @@ async function runReport(metrics: string[], dimensions: string[], startDate: str
   return data.rows || [];
 }
 
-// Brand campaigns have "brand" (case-insensitive) in the campaign name and
-// systematically over-attribute revenue — they intercept users who already
-// know the brand. Separating them prevents non-brand prospecting decisions
-// from being skewed by brand search performance.
+// Brand campaigns intercept users who already know the brand and inflate
+// last-click attribution. Separating them prevents non-brand prospecting
+// decisions from being skewed by brand-search performance.
+//
+// Caveat: naming convention here is "NonBrand" (no space) for prospecting,
+// which a naive /brand/i regex catches as "Brand" and inverts the entire
+// dashboard. The negative lookbehind excludes any non/non-/non brand prefix
+// before requiring "brand" as a whole word.
 function isBrandCampaign(name: string): boolean {
-  return /brand/i.test(name);
+  if (/non[\s-]?brand/i.test(name)) return false;
+  return /\bbrand\b/i.test(name);
 }
 
 // Demand Gen / video campaigns are view-through-heavy; last-click ROAS
