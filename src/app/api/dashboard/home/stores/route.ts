@@ -16,6 +16,12 @@ import {
 // Canonical BorderLevel lives in store-state — the route's payload is what
 // the home dashboard renders, so the type must stay in sync.
 import type { BorderLevel } from "@/components/dashboard/store-state";
+import { fetchGoogleAdsByDate, sumGoogleAds } from "@/lib/google-ads-by-date";
+
+// Markets that have a GA4 property bound under our OAuth. Only BG for now —
+// the other markets either don't have a GA4 property or their property isn't
+// linked to our refresh token. UI renders dash for these rows.
+const GA4_BOUND_MARKETS = new Set(["bg"]);
 
 // ============================================================
 // Types
@@ -57,6 +63,16 @@ interface StoreCardPayload {
   borderLevel: BorderLevel;
   lastSyncedAt: string | null;
   accountCreatedAt: string | null;
+  /**
+   * Google Ads totals over the selected window. Null when this market has
+   * no GA4 property bound (see GA4_BOUND_MARKETS) — UI renders "—".
+   */
+  googleAds: {
+    spend: number;
+    revenue: number;
+    roas: number;
+    purchases: number;
+  } | null;
 }
 
 interface StoresResponse {
@@ -148,7 +164,12 @@ async function buildStoreCard(
   );
 
   const storeSchema = `store_${market.marketCode}`;
-  const [insightsRes, accountsRes, shopifyWindowRes] = await Promise.all([
+  // Google Ads only for markets with a GA4 property bound — currently BG.
+  // For every other market we resolve with an empty map so the rest of the
+  // pipeline doesn't branch on conditional types; the final payload is null.
+  const ga4Bound = GA4_BOUND_MARKETS.has(market.marketCode);
+
+  const [insightsRes, accountsRes, shopifyWindowRes, googleAdsByDate] = await Promise.all([
     supabaseAdmin
       .from("meta_insights_by_store")
       .select("date, spend, revenue")
@@ -167,6 +188,9 @@ async function buildStoreCard(
       p_schema: storeSchema,
       p_dates: windowDates,
     }),
+    ga4Bound
+      ? fetchGoogleAdsByDate(windowDates)
+      : Promise.resolve(new Map<string, { spend: number; revenue: number; purchases: number }>()),
   ]);
 
   if (insightsRes.error) throw new Error(insightsRes.error.message);
@@ -254,6 +278,22 @@ async function buildStoreCard(
       ? createdTimes.reduce((a, b) => (a > b ? a : b))
       : null;
 
+  // Google Ads payload — null for markets without a GA4 property. The map
+  // is empty for those (resolved above), so calling sumGoogleAds is safe;
+  // we just gate the assembly so the UI gets a clean "no data" signal.
+  let googleAds: StoreCardPayload["googleAds"] = null;
+  if (ga4Bound) {
+    const ga = sumGoogleAds(googleAdsByDate, windowDates);
+    if (ga.spend > 0 || ga.revenue > 0 || ga.purchases > 0) {
+      googleAds = {
+        spend: Number(ga.spend.toFixed(2)),
+        revenue: Number(ga.revenue.toFixed(2)),
+        roas: ga.spend > 0 ? Number((ga.revenue / ga.spend).toFixed(2)) : 0,
+        purchases: ga.purchases,
+      };
+    }
+  }
+
   return {
     storeId: market.storeId,
     marketCode: market.marketCode,
@@ -268,6 +308,7 @@ async function buildStoreCard(
     borderLevel,
     lastSyncedAt,
     accountCreatedAt,
+    googleAds,
   };
 }
 

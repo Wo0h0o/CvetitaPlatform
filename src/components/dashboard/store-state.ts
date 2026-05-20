@@ -45,6 +45,17 @@ export interface StoreCardData {
   lastSyncedAt: string | null;
   /** MAX(created_at) across bindings — lets FreshnessDot amber-grade new accounts. */
   accountCreatedAt: string | null;
+  /**
+   * Google Ads totals over the selected window from GA4 advertiserAd*
+   * metrics. Null when this market has no GA4 property bound under our
+   * OAuth — currently only BG has one, so non-BG rows render dash.
+   */
+  googleAds: {
+    spend: number;
+    revenue: number;
+    roas: number;
+    purchases: number;
+  } | null;
 }
 
 export const STATE_LABEL: Record<DisplayState, string> = {

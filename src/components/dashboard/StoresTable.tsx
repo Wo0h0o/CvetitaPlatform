@@ -160,8 +160,8 @@ export function StoresTable({ queryString, preset, rangeLabel }: StoresTableProp
 
   const description =
     preset === "today"
-      ? "Приходи (Shopify) и attribution срещу Meta-разход — за всеки магазин (днес)."
-      : `Приходи (Shopify) и attribution срещу Meta-разход — за всеки магазин (${rangeLabel}).`;
+      ? "Приходи (Shopify), Meta attribution и Google Ads — за всеки магазин (днес)."
+      : `Приходи (Shopify), Meta attribution и Google Ads — за всеки магазин (${rangeLabel}).`;
 
   return (
     <section className="mb-6">
@@ -207,7 +207,8 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
                 Meta attribution
               </th>
               <th className="text-right px-4 py-2.5 font-medium">Meta разход</th>
-              <th className="text-right px-4 py-2.5 font-medium">ROAS</th>
+              <th className="text-right px-4 py-2.5 font-medium">Meta ROAS</th>
+              <th className="text-right px-4 py-2.5 font-medium">Google Ads</th>
               <th className="text-left px-4 py-2.5 font-medium">Статус</th>
               <th className="text-right px-4 py-2.5 font-medium"></th>
             </tr>
@@ -255,6 +256,21 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
                   <div className="text-[11px] text-text-3">
                     медиана 14д: {fmtRoas(store.roasMedian14d)}
                   </div>
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-text-2">
+                  {store.googleAds ? (
+                    <>
+                      {fmtEur(store.googleAds.spend)}
+                      <div className="text-[11px] text-text-3">
+                        ROAS: {fmtRoas(store.googleAds.roas)} · {store.googleAds.purchases} покупки
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-text-3">—</span>
+                      <div className="text-[11px] text-text-3">GA4 не свързан</div>
+                    </>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <StatusPill state={state} />
@@ -326,13 +342,30 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-text-3">ROAS</div>
+                <div className="text-[11px] text-text-3">Meta ROAS</div>
                 <div className="font-medium text-text tabular-nums">
                   {fmtRoas(store.roasLast24h)}
                 </div>
                 <div className="text-[11px] text-text-3">
                   медиана: {fmtRoas(store.roasMedian14d)}
                 </div>
+              </div>
+              <div className="col-span-2">
+                <div className="text-[11px] text-text-3">Google Ads</div>
+                {store.googleAds ? (
+                  <>
+                    <div className="font-medium text-text tabular-nums">
+                      {fmtEur(store.googleAds.spend)} · ROAS {fmtRoas(store.googleAds.roas)}
+                    </div>
+                    <div className="text-[11px] text-text-3">
+                      {store.googleAds.purchases} покупки
+                    </div>
+                  </>
+                ) : (
+                  <div className="font-medium text-text-3">
+                    — <span className="text-[11px]">GA4 не свързан</span>
+                  </div>
+                )}
               </div>
             </div>
 
