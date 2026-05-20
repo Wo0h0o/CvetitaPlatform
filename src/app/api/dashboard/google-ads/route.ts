@@ -43,7 +43,14 @@ interface GA4Row {
   metricValues?: { value: string }[];
 }
 
-async function runReport(metrics: string[], dimensions: string[], startDate: string, endDate: string, limit = 50): Promise<GA4Row[]> {
+async function runReport(
+  metrics: string[],
+  dimensions: string[],
+  startDate: string,
+  endDate: string,
+  limit = 50,
+  orderBys?: Record<string, unknown>[]
+): Promise<GA4Row[]> {
   const token = await getAccessToken();
   const res = await fetchWithTimeout(
     `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
@@ -54,7 +61,7 @@ async function runReport(metrics: string[], dimensions: string[], startDate: str
         dateRanges: [{ startDate, endDate }],
         metrics: metrics.map((name) => ({ name })),
         dimensions: dimensions.map((name) => ({ name })),
-        orderBys: [{ metric: { metricName: metrics[0] }, desc: true }],
+        orderBys: orderBys || [{ metric: { metricName: metrics[0] }, desc: true }],
         limit,
       }),
     },
@@ -238,9 +245,20 @@ export async function GET(req: NextRequest) {
     const [currentRows, previousRows, dailyRows] = await Promise.all([
       runReport(ADS_METRICS, ["sessionGoogleAdsCampaignName"], range.from, range.to, 50),
       runReport(ADS_METRICS, ["sessionGoogleAdsCampaignName"], range.compFrom, range.compTo, 50),
-      // Daily series for the chart — `date` dim returns YYYYMMDD strings.
-      // Cap at 100 rows (covers up to 90d preset).
-      runReport(ADS_METRICS, ["date"], range.from, range.to, 100),
+      // Daily series for the chart. GA4 quirk: advertiserAd* metrics are
+      // session-scoped — querying them with `date` alone returns HTTP 400
+      // ("Please add sessionCampaignName to make the request compatible").
+      // We add sessionGoogleAdsCampaignName as a second dimension and
+      // aggregate by date in code below. limit 2000 covers 90d × ~22
+      // campaigns with headroom.
+      runReport(
+        ADS_METRICS,
+        ["date", "sessionGoogleAdsCampaignName"],
+        range.from,
+        range.to,
+        2000,
+        [{ dimension: { dimensionName: "date" }, desc: false }]
+      ),
     ]);
 
     const current = processCampaignRows(currentRows);
@@ -259,19 +277,30 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // Daily aggregate, sorted ascending by date for left-to-right time flow.
-    // We filter out 0-spend days at the edges (campaign launched/paused
-    // mid-period) — they collapse a chart's visual range and add noise.
-    const dailyOverview = dailyRows
-      .map((r) => ({
-        date: r.dimensionValues?.[0]?.value || "",
-        spend: parseFloat(r.metricValues?.[0]?.value || "0"),
-        clicks: parseInt(r.metricValues?.[1]?.value || "0"),
-        impressions: parseInt(r.metricValues?.[2]?.value || "0"),
-        purchases: parseInt(r.metricValues?.[3]?.value || "0"),
-        revenue: parseFloat(r.metricValues?.[4]?.value || "0"),
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    // Daily aggregate. Each row is one (date, campaign) pair — we collapse
+    // by date and skip the (not set) campaign bucket so the chart's ROAS
+    // matches the overview ROAS exactly (same exclusion rule as
+    // processCampaignRows). Sort ascending for left-to-right time flow.
+    const dailyMap = new Map<string, { date: string; spend: number; clicks: number; impressions: number; purchases: number; revenue: number }>();
+    for (const r of dailyRows) {
+      const date = r.dimensionValues?.[0]?.value || "";
+      const campaign = r.dimensionValues?.[1]?.value || "";
+      if (!date) continue;
+      if (campaign === "(not set)" || campaign === "") continue;
+      const spend = parseFloat(r.metricValues?.[0]?.value || "0");
+      const clicks = parseInt(r.metricValues?.[1]?.value || "0");
+      const impressions = parseInt(r.metricValues?.[2]?.value || "0");
+      const purchases = parseInt(r.metricValues?.[3]?.value || "0");
+      const revenue = parseFloat(r.metricValues?.[4]?.value || "0");
+      const existing = dailyMap.get(date) ?? { date, spend: 0, clicks: 0, impressions: 0, purchases: 0, revenue: 0 };
+      existing.spend += spend;
+      existing.clicks += clicks;
+      existing.impressions += impressions;
+      existing.purchases += purchases;
+      existing.revenue += revenue;
+      dailyMap.set(date, existing);
+    }
+    const dailyOverview = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
     return NextResponse.json(
       {
