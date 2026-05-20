@@ -94,6 +94,22 @@ export default function TrafficPage() {
     return [...data.topPages].sort((a, b) => ((a[pageSortKey] ?? 0) - (b[pageSortKey] ?? 0)) * dir);
   }, [data?.topPages, pageSortKey, pageSortDir]);
 
+  // Sparkline data — slice the daily series into one array per hero KPI.
+  // MUST be declared before any early return: rules-of-hooks require hooks
+  // to run in the same order every render. (Last time I parked this after
+  // the loading guard and Vercel build red-screened. Don't do that again.)
+  const sparks = useMemo(() => {
+    const daily = data?.dailyOverview;
+    if (!daily || daily.length < 2) return null;
+    return {
+      sessions: daily.map((d) => d.sessions),
+      users: daily.map((d) => d.users),
+      engagementRate: daily.map((d) => d.engagementRate),
+      purchases: daily.map((d) => d.purchases),
+      conversions: daily.map((d) => d.conversions),
+    };
+  }, [data?.dailyOverview]);
+
   if (isLoading) {
     return (
       <>
@@ -149,22 +165,6 @@ export default function TrafficPage() {
         conversions: calcDeltaPct(ov?.conversions ?? 0, prev.conversions),
       }
     : null;
-
-  // Sparkline data — slice the daily series into one array per hero KPI.
-  // Memoized so the SparkLine refs don't churn on every parent re-render
-  // (sortable table toggles cause re-renders that would otherwise create
-  // new arrays each time and force Recharts to re-animate).
-  const sparks = useMemo(() => {
-    const daily = data?.dailyOverview;
-    if (!daily || daily.length < 2) return null;
-    return {
-      sessions: daily.map((d) => d.sessions),
-      users: daily.map((d) => d.users),
-      engagementRate: daily.map((d) => d.engagementRate),
-      purchases: daily.map((d) => d.purchases),
-      conversions: daily.map((d) => d.conversions),
-    };
-  }, [data?.dailyOverview]);
 
   // Funnel steps: keep display order fixed even if GA4 returns events in
   // a different sequence. Missing events show 0 (FunnelChart handles
