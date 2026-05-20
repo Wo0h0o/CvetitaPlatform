@@ -3,17 +3,18 @@
 import { useState, useMemo } from "react";
 import useSWR from "swr";
 import {
-  Card, CardHeader, CardBody,
-} from "@/components/shared/Card";
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
 import {
-  Search, DollarSign, TrendingUp, ShoppingCart, MousePointerClick, Eye,
-  ArrowUpDown, ChevronDown, ChevronUp, Video, Crown, Sparkles, Info,
+  ArrowUpDown, ChevronDown, ChevronUp, Info,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { useDateRange } from "@/hooks/useDateRange";
 import { MiniKpi } from "@/components/shared/MiniKpi";
+import { Delta, calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -42,43 +43,57 @@ interface Campaign {
   isVideo: boolean;
 }
 
+interface OverviewMetrics {
+  spend: number;
+  revenue: number;
+  roas: number;
+  purchases: number;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  cpa: number;
+  cpc: number;
+}
+
+interface DailyRow {
+  date: string;
+  spend: number;
+  clicks: number;
+  impressions: number;
+  purchases: number;
+  revenue: number;
+}
+
 interface GoogleAdsData {
   period: string;
-  overview: {
-    spend: number; revenue: number; roas: number; purchases: number;
-    clicks: number; impressions: number; ctr: number; cpa: number; cpc: number;
-  };
+  compare?: { from: string; to: string; label: string };
+  overview: OverviewMetrics;
+  previousOverview?: OverviewMetrics;
   brandSplit: { brand: Bucket; nonBrand: Bucket };
+  previousBrandSplit?: { brand: Bucket; nonBrand: Bucket };
   campaigns: Campaign[];
+  previousCampaigns?: Record<string, { spend: number; revenue: number; roas: number; purchases: number }>;
+  dailyOverview?: DailyRow[];
   error?: string;
 }
 
 type SortKey = "spend" | "roas" | "purchases" | "ctr";
 type ViewFilter = "all" | "brand" | "non-brand";
 
-const fmtMoney = (n: number) => n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " EUR";
+const fmtMoneyShort = (n: number) => Math.round(n).toLocaleString("bg-BG") + " €";
 const fmtInt = (n: number) => Math.round(n).toLocaleString("bg-BG");
 const fmtPct = (n: number, digits = 1) => (n * 100).toFixed(digits) + "%";
 const fmtRoas = (n: number) => n.toFixed(2) + "x";
 
-// Tier colors for ROAS. Brand-search-intercept and pure-prospecting
-// have different healthy bands, but a global threshold is a good first
-// pass; the brand/non-brand split below also fixes the mental model.
-function roasTier(roas: number, isVideo: boolean): "good" | "watch" | "poor" | "view-through" {
-  if (isVideo && roas === 0) return "view-through";
-  if (roas >= 2.5) return "good";
-  if (roas >= 1) return "watch";
-  return "poor";
+// GA4's `date` dim is "YYYYMMDD". For the chart axis we want a compact
+// "DD.MM" so a 30-day window still reads cleanly at narrow widths.
+function fmtChartDate(d: string): string {
+  if (d.length !== 8) return d;
+  return `${d.slice(6, 8)}.${d.slice(4, 6)}`;
 }
-const TIER_STYLES: Record<ReturnType<typeof roasTier>, string> = {
-  good: "text-emerald-600 dark:text-emerald-400 font-semibold",
-  watch: "text-amber-600 dark:text-amber-400 font-medium",
-  poor: "text-red-600 dark:text-red-400 font-semibold",
-  "view-through": "text-text-3 italic",
-};
 
 export default function GoogleAdsPage() {
-  const { queryString, label } = useDateRange();
+  const { queryString } = useDateRange();
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [view, setView] = useState<ViewFilter>("all");
@@ -103,12 +118,39 @@ export default function GoogleAdsPage() {
     return [...list].sort((a, b) => ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * dir);
   }, [data?.campaigns, view, sortKey, sortDir]);
 
+  // Sparkline data per hero KPI. Memoize so table sort/filter toggles don't
+  // create fresh arrays each render and force Recharts to re-animate.
+  const sparks = useMemo(() => {
+    const daily = data?.dailyOverview;
+    if (!daily || daily.length < 2) return null;
+    return {
+      spend: daily.map((d) => d.spend),
+      revenue: daily.map((d) => d.revenue),
+      roas: daily.map((d) => (d.spend > 0 ? d.revenue / d.spend : 0)),
+      purchases: daily.map((d) => d.purchases),
+      ctr: daily.map((d) => (d.impressions > 0 ? d.clicks / d.impressions : 0)),
+    };
+  }, [data?.dailyOverview]);
+
+  // Daily chart data — Recharts wants typed dates (`name`) + numeric series.
+  // ROAS is derived per day; we guard against div-by-zero so the line falls
+  // to 0 on no-spend days rather than rendering as NaN gaps.
+  const chartData = useMemo(() => {
+    const daily = data?.dailyOverview;
+    if (!daily) return [];
+    return daily.map((d) => ({
+      date: fmtChartDate(d.date),
+      spend: d.spend,
+      roas: d.spend > 0 ? d.revenue / d.spend : 0,
+    }));
+  }, [data?.dailyOverview]);
+
   if (isLoading) {
     return (
       <>
         <PageHeader title="Google Ads"><DateRangePicker /></PageHeader>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => <KpiSkeleton key={i} />)}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          {[1, 2, 3, 4, 5].map((i) => <KpiSkeleton key={i} />)}
         </div>
         <Card><CardBody><Skeleton className="h-64 w-full" /></CardBody></Card>
       </>
@@ -139,103 +181,200 @@ export default function GoogleAdsPage() {
   }
 
   const ov = data?.overview;
+  const prev = data?.previousOverview;
   const split = data?.brandSplit;
+  const prevSplit = data?.previousBrandSplit;
   const hasVideoCampaigns = (data?.campaigns || []).some((c) => c.isVideo);
+
+  const deltas = ov && prev
+    ? {
+        spend: calcDeltaPct(ov.spend, prev.spend),
+        revenue: calcDeltaPct(ov.revenue, prev.revenue),
+        roas: calcDeltaPct(ov.roas, prev.roas),
+        purchases: calcDeltaPct(ov.purchases, prev.purchases),
+        ctr: calcDeltaPp(ov.ctr, prev.ctr),
+      }
+    : null;
 
   return (
     <>
       <PageHeader title="Google Ads"><DateRangePicker /></PageHeader>
 
-      <p className="text-[12px] text-text-2 mb-4">
+      <p className="text-[12px] text-text-2 mb-6 max-w-3xl">
         Данни от GA4 (last-click attribution). Brand vs Non-brand сплит изключва (not set) bucket-а
         — реален ROAS, не GA4 default-ният inflated.
       </p>
 
-      {/* Overview KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-        <MiniKpi icon={DollarSign} label={`Spend (${label})`} value={fmtMoney(ov?.spend || 0)} />
-        <MiniKpi icon={TrendingUp} label="Revenue" value={fmtMoney(ov?.revenue || 0)} />
-        <MiniKpi icon={Sparkles} label="ROAS" value={fmtRoas(ov?.roas || 0)} />
-        <MiniKpi icon={ShoppingCart} label="Покупки" value={fmtInt(ov?.purchases || 0)} />
-        <MiniKpi icon={MousePointerClick} label="Clicks" value={fmtInt(ov?.clicks || 0)} />
-        <MiniKpi icon={Eye} label="CTR" value={fmtPct(ov?.ctr || 0, 2)} />
+      {/* Hero KPI strip — design contract §3 (no icons), §4 (delta below), §7 (sparkline) */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <MiniKpi
+          hero
+          label="Spend"
+          value={fmtMoneyShort(ov?.spend || 0)}
+          delta={deltas ? { pct: deltas.spend } : undefined}
+          sparkData={sparks?.spend}
+        />
+        <MiniKpi
+          hero
+          label="Приход"
+          value={fmtMoneyShort(ov?.revenue || 0)}
+          delta={deltas ? { pct: deltas.revenue } : undefined}
+          sparkData={sparks?.revenue}
+        />
+        <MiniKpi
+          hero
+          label="ROAS"
+          value={fmtRoas(ov?.roas || 0)}
+          delta={deltas ? { pct: deltas.roas } : undefined}
+          sparkData={sparks?.roas}
+        />
+        <MiniKpi
+          hero
+          label="Покупки"
+          value={fmtInt(ov?.purchases || 0)}
+          delta={deltas ? { pct: deltas.purchases } : undefined}
+          sparkData={sparks?.purchases}
+        />
+        <MiniKpi
+          hero
+          label="CTR"
+          value={fmtPct(ov?.ctr || 0, 2)}
+          delta={deltas ? { pct: deltas.ctr, unit: "pp" } : undefined}
+          sparkData={sparks?.ctr}
+        />
       </div>
 
-      {/* Brand vs Non-Brand split. Apple-style cards: subtle hairline ring on
-          the share pill (no pastel fill), tabular nums on KPI values, ROAS
-          carries the only color signal (tier-coded). Restraint > saturation. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      {/* Brand vs Non-Brand split — neutral values, delta carries the only direction signal */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {[
-          { key: "brand" as const, data: split?.brand, label: "Brand", icon: Crown, hint: "Хора, които вече знаят Cvetita и търсят името. Високите ROAS числа са естествени — не са знак, че campaign-ите 'работят'." },
-          { key: "non-brand" as const, data: split?.nonBrand, label: "Non-Brand", icon: Search, hint: "Prospecting + retargeting от non-brand search. Тук е реалният growth signal — целта е ROAS ≥ 2x минимум." },
-        ].map(({ key, data: b, label: lab, icon: Icon, hint }) => {
+          { key: "brand" as const, data: split?.brand, prev: prevSplit?.brand, label: "Brand", hint: "Хора, които вече знаят Cvetita и търсят името. Високите ROAS числа са естествени — не са знак, че кампаниите 'работят'." },
+          { key: "non-brand" as const, data: split?.nonBrand, prev: prevSplit?.nonBrand, label: "Non-Brand", hint: "Prospecting + retargeting от non-brand search. Тук е реалният growth signal — целта е ROAS ≥ 2x минимум." },
+        ].map(({ key, data: b, prev: p, label: lab, hint }) => {
           if (!b) return null;
-          const tier = b.roas >= 2.5 ? "good" : b.roas >= 1 ? "watch" : "poor";
+          const spendDelta = p ? calcDeltaPct(b.spend, p.spend) : null;
+          const revenueDelta = p ? calcDeltaPct(b.revenue, p.revenue) : null;
+          const roasDelta = p ? calcDeltaPct(b.roas, p.roas) : null;
+          const purchasesDelta = p ? calcDeltaPct(b.purchases, p.purchases) : null;
           return (
             <Card key={key}>
               <CardHeader action={
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium text-text-2 ring-1 ring-inset ring-border/60 tabular-nums">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium text-text-2 ring-1 ring-inset ring-border tabular-nums">
                   {b.sharePct.toFixed(1)}% от spend-а
                 </span>
-              }>
-                <div className="flex items-center gap-2">
-                  <Icon size={16} className="text-text-2" />
-                  <span>{lab}</span>
-                </div>
-              </CardHeader>
+              }>{lab}</CardHeader>
               <CardBody>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-5">
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">Spend</div>
-                    <div className="text-[15px] font-semibold text-text tabular-nums">{fmtMoney(b.spend)}</div>
+                    <div className="text-[13px] font-semibold text-text-2 mb-1.5">Spend</div>
+                    <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">{fmtMoneyShort(b.spend)}</div>
+                    {spendDelta !== null && <Delta pct={spendDelta} className="mt-1.5" />}
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">Revenue</div>
-                    <div className="text-[15px] font-semibold text-text tabular-nums">{fmtMoney(b.revenue)}</div>
+                    <div className="text-[13px] font-semibold text-text-2 mb-1.5">Приход</div>
+                    <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">{fmtMoneyShort(b.revenue)}</div>
+                    {revenueDelta !== null && <Delta pct={revenueDelta} className="mt-1.5" />}
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">ROAS</div>
-                    <div className={`text-[17px] tabular-nums ${TIER_STYLES[tier]}`}>{fmtRoas(b.roas)}</div>
+                    <div className="text-[13px] font-semibold text-text-2 mb-1.5">ROAS</div>
+                    <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">{fmtRoas(b.roas)}</div>
+                    {roasDelta !== null && <Delta pct={roasDelta} className="mt-1.5" />}
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-text-3 mb-1">Покупки</div>
-                    <div className="text-[15px] font-semibold text-text tabular-nums">{fmtInt(b.purchases)}</div>
+                    <div className="text-[13px] font-semibold text-text-2 mb-1.5">Покупки</div>
+                    <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">{fmtInt(b.purchases)}</div>
+                    {purchasesDelta !== null && <Delta pct={purchasesDelta} className="mt-1.5" />}
                   </div>
                 </div>
-                <p className="text-[11px] text-text-3 leading-snug mt-4 pt-3 border-t border-border">{hint}</p>
+                <p className="text-[12px] text-text-3 leading-snug mt-5 pt-4 border-t border-border">{hint}</p>
               </CardBody>
             </Card>
           );
         })}
       </div>
 
-      {/* Video-attribution warning. Subtle amber tint via ring + 8% bg —
-          flag, not alarm. */}
-      {hasVideoCampaigns && (
-        <Card className="mb-4">
+      {/* Daily Spend + ROAS — composed chart, design contract §7 (light grid, no extra axes) */}
+      {chartData.length > 1 && (
+        <Card className="mb-6">
+          <CardHeader>Дневен spend и ROAS</CardHeader>
           <CardBody>
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/8 ring-1 ring-inset ring-amber-500/25 flex items-center justify-center flex-shrink-0">
-                <Info size={15} className="text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <div className="text-[13px] font-semibold text-text mb-1">Demand Gen / Video кампании</div>
-                <p className="text-[12px] text-text-2 leading-relaxed">
-                  Видео кампаниите се измерват с last-click attribution тук. Реалната им стойност идва от
-                  engaged-view conversions (различна метрика, не е достъпна през GA4 Data API). Не вземай
-                  ROAS 0x за тях буквално — само ги маркирай за отделна оценка през Google Ads UI.
-                </p>
-              </div>
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fill: "var(--text-3)", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval="preserveStartEnd"
+                    minTickGap={20}
+                  />
+                  <YAxis
+                    yAxisId="spend"
+                    tick={{ fill: "var(--text-3)", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={48}
+                    tickFormatter={(v) => `${Math.round(v)}€`}
+                  />
+                  <YAxis
+                    yAxisId="roas"
+                    orientation="right"
+                    tick={{ fill: "var(--text-3)", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={32}
+                    tickFormatter={(v) => `${v.toFixed(1)}x`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      boxShadow: "var(--shadow-md)",
+                    }}
+                    formatter={(value, name) => {
+                      const v = Number(value) || 0;
+                      if (name === "ROAS") return [`${v.toFixed(2)}x`, name];
+                      return [`${Math.round(v)} €`, name];
+                    }}
+                  />
+                  <Bar yAxisId="spend" dataKey="spend" name="Spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
+                  <Line
+                    yAxisId="roas"
+                    type="monotone"
+                    dataKey="roas"
+                    name="ROAS"
+                    stroke="var(--accent)"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
             </div>
           </CardBody>
         </Card>
       )}
 
-      {/* Campaign table */}
+      {/* Demand Gen / Video — thin status banner, not a full card. Status-state
+          is the §1 exception that lets us use an off-palette ring. */}
+      {hasVideoCampaigns && (
+        <div className="flex items-start gap-3 px-5 py-3 mb-6 rounded-xl bg-surface ring-1 ring-inset ring-border">
+          <Info size={15} className="text-text-2 flex-shrink-0 mt-0.5" />
+          <div className="text-[12px] text-text-2 leading-relaxed">
+            <span className="font-semibold text-text">Demand Gen / Video кампании:</span>{" "}
+            измерват се с last-click attribution тук. Реалната им стойност идва от engaged-view conversions
+            (различна метрика, не достъпна през GA4 Data API). Не вземай ROAS 0x за тях буквално.
+          </div>
+        </div>
+      )}
+
+      {/* Campaign table — neutral text, delta vs previous period carries direction */}
       <Card>
         <CardHeader action={
           <div className="flex items-center gap-2">
-            {/* View filter */}
             <div className="flex items-center gap-0.5 bg-surface-2 rounded-lg p-0.5">
               {([
                 ["all", "Всички"],
@@ -249,7 +388,6 @@ export default function GoogleAdsPage() {
                 >{l}</button>
               ))}
             </div>
-            {/* Sort buttons */}
             <div className="flex items-center gap-1">
               {([
                 ["spend", "Spend"],
@@ -281,18 +419,27 @@ export default function GoogleAdsPage() {
                   <div className="col-span-1 text-right">Clicks</div>
                   <div className="col-span-1 text-right">CTR</div>
                   <div className="col-span-1 text-right">Покупки</div>
-                  <div className="col-span-1 text-right">Revenue</div>
+                  <div className="col-span-1 text-right">Приход</div>
                   <div className="col-span-1 text-right">CPA</div>
                   <div className="col-span-1 text-right">ROAS</div>
                 </div>
                 {filteredCampaigns.map((c) => {
-                  const tier = roasTier(c.roas, c.isVideo);
+                  const prevC = data?.previousCampaigns?.[c.name];
+                  const roasDelta = prevC ? calcDeltaPct(c.roas, prevC.roas) : null;
                   return (
-                    <div key={c.name} className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors">
-                      <div className="col-span-5 flex items-center gap-1.5 min-w-0">
-                        {c.isBrand && <Crown size={11} className="text-amber-500 flex-shrink-0" />}
-                        {c.isVideo && <Video size={11} className="text-purple-500 flex-shrink-0" />}
+                    <div key={c.name} className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors border-b border-border last:border-b-0">
+                      <div className="col-span-5 flex items-center gap-2 min-w-0">
                         <span className="text-[12px] text-text truncate" title={c.name}>{c.name}</span>
+                        {c.isBrand && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium text-text-3 ring-1 ring-inset ring-border flex-shrink-0">
+                            brand
+                          </span>
+                        )}
+                        {c.isVideo && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium text-text-3 ring-1 ring-inset ring-border flex-shrink-0">
+                            video
+                          </span>
+                        )}
                       </div>
                       <div className="col-span-1 text-right text-[12px] text-text-2 tabular-nums">{c.spend.toFixed(0)}</div>
                       <div className="col-span-1 text-right text-[12px] text-text-2 tabular-nums">{fmtInt(c.clicks)}</div>
@@ -300,8 +447,13 @@ export default function GoogleAdsPage() {
                       <div className="col-span-1 text-right text-[12px] text-text-2 tabular-nums">{c.purchases}</div>
                       <div className="col-span-1 text-right text-[12px] text-text-2 tabular-nums">{c.revenue.toFixed(0)}</div>
                       <div className="col-span-1 text-right text-[12px] text-text-2 tabular-nums">{c.cpa > 0 ? c.cpa.toFixed(0) : "—"}</div>
-                      <div className={`col-span-1 text-right text-[12px] tabular-nums ${TIER_STYLES[tier]}`}>
-                        {tier === "view-through" ? "view" : fmtRoas(c.roas)}
+                      <div className="col-span-1 text-right">
+                        <div className="text-[13px] font-semibold text-text tabular-nums">
+                          {c.isVideo && c.roas === 0 ? "view" : fmtRoas(c.roas)}
+                        </div>
+                        {roasDelta !== null && !(c.isVideo && c.roas === 0) && (
+                          <Delta pct={roasDelta} label="" className="text-[10px]" />
+                        )}
                       </div>
                     </div>
                   );
