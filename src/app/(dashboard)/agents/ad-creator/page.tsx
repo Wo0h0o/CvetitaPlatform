@@ -9,6 +9,7 @@ import {
   Sun, Layers, Download, RefreshCw, Copy, ChevronDown, ChevronUp, Globe,
   Target, Eye, Shield, Microscope, MessageCircle, GraduationCap, Scale,
   Coffee, Mountain, ArrowRight, Flame, Heart, Clapperboard,
+  Sparkles, Snowflake, Shuffle, type LucideIcon,
 } from "lucide-react";
 import { Markdown } from "@/components/shared/Markdown";
 
@@ -99,6 +100,67 @@ const LANGUAGES = [
 const FORMALITY_OPTIONS = [
   { id: "informal", label: "\u041d\u0435\u0444\u043e\u0440\u043c\u0430\u043b\u043d\u043e (\u0442\u0438/du/tu)" },
   { id: "formal", label: "\u0424\u043e\u0440\u043c\u0430\u043b\u043d\u043e (\u0412\u0438\u0435/Sie/vous)" },
+];
+
+// --- Smart Presets ---
+// \u041f\u0440\u0438\u043b\u0430\u0433\u0430\u0442 \u043d\u0430\u0431\u043e\u0440 \u043e\u0442 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 \u043d\u0430\u0432\u0435\u0434\u043d\u044a\u0436. Audience/intensity/archetype/aggressiveness/hookStyle/creativeType.
+// \u041f\u043e\u0442\u0440\u0435\u0431\u0438\u0442\u0435\u043b\u044f\u0442 \u0437\u0430\u043f\u0430\u0437\u0432\u0430 \u043f\u044a\u043b\u0435\u043d \u043a\u043e\u043d\u0442\u0440\u043e\u043b \u0434\u0430 \u043f\u0440\u0435\u043a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0438\u0440\u0430 \u0432\u0441\u0438\u0447\u043a\u043e \u0441\u043b\u0435\u0434 \u0442\u043e\u0432\u0430.
+interface PresetSettings {
+  audience: string;
+  intensity: number;
+  archetype: string;
+  aggressiveness: number;
+  hookStyle: string;
+  creativeType: string;
+}
+interface Preset { id: string; label: string; icon: LucideIcon; desc: string; settings: PresetSettings; }
+
+const PRESETS: Preset[] = [
+  {
+    id: "cold-acquisition", label: "Cold Acquisition", icon: Snowflake,
+    desc: "TOFU \u2014 \u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u043d\u043e, \u043b\u044e\u0431\u043e\u043f\u0438\u0442\u0441\u0442\u0432\u043e, \u0431\u0435\u0437 \u043d\u0430\u0442\u0438\u0441\u043a",
+    settings: {
+      audience: "\u0421\u0442\u0443\u0434\u0435\u043d\u0430 (TOFU) \u2014 \u043d\u0435 \u043f\u043e\u0437\u043d\u0430\u0432\u0430\u0442 \u0431\u0440\u0430\u043d\u0434\u0430, \u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043d \u043f\u043e\u0434\u0445\u043e\u0434",
+      intensity: 2, archetype: "ingredient", aggressiveness: 1,
+      hookStyle: "curiosity", creativeType: "Lifestyle",
+    },
+  },
+  {
+    id: "retargeting-heat", label: "Retargeting Heat", icon: Flame,
+    desc: "\u0413\u043e\u0440\u0435\u0449\u0430 \u0440\u0435\u0442\u0430\u0440\u0433\u0435\u0442\u0438\u043d\u0433 \u2014 \u043f\u043e\u0441\u043b\u0435\u0434\u0435\u043d \u0442\u043b\u0430\u0441\u044a\u043a, identity confrontation",
+    settings: {
+      audience: "\u0420\u0435\u0442\u0430\u0440\u0433\u0435\u0442\u0438\u043d\u0433 \u2014 \u0432\u0435\u0447\u0435 \u0441\u0430 \u043f\u043e\u0441\u0435\u0449\u0430\u0432\u0430\u043b\u0438 \u0441\u0430\u0439\u0442\u0430 \u0438\u043b\u0438 \u043a\u0443\u043f\u0443\u0432\u0430\u043b\u0438",
+      intensity: 4, archetype: "mirror", aggressiveness: 4,
+      hookStyle: "pain", creativeType: "Story Scene",
+    },
+  },
+  {
+    id: "ugc-test", label: "UGC Test", icon: MessageCircle,
+    desc: "Confession-style UGC \u0437\u0430 \u0442\u043e\u043f\u043b\u0430 \u0430\u0443\u0434\u0438\u0442\u043e\u0440\u0438\u044f",
+    settings: {
+      audience: "\u0422\u043e\u043f\u043b\u0430 (MOFU) \u2014 \u0437\u043d\u0430\u044f\u0442 \u0437\u0430 \u0431\u0440\u0430\u043d\u0434\u0430, \u0441\u0440\u0430\u0432\u043d\u044f\u0432\u0430\u0442 \u043e\u043f\u0446\u0438\u0438",
+      intensity: 3, archetype: "ugc", aggressiveness: 2,
+      hookStyle: "humor", creativeType: "Emotional Scene",
+    },
+  },
+  {
+    id: "expert-authority", label: "Expert Authority", icon: GraduationCap,
+    desc: "\u041d\u0430\u0443\u0447\u043d\u043e-\u0430\u0432\u0442\u043e\u0440\u0438\u0442\u0435\u0442\u043d\u043e, \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0438, infographic",
+    settings: {
+      audience: "\u0421\u0442\u0443\u0434\u0435\u043d\u0430 (TOFU) \u2014 \u043d\u0435 \u043f\u043e\u0437\u043d\u0430\u0432\u0430\u0442 \u0431\u0440\u0430\u043d\u0434\u0430, \u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043d \u043f\u043e\u0434\u0445\u043e\u0434",
+      intensity: 3, archetype: "expert", aggressiveness: 2,
+      hookStyle: "stat", creativeType: "\u041d\u0430\u0443\u0447\u0435\u043d / \u0418\u043d\u0444\u043e",
+    },
+  },
+  {
+    id: "origin-story", label: "Origin Story", icon: Mountain,
+    desc: "\u0411\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u043e \u043d\u0430\u0441\u043b\u0435\u0434\u0441\u0442\u0432\u043e \u2014 \u0420\u043e\u0434\u043e\u043f\u0438, \u0442\u0440\u0430\u0434\u0438\u0446\u0438\u044f, USP",
+    settings: {
+      audience: "\u0422\u043e\u043f\u043b\u0430 (MOFU) \u2014 \u0437\u043d\u0430\u044f\u0442 \u0437\u0430 \u0431\u0440\u0430\u043d\u0434\u0430, \u0441\u0440\u0430\u0432\u043d\u044f\u0432\u0430\u0442 \u043e\u043f\u0446\u0438\u0438",
+      intensity: 3, archetype: "origin", aggressiveness: 2,
+      hookStyle: "curiosity", creativeType: "Lifestyle",
+    },
+  },
 ];
 
 // --- Progress Bar ---
@@ -222,13 +284,14 @@ function ProductStep({ selected, onSelect }: { selected: SlimProduct | null; onS
 }
 
 // --- Step 2: Settings ---
-function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality }: {
+function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudience, intensity, setIntensity, additionalInput, setAdditionalInput, language, setLanguage, formality, setFormality, applyPreset, appliedPresetId }: {
   avatar: string; setAvatar: (v: string) => void; format: string; setFormat: (v: string) => void;
   audience: string; setAudience: (v: string) => void;
   intensity: number; setIntensity: (v: number) => void;
   additionalInput: string; setAdditionalInput: (v: string) => void;
   language: string; setLanguage: (v: string) => void;
   formality: string; setFormality: (v: string) => void;
+  applyPreset: (p: Preset) => void; appliedPresetId: string | null;
 }) {
   return (
     <div>
@@ -236,6 +299,29 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudie
       <p className="text-[13px] text-text-2 mb-5">За кого е рекламата и в какъв формат?</p>
 
       <div className="space-y-5">
+        {/* Smart presets — applies audience/intensity/archetype/aggressiveness/hookStyle/creativeType in one click */}
+        <div>
+          <div className="text-[13px] font-semibold text-text mb-2 flex items-center gap-1.5">
+            <Sparkles size={14} className="text-purple" />Бърз старт <span className="text-text-3 font-normal">(прилага комбинация от настройки; може да преконфигурираш всичко)</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((p) => {
+              const Icon = p.icon;
+              const isApplied = appliedPresetId === p.id;
+              return (
+                <button key={p.id} onClick={() => applyPreset(p)} title={p.desc}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-medium transition-all cursor-pointer min-h-[40px] border ${
+                    isApplied ? "bg-purple text-white border-purple shadow-sm" : "bg-surface-2 text-text-2 border-transparent hover:bg-purple/10 hover:text-purple hover:border-purple/30"
+                  }`}
+                >
+                  <Icon size={12} />{p.label}
+                  {isApplied && <Check size={12} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Language selector */}
         <div>
           <div className="text-[13px] font-semibold text-text mb-2 flex items-center gap-1.5"><Globe size={14} />Език на рекламата</div>
@@ -313,11 +399,12 @@ function SettingsStep({ avatar, setAvatar, format, setFormat, audience, setAudie
 }
 
 // --- Step 3: Creative Settings ---
-function CreativeStep({ creativeType, setCreativeType, archetype, setArchetype, aggressiveness, setAggressiveness, hookStyle, setHookStyle }: {
+function CreativeStep({ creativeType, setCreativeType, archetype, setArchetype, aggressiveness, setAggressiveness, hookStyle, setHookStyle, horizontalAB, setHorizontalAB }: {
   creativeType: string; setCreativeType: (v: string) => void;
   archetype: string; setArchetype: (v: string) => void;
   aggressiveness: number; setAggressiveness: (v: number) => void;
   hookStyle: string; setHookStyle: (v: string) => void;
+  horizontalAB: boolean; setHorizontalAB: (v: boolean) => void;
 }) {
   return (
     <div>
@@ -408,6 +495,30 @@ function CreativeStep({ creativeType, setCreativeType, archetype, setArchetype, 
             ))}
           </div>
         </div>
+
+        {/* Horizontal A/B toggle — 4 различни archetype-а вместо 4 варианта на същия */}
+        <div>
+          <button onClick={() => setHorizontalAB(!horizontalAB)}
+            className={`w-full flex items-start gap-3 p-4 rounded-xl text-left transition-all cursor-pointer border-2 ${
+              horizontalAB ? "border-purple bg-purple/5 ring-2 ring-purple/20" : "border-border bg-surface hover:border-purple/30"
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${horizontalAB ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>
+              <Shuffle size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className={`text-[13px] font-semibold ${horizontalAB ? "text-purple" : "text-text"}`}>Horizontal A/B — 4 различни archetype-а</span>
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${horizontalAB ? "bg-purple text-white" : "bg-surface-2 text-text-2"}`}>
+                  {horizontalAB ? "ON" : "OFF"}
+                </span>
+              </div>
+              <p className="text-[11px] text-text-2 leading-snug">
+                Когато е включено: всеки от 4-те варианта ще използва различен archetype (избраният + 3 комплементарни). Хоризонтално изследване за A/B тестване вместо 4 версии на същата рамка.
+              </p>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -448,7 +559,7 @@ function parseVariants(content: string): Variant[] {
 }
 
 // --- Step 4: Generate Copy ---
-function GenerateStep({ product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality }: {
+function GenerateStep({ product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, generatedContent, setGeneratedContent, variants, setVariants, selectedVariants, setSelectedVariants, additionalInput, hasCopyGenerated, setHasCopyGenerated, language, formality, horizontalAB }: {
   product: SlimProduct; avatar: string; format: string;
   audience: string; intensity: number; creativeType: string;
   archetype: string; aggressiveness: number; hookStyle: string;
@@ -458,6 +569,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
   additionalInput: string;
   hasCopyGenerated: boolean; setHasCopyGenerated: (v: boolean) => void;
   language: string; formality: string;
+  horizontalAB: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [expandedVariant, setExpandedVariant] = useState<number | null>(null);
@@ -469,11 +581,15 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
     setVariants([]);
     setSelectedVariants(new Set());
 
+    const archetypeLabel = horizontalAB
+      ? `${ARCHETYPES.find((a) => a.id === archetype)?.label} + 3 комплементарни (Horizontal A/B)`
+      : ARCHETYPES.find((a) => a.id === archetype)?.label;
+
     const settingsContext = [
       `[Настройки: Аватар: ${AVATARS.find((a) => a.id === avatar)?.label}`,
       `Формат: ${FORMATS.find((f) => f.id === format)?.label}`,
       `Аудитория: ${AUDIENCES.find((a) => a.id === audience)?.label}`,
-      `Archetype: ${ARCHETYPES.find((a) => a.id === archetype)?.label}`,
+      `Archetype: ${archetypeLabel}`,
       `Агресивност: ${aggressiveness}/5`,
       `Hook стил: ${HOOK_STYLES.find((h) => h.id === hookStyle)?.label}`,
       `Интензивност: ${intensity}/5`,
@@ -494,7 +610,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
           avatar, format, intensity, audience,
           product: product.handle,
           creativeType, archetype, aggressiveness, hookStyle,
-          language, formality,
+          language, formality, horizontalAB,
         }),
       });
       if (!res.ok) {
@@ -530,7 +646,7 @@ function GenerateStep({ product, avatar, format, audience, intensity, creativeTy
       setGeneratedContent("\u26a0\ufe0f Грешка при генериране. Опитай отново.");
     }
     setLoading(false);
-  }, [product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, additionalInput, language, formality, setGeneratedContent, setVariants, setSelectedVariants]);
+  }, [product, avatar, format, audience, intensity, creativeType, archetype, aggressiveness, hookStyle, additionalInput, language, formality, horizontalAB, setGeneratedContent, setVariants, setSelectedVariants]);
 
   // Auto-generate only on first visit, not when navigating back
   useEffect(() => {
@@ -782,6 +898,18 @@ export default function AdCreatorPage() {
   const [selectedVariants, setSelectedVariants] = useState<Set<number>>(new Set());
   const [hasCopyGenerated, setHasCopyGenerated] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<{ variant: Variant; image: string | null; loading: boolean; error: string | null }[]>([]);
+  const [horizontalAB, setHorizontalAB] = useState(false);
+  const [appliedPresetId, setAppliedPresetId] = useState<string | null>(null);
+
+  const applyPreset = useCallback((preset: Preset) => {
+    setAudience(preset.settings.audience);
+    setIntensity(preset.settings.intensity);
+    setArchetype(preset.settings.archetype);
+    setAggressiveness(preset.settings.aggressiveness);
+    setHookStyle(preset.settings.hookStyle);
+    setCreativeType(preset.settings.creativeType);
+    setAppliedPresetId(preset.id);
+  }, []);
 
   const canNext: Record<Step, boolean> = {
     product: !!selectedProduct,
@@ -837,6 +965,7 @@ export default function AdCreatorPage() {
             additionalInput={additionalInput} setAdditionalInput={setAdditionalInput}
             language={language} setLanguage={setLanguage}
             formality={formality} setFormality={setFormality}
+            applyPreset={applyPreset} appliedPresetId={appliedPresetId}
           />
         )}
         {step === "creative-type" && (
@@ -844,6 +973,7 @@ export default function AdCreatorPage() {
             archetype={archetype} setArchetype={setArchetype}
             aggressiveness={aggressiveness} setAggressiveness={setAggressiveness}
             hookStyle={hookStyle} setHookStyle={setHookStyle}
+            horizontalAB={horizontalAB} setHorizontalAB={setHorizontalAB}
           />
         )}
         {step === "generate" && selectedProduct && (
@@ -856,6 +986,7 @@ export default function AdCreatorPage() {
             additionalInput={additionalInput}
             hasCopyGenerated={hasCopyGenerated} setHasCopyGenerated={setHasCopyGenerated}
             language={language} formality={formality}
+            horizontalAB={horizontalAB}
           />
         )}
         {step === "visuals" && (
