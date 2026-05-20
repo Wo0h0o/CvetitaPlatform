@@ -13,6 +13,7 @@ import {
 } from "@/lib/sofia-date";
 import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
 import { EARLY_DAY_THRESHOLD_HOURS } from "@/components/dashboard/store-state";
+import { runReport, isGA4Configured } from "@/lib/ga4";
 
 // ============================================================
 // Types
@@ -81,6 +82,21 @@ interface TopStripResponse {
       shopifyRevenue: number;
     };
   };
+  /**
+   * Google Ads — pulled directly from GA4 Data API (no Supabase mirror yet,
+   * one runReport call per request). Null when GA4 is not configured or the
+   * query failed — UI hides the section rather than rendering zeros.
+   *
+   * Caveat: GA4 ad data has 4-24h freshness latency, so "today" numbers
+   * are usually incomplete until late afternoon Sofia time. The vsTypical
+   * baseline still works (same latency applies to the prior weekdays).
+   */
+  googleAds: {
+    spend: TempoMetric;
+    /** ROAS = google-revenue / google-spend over the window. */
+    roas: { value: number };
+    purchases: TempoMetric;
+  } | null;
   anomalyCount: number;
   freshAsOf: string;
 }
@@ -231,6 +247,90 @@ function sumShopify(
   return out;
 }
 
+/**
+ * Fetch Google Ads metrics from GA4 for a set of dates, returned keyed by
+ * ISO date. We query the whole min..max range in one call (cheap) and
+ * filter to the requested dates client-side.
+ *
+ * Two GA4 quirks baked in:
+ *   - advertiserAdCost is session-scoped — requires sessionGoogleAdsCampaignName
+ *     as a second dimension (see memory: reference_ga4_session_scoped_metrics).
+ *   - GA4's `date` dim returns "YYYYMMDD"; we normalise to ISO "YYYY-MM-DD"
+ *     so callers can index the map with the same date strings they use for
+ *     Meta and Shopify.
+ *
+ * Returns an empty map on any failure — top-strip should still serve
+ * Shopify + Meta even if GA4 is down. Logs the error for ops visibility.
+ */
+async function fetchGoogleAdsByDate(
+  dates: string[]
+): Promise<Map<string, { spend: number; revenue: number; purchases: number }>> {
+  const byDate = new Map<string, { spend: number; revenue: number; purchases: number }>();
+  if (!isGA4Configured() || dates.length === 0) return byDate;
+
+  const sorted = [...dates].sort();
+  const minDate = sorted[0];
+  const maxDate = sorted[sorted.length - 1];
+  const dateSet = new Set(dates);
+
+  try {
+    const rows = await runReport({
+      metrics: ["advertiserAdCost", "ecommercePurchases", "totalRevenue"],
+      dimensions: ["date", "sessionGoogleAdsCampaignName"],
+      startDate: minDate,
+      endDate: maxDate,
+      // Time-series order so the row stream is monotonic by date. Doesn't
+      // affect aggregation correctness; helps debugging.
+      orderBys: [{ dimension: { dimensionName: "date" }, desc: false }],
+      limit: 5000,
+    });
+
+    for (const r of rows) {
+      const yyyymmdd = r.dimensionValues?.[0]?.value || "";
+      const campaign = r.dimensionValues?.[1]?.value || "";
+      if (yyyymmdd.length !== 8) continue;
+      // Same (not set) filter as /api/dashboard/google-ads: organic/direct
+      // revenue with no Google Ads attribution. Including it inflates ROAS.
+      if (campaign === "(not set)" || campaign === "") continue;
+
+      const iso = `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
+      if (!dateSet.has(iso)) continue;
+
+      const spend = parseFloat(r.metricValues?.[0]?.value || "0");
+      const purchases = parseInt(r.metricValues?.[1]?.value || "0");
+      const revenue = parseFloat(r.metricValues?.[2]?.value || "0");
+
+      const bucket = byDate.get(iso) ?? { spend: 0, revenue: 0, purchases: 0 };
+      bucket.spend += spend;
+      bucket.revenue += revenue;
+      bucket.purchases += purchases;
+      byDate.set(iso, bucket);
+    }
+  } catch (err) {
+    logger.error("top-strip: GA4 google-ads fetch failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // Fall through with empty map — caller renders googleAds: null.
+  }
+
+  return byDate;
+}
+
+function sumGoogleAds(
+  byDate: Map<string, { spend: number; revenue: number; purchases: number }>,
+  dates: string[]
+): { spend: number; revenue: number; purchases: number } {
+  const out = { spend: 0, revenue: 0, purchases: 0 };
+  for (const d of dates) {
+    const row = byDate.get(d);
+    if (!row) continue;
+    out.spend += row.spend;
+    out.revenue += row.revenue;
+    out.purchases += row.purchases;
+  }
+  return out;
+}
+
 // ============================================================
 // Route
 // ============================================================
@@ -267,7 +367,7 @@ export async function GET(req: NextRequest) {
     // window selection; the alert pill always reflects "right now".
     const todayIsoForAnomaly = sofiaDate(now);
 
-    const [{ data, error }, { count: anomalyRaw }, shopifyByDate] =
+    const [{ data, error }, { count: anomalyRaw }, shopifyByDate, googleAdsByDate] =
       await Promise.all([
         supabaseAdmin
           .from("meta_insights_by_store")
@@ -281,6 +381,7 @@ export async function GET(req: NextRequest) {
           .in("severity", ["red", "amber"])
           .eq("status", "pending"),
         fetchShopifyByDate(datesToFetch),
+        fetchGoogleAdsByDate(datesToFetch),
       ]);
 
     if (error) {
@@ -366,6 +467,28 @@ export async function GET(req: NextRequest) {
           ? Math.min(100, Math.round((metaRevenue.value / businessRevenue.value) * 100))
           : null;
 
+      // Google Ads — same matched-hour pacing pipeline, but render null
+      // if GA4 returned nothing (not configured / fetch failed). UI hides
+      // the section entirely in that case rather than showing zeros.
+      const gaToday = googleAdsByDate.get(todayIso);
+      const gaPriors = todayPriors
+        .map((d) => googleAdsByDate.get(d))
+        .filter((x): x is NonNullable<typeof x> => !!x);
+
+      let googleAdsSection: TopStripResponse["googleAds"] = null;
+      if (gaToday || gaPriors.length > 0) {
+        const safeGaToday = gaToday ?? { spend: 0, revenue: 0, purchases: 0 };
+        const gaSpend = buildTodayTempo(safeGaToday.spend, gaPriors, "spend", hoursElapsed);
+        const gaPurchases = buildTodayTempo(safeGaToday.purchases, gaPriors, "purchases", hoursElapsed);
+        const gaRoas = {
+          value:
+            safeGaToday.spend > 0
+              ? Math.min(99.99, Number((safeGaToday.revenue / safeGaToday.spend).toFixed(2)))
+              : 0,
+        };
+        googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
+      }
+
       response = {
         mode: "today",
         window: {
@@ -384,6 +507,7 @@ export async function GET(req: NextRequest) {
             shopifyRevenue: businessRevenue.value,
           },
         },
+        googleAds: googleAdsSection,
         anomalyCount: anomalyRaw ?? 0,
         freshAsOf: latestFetched ?? now.toISOString(),
       };
@@ -418,6 +542,23 @@ export async function GET(req: NextRequest) {
           ? Math.min(100, Math.round((metaCurrent.revenue / shopifyCurrent.revenue) * 100))
           : null;
 
+      // Google Ads range mode — sum + compare to prior equal-length period.
+      // Null when no GA4 data found in either window (UI hides the section).
+      const gaCurrent = sumGoogleAds(googleAdsByDate, windowDates);
+      const gaPrev = sumGoogleAds(googleAdsByDate, comparisonDates);
+      let googleAdsSection: TopStripResponse["googleAds"] = null;
+      if (gaCurrent.spend > 0 || gaPrev.spend > 0) {
+        const gaSpend = buildRangeTempo(gaCurrent.spend, gaPrev.spend);
+        const gaPurchases = buildRangeTempo(gaCurrent.purchases, gaPrev.purchases);
+        const gaRoas = {
+          value:
+            gaCurrent.spend > 0
+              ? Math.min(99.99, Number((gaCurrent.revenue / gaCurrent.spend).toFixed(2)))
+              : 0,
+        };
+        googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
+      }
+
       response = {
         mode: "range",
         window: {
@@ -436,6 +577,7 @@ export async function GET(req: NextRequest) {
             shopifyRevenue: shopifyCurrent.revenue,
           },
         },
+        googleAds: googleAdsSection,
         anomalyCount: anomalyRaw ?? 0,
         freshAsOf: latestFetched ?? now.toISOString(),
       };

@@ -38,6 +38,15 @@ interface TopStripResponse {
       shopifyRevenue: number;
     };
   };
+  /**
+   * Google Ads section — null when GA4 not configured / no data. UI hides
+   * the SectionShell entirely in that case rather than rendering zeros.
+   */
+  googleAds: {
+    spend: TempoMetric;
+    roas: { value: number };
+    purchases: TempoMetric;
+  } | null;
   anomalyCount: number;
   freshAsOf: string;
   error?: string;
@@ -213,6 +222,8 @@ const BUSINESS_DESC =
   "Реалните продажби през Shopify — приходи, поръчки, средна стойност.";
 const ADS_DESC =
   "Meta — разход, ROAS и каква част от бизнеса идва от платените канали.";
+const GOOGLE_ADS_DESC =
+  "Google Ads през GA4 — разход, ROAS и покупки (last-click attribution).";
 
 interface KpiStripProps {
   /** Query string from useDateRange (e.g. "preset=today" or "preset=30d"). */
@@ -244,7 +255,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     : "предходен период";
 
   const businessTitle = isToday ? "Бизнес днес" : `Бизнес — ${rangeLabel}`;
-  const adsTitle = isToday ? "Реклами днес" : `Реклами — ${rangeLabel}`;
+  const adsTitle = isToday ? "Meta днес" : `Meta — ${rangeLabel}`;
+  const googleAdsTitle = isToday ? "Google Ads днес" : `Google Ads — ${rangeLabel}`;
 
   if (isLoading || !data) {
     return (
@@ -265,7 +277,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     );
   }
 
-  const { business, ads } = data;
+  const { business, ads, googleAds } = data;
 
   // === Ads section trim text — composability hints ===
   // ROAS sub-text shows the two numbers it divides, so the operator can
@@ -395,6 +407,43 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           hideDelta
         />
       </SectionShell>
+
+      {googleAds && (
+        <SectionShell title={googleAdsTitle} description={GOOGLE_ADS_DESC}>
+          <Tile
+            label="Разход"
+            value={fmtEur(googleAds.spend.value)}
+            vsTypical={googleAds.spend.vsTypical}
+            projected={
+              googleAds.spend.projected !== null
+                ? fmtEur(googleAds.spend.projected)
+                : null
+            }
+            typicalLabel={typicalLabel}
+            nullLabel={nullLabel}
+          />
+          <Tile
+            label="ROAS"
+            value={fmtRoas(googleAds.roas.value)}
+            vsTypical={null}
+            projected={null}
+            typicalLabel={typicalLabel}
+            hideDelta
+          />
+          <Tile
+            label="Покупки"
+            value={fmtInt(googleAds.purchases.value)}
+            vsTypical={googleAds.purchases.vsTypical}
+            projected={
+              googleAds.purchases.projected !== null
+                ? fmtInt(googleAds.purchases.projected)
+                : null
+            }
+            typicalLabel={typicalLabel}
+            nullLabel={nullLabel}
+          />
+        </SectionShell>
+      )}
     </>
   );
 }
