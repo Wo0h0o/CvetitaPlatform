@@ -34,7 +34,23 @@ interface TrafficData {
   previousFunnel?: Record<string, number>;
   topEvents?: { name: string; count: number; users: number }[];
   previousTopEvents?: Record<string, number>;
+  googleAds?: GoogleAdsBlock;
+  previousGoogleAds?: GoogleAdsBlock;
   error?: string;
+}
+
+interface GoogleAdsCampaign {
+  name: string;
+  spend: number;
+  clicks: number;
+  impressions: number;
+  purchases: number;
+  revenue: number;
+}
+
+interface GoogleAdsBlock {
+  campaigns: GoogleAdsCampaign[];
+  totals: { spend: number; clicks: number; impressions: number; purchases: number; revenue: number };
 }
 
 // Display order + БГ labels for the standard GA4 e-commerce funnel.
@@ -149,6 +165,24 @@ export default function TrafficPage() {
   const prevConv = prevFirst > 0 ? (prevLast / prevFirst) * 100 : 0;
   const overallConvDelta = data?.previousFunnel && prevFirst > 0
     ? overallConv - prevConv
+    : null;
+
+  // Google Ads — totals + delta. UI hides the card entirely if there's no
+  // spend in either period (link missing or paused); explicit empty state
+  // helps the user understand the gap rather than seeing a silent blank row.
+  const ga = data?.googleAds;
+  const prevGa = data?.previousGoogleAds;
+  const adsActive = !!(ga && ga.totals.spend > 0);
+  const adsHadHistory = !!(prevGa && prevGa.totals.spend > 0);
+  const currentRoas = ga && ga.totals.spend > 0 ? ga.totals.revenue / ga.totals.spend : 0;
+  const previousRoas = prevGa && prevGa.totals.spend > 0 ? prevGa.totals.revenue / prevGa.totals.spend : 0;
+  const adsDeltas = adsHadHistory && ga && prevGa
+    ? {
+        spend: calcDeltaPct(ga.totals.spend, prevGa.totals.spend),
+        revenue: calcDeltaPct(ga.totals.revenue, prevGa.totals.revenue),
+        purchases: calcDeltaPct(ga.totals.purchases, prevGa.totals.purchases),
+        roas: calcDeltaPct(currentRoas, previousRoas),
+      }
     : null;
 
   return (
@@ -280,6 +314,87 @@ export default function TrafficPage() {
           formatValue={(v) => `${v.toLocaleString("bg-BG")} сесии`}
         />
       </div>
+
+      {/* Google Ads — per-campaign ROAS, when GA4 ↔ Google Ads link е активен */}
+      <Card className="mb-6">
+        <CardHeader>Google Ads</CardHeader>
+        <CardBody>
+          {!adsActive ? (
+            <div className="py-8 text-center text-[13px] text-text-2">
+              Няма Google Ads данни за избрания период.
+              <div className="text-[12px] text-text-3 mt-1">
+                Свържи GA4 property с Google Ads акаунт: GA4 admin → Property → Product Links → Google Ads → Link.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                <div>
+                  <div className="text-[13px] font-semibold text-text-2 mb-1.5">Похарчени</div>
+                  <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">
+                    {ga.totals.spend.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                  </div>
+                  {adsDeltas && <Delta pct={adsDeltas.spend} inverse className="mt-1.5" />}
+                </div>
+                <div>
+                  <div className="text-[13px] font-semibold text-text-2 mb-1.5">ROAS</div>
+                  <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">
+                    {currentRoas.toFixed(2)}x
+                  </div>
+                  {adsDeltas && <Delta pct={adsDeltas.roas} className="mt-1.5" />}
+                </div>
+                <div>
+                  <div className="text-[13px] font-semibold text-text-2 mb-1.5">Приход</div>
+                  <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">
+                    {ga.totals.revenue.toLocaleString("bg-BG", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+                  </div>
+                  {adsDeltas && <Delta pct={adsDeltas.revenue} className="mt-1.5" />}
+                </div>
+                <div>
+                  <div className="text-[13px] font-semibold text-text-2 mb-1.5">Покупки</div>
+                  <div className="text-[22px] font-bold tracking-tight tabular-nums text-text">
+                    {ga.totals.purchases.toLocaleString("bg-BG")}
+                  </div>
+                  {adsDeltas && <Delta pct={adsDeltas.purchases} className="mt-1.5" />}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto -mx-5 px-5">
+                <div className="min-w-[680px]">
+                  <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-t border-border pt-4 text-[13px] font-semibold text-text">
+                    <div className="col-span-5">Кампания</div>
+                    <div className="col-span-2 text-right">Spend</div>
+                    <div className="col-span-2 text-right">Приход</div>
+                    <div className="col-span-1 text-right">Покупки</div>
+                    <div className="col-span-2 text-right">ROAS</div>
+                  </div>
+                  {ga.campaigns.slice(0, 8).map((c, i) => {
+                    const roas = c.spend > 0 ? c.revenue / c.spend : 0;
+                    return (
+                      <div
+                        key={c.name + i}
+                        className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
+                      >
+                        <div className="col-span-5 text-[13px] text-text truncate">{c.name}</div>
+                        <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">
+                          {c.spend.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                        </div>
+                        <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">
+                          {c.revenue.toLocaleString("bg-BG", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+                        </div>
+                        <div className="col-span-1 text-right text-[13px] text-text-2 tabular-nums">{c.purchases}</div>
+                        <div className="col-span-2 text-right text-[13px] font-semibold text-text tabular-nums">
+                          {roas.toFixed(2)}x
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </CardBody>
+      </Card>
 
       {/* Top Pages — drill-down density per contract §5 */}
       <Card>

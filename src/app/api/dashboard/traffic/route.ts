@@ -98,6 +98,14 @@ export async function GET(req: NextRequest) {
       filter: { fieldName: "eventName", inListFilter: { values: FUNNEL_EVENTS } },
     };
 
+    // Google Ads campaign metrics — flow through GA4 when property is linked
+    // to a Google Ads account. probe-google-ads-via-ga4.mjs confirmed these
+    // dimensions/metrics are populated for property 348042832 (2026-05-20).
+    // If no link / no spend, all metrics return 0 and UI renders an empty
+    // state pointing the user to GA4 → Product Links → Google Ads.
+    const adsDims = ["sessionGoogleAdsCampaignName"];
+    const adsMetrics = ["advertiserAdCost", "advertiserAdClicks", "advertiserAdImpressions", "ecommercePurchases", "totalRevenue"];
+
     const [
       channelRows,
       pageRows,
@@ -108,6 +116,8 @@ export async function GET(req: NextRequest) {
       prevFunnelRows,
       topEventsRows,
       prevTopEventsRows,
+      googleAdsRows,
+      prevGoogleAdsRows,
     ] = await Promise.all([
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
       runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
@@ -118,6 +128,8 @@ export async function GET(req: NextRequest) {
       runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, undefined, funnelFilter),
       runReport(["eventCount", "totalUsers"], ["eventName"], start, end, 10),
       runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, 50),
+      runReport(adsMetrics, adsDims, start, end, 25),
+      runReport(adsMetrics, adsDims, range.compFrom, range.compTo, 25),
     ]);
 
     const channels = channelRows.map((r) => ({
@@ -178,6 +190,35 @@ export async function GET(req: NextRequest) {
     }));
     const previousTopEvents = rowsToMap(prevTopEventsRows);
 
+    // Google Ads — per-campaign + totals. Drop rows with zero spend AND zero
+    // clicks (GA4 sometimes returns (not set) rows for sessions that touched
+    // a Google Ads campaign cookie but had no actual ad activity).
+    const parseAdsRows = (rows: GA4Row[]) => {
+      const campaigns = rows
+        .map((r) => ({
+          name: r.dimensionValues?.[0]?.value || "(not set)",
+          spend: parseFloat(r.metricValues?.[0]?.value || "0"),
+          clicks: parseInt(r.metricValues?.[1]?.value || "0"),
+          impressions: parseInt(r.metricValues?.[2]?.value || "0"),
+          purchases: parseInt(r.metricValues?.[3]?.value || "0"),
+          revenue: parseFloat(r.metricValues?.[4]?.value || "0"),
+        }))
+        .filter((c) => c.spend > 0 || c.clicks > 0);
+      const totals = campaigns.reduce(
+        (acc, c) => ({
+          spend: acc.spend + c.spend,
+          clicks: acc.clicks + c.clicks,
+          impressions: acc.impressions + c.impressions,
+          purchases: acc.purchases + c.purchases,
+          revenue: acc.revenue + c.revenue,
+        }),
+        { spend: 0, clicks: 0, impressions: 0, purchases: 0, revenue: 0 }
+      );
+      return { campaigns, totals };
+    };
+    const googleAds = parseAdsRows(googleAdsRows);
+    const previousGoogleAds = parseAdsRows(prevGoogleAdsRows);
+
     return NextResponse.json(
       {
         period: range.label,
@@ -191,6 +232,8 @@ export async function GET(req: NextRequest) {
         previousFunnel,
         topEvents,
         previousTopEvents,
+        googleAds,
+        previousGoogleAds,
       },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );
