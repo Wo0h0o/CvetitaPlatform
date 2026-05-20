@@ -36,6 +36,14 @@ interface TrafficData {
   previousTopEvents?: Record<string, number>;
   googleAds?: GoogleAdsBlock;
   previousGoogleAds?: GoogleAdsBlock;
+  dailyOverview?: {
+    date: string;
+    sessions: number;
+    users: number;
+    engagementRate: number;
+    conversions: number;
+    purchases: number;
+  }[];
   error?: string;
 }
 
@@ -146,6 +154,22 @@ export default function TrafficPage() {
       }
     : null;
 
+  // Sparkline data — slice the daily series into one array per hero KPI.
+  // Memoized so the SparkLine refs don't churn on every parent re-render
+  // (sortable table toggles cause re-renders that would otherwise create
+  // new arrays each time and force Recharts to re-animate).
+  const sparks = useMemo(() => {
+    const daily = data?.dailyOverview;
+    if (!daily || daily.length < 2) return null;
+    return {
+      sessions: daily.map((d) => d.sessions),
+      users: daily.map((d) => d.users),
+      engagementRate: daily.map((d) => d.engagementRate),
+      purchases: daily.map((d) => d.purchases),
+      conversions: daily.map((d) => d.conversions),
+    };
+  }, [data?.dailyOverview]);
+
   // Funnel steps: keep display order fixed even if GA4 returns events in
   // a different sequence. Missing events show 0 (FunnelChart handles
   // the all-zero empty state with a setup hint).
@@ -198,30 +222,35 @@ export default function TrafficPage() {
           label="Сесии"
           value={ov?.sessions?.toLocaleString("bg-BG") || "0"}
           delta={deltas ? { pct: deltas.sessions } : undefined}
+          sparkData={sparks?.sessions}
         />
         <MiniKpi
           hero
           label="Потребители"
           value={ov?.users?.toLocaleString("bg-BG") || "0"}
           delta={deltas ? { pct: deltas.users } : undefined}
+          sparkData={sparks?.users}
         />
         <MiniKpi
           hero
           label="Engagement"
           value={`${((ov?.engagementRate || 0) * 100).toFixed(1)}%`}
           delta={deltas ? { pct: deltas.engagementRate, unit: "pp" } : undefined}
+          sparkData={sparks?.engagementRate}
         />
         <MiniKpi
           hero
           label="Покупки"
           value={String(ov?.purchases || 0)}
           delta={deltas ? { pct: deltas.purchases } : undefined}
+          sparkData={sparks?.purchases}
         />
         <MiniKpi
           hero
           label="Конверсии"
           value={String(ov?.conversions || 0)}
           delta={deltas ? { pct: deltas.conversions } : undefined}
+          sparkData={sparks?.conversions}
         />
       </div>
 

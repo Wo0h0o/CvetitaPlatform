@@ -118,6 +118,7 @@ export async function GET(req: NextRequest) {
       prevTopEventsRows,
       googleAdsRows,
       prevGoogleAdsRows,
+      dailyRows,
     ] = await Promise.all([
       runReport(["sessions", "totalUsers", "engagementRate"], ["sessionDefaultChannelGroup"], start, end, 8),
       runReport(["sessions", "engagementRate", "keyEvents"], ["pagePath"], start, end, 10),
@@ -130,6 +131,12 @@ export async function GET(req: NextRequest) {
       runReport(["eventCount"], ["eventName"], range.compFrom, range.compTo, 50),
       runReport(adsMetrics, adsDims, start, end, 25),
       runReport(adsMetrics, adsDims, range.compFrom, range.compTo, 25),
+      // Daily time series — feeds the hero-strip sparklines. Same 5 overview
+      // metrics, broken down by date so each MiniKpi can render its own trend.
+      // runReport's default orderBy is the first metric desc; we sort by date
+      // client-side after parsing (GA4 doesn't take dimension-only orderBys
+      // when a metric orderBy is also implicit).
+      runReport(overviewMetrics, ["date"], start, end),
     ]);
 
     const channels = channelRows.map((r) => ({
@@ -219,6 +226,21 @@ export async function GET(req: NextRequest) {
     const googleAds = parseAdsRows(googleAdsRows);
     const previousGoogleAds = parseAdsRows(prevGoogleAdsRows);
 
+    // Daily time series. GA4's `date` dimension comes back as "YYYYMMDD"
+    // strings; we sort asc so the sparkline reads left-to-right as time
+    // moves forward. Engagement rate is a fraction in GA4 (0–1), so we
+    // keep it raw — the UI presents it consistently with the hero metric.
+    const dailyOverview = dailyRows
+      .map((r) => ({
+        date: r.dimensionValues?.[0]?.value || "",
+        sessions: parseInt(r.metricValues?.[0]?.value || "0"),
+        users: parseInt(r.metricValues?.[1]?.value || "0"),
+        engagementRate: parseFloat(r.metricValues?.[2]?.value || "0"),
+        conversions: parseInt(r.metricValues?.[3]?.value || "0"),
+        purchases: parseInt(r.metricValues?.[4]?.value || "0"),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
     return NextResponse.json(
       {
         period: range.label,
@@ -234,6 +256,7 @@ export async function GET(req: NextRequest) {
         previousTopEvents,
         googleAds,
         previousGoogleAds,
+        dailyOverview,
       },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );
