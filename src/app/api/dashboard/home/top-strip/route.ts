@@ -97,6 +97,29 @@ interface TopStripResponse {
     roas: { value: number };
     purchases: TempoMetric;
   } | null;
+  /**
+   * Cross-platform composites — the platform's superpower. Nothing here is
+   * derivable from a single source; every number combines Shopify + Meta
+   * + Google Ads. This is what no individual dashboard can show.
+   *
+   *   cac          = (meta_spend + google_spend) / shopify_orders
+   *   netAfterAds  = shopify_revenue − meta_spend − google_spend
+   *   channelMix   = how Shopify revenue splits across attribution sources
+   *
+   * `cac` and `netAfterAds` follow the same TempoMetric pacing logic as
+   * source-pure tiles. `channelMix` is a composition snapshot — no delta.
+   */
+  crossPlatform: {
+    cac: TempoMetric;
+    netAfterAds: TempoMetric;
+    channelMix: {
+      meta: { revenue: number; pct: number };
+      googleAds: { revenue: number; pct: number };
+      /** Shopify revenue minus all paid attribution — organic/email/direct. */
+      other: { revenue: number; pct: number };
+      shopifyRevenue: number;
+    };
+  };
   anomalyCount: number;
   freshAsOf: string;
 }
@@ -247,6 +270,33 @@ function sumShopify(
   return out;
 }
 
+/**
+ * Build the channelMix composition snapshot — what % of Shopify revenue
+ * each paid source claimed (Meta, Google), with the remainder bucketed as
+ * "other" (organic / email / direct / referral / partial attribution).
+ *
+ * "Other" is clamped to 0+ because Meta + Google attribution can briefly
+ * exceed Shopify revenue at the edges (Meta credits a purchase before the
+ * matching Shopify webhook lands) — we'd rather hide the over-attribution
+ * here than render a negative slice. The attribution tile in the Meta
+ * section is where the operator sees that warning.
+ */
+function buildChannelMix(
+  shopifyRevenue: number,
+  metaRevenue: number,
+  googleAdsRevenue: number
+): TopStripResponse["crossPlatform"]["channelMix"] {
+  const otherRaw = shopifyRevenue - metaRevenue - googleAdsRevenue;
+  const other = Math.max(0, otherRaw);
+  const total = shopifyRevenue > 0 ? shopifyRevenue : 1;
+  return {
+    meta: { revenue: metaRevenue, pct: Math.round((metaRevenue / total) * 100) },
+    googleAds: { revenue: googleAdsRevenue, pct: Math.round((googleAdsRevenue / total) * 100) },
+    other: { revenue: other, pct: Math.round((other / total) * 100) },
+    shopifyRevenue,
+  };
+}
+
 
 // ============================================================
 // Route
@@ -392,9 +442,9 @@ export async function GET(req: NextRequest) {
         .map((d) => googleAdsByDate.get(d))
         .filter((x): x is NonNullable<typeof x> => !!x);
 
+      const safeGaToday = gaToday ?? { spend: 0, revenue: 0, purchases: 0 };
       let googleAdsSection: TopStripResponse["googleAds"] = null;
       if (gaToday || gaPriors.length > 0) {
-        const safeGaToday = gaToday ?? { spend: 0, revenue: 0, purchases: 0 };
         const gaSpend = buildTodayTempo(safeGaToday.spend, gaPriors, "spend", hoursElapsed);
         const gaPurchases = buildTodayTempo(safeGaToday.purchases, gaPriors, "purchases", hoursElapsed);
         const gaRoas = {
@@ -405,6 +455,51 @@ export async function GET(req: NextRequest) {
         };
         googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
       }
+
+      // Cross-platform composites. We build per-day blended figures for the
+      // matched-hour pacing arithmetic, then run them through the same
+      // buildTodayTempo helper. CAC = total_spend / orders (per day),
+      // netAfterAds = shopify_revenue − total_spend.
+      const totalSpendToday = today.spend + safeGaToday.spend;
+      const totalSpendPriors = todayPriors.map((d) => {
+        const m = metaByDate.get(d);
+        const g = googleAdsByDate.get(d);
+        return { totalSpend: (m?.spend ?? 0) + (g?.spend ?? 0) };
+      });
+      // Pacing CAC needs the per-day CAC values, not aggregate spend.
+      const cacToday = shopifyToday.orders > 0 ? totalSpendToday / shopifyToday.orders : 0;
+      const cacPriors = todayPriors
+        .map((d) => {
+          const sho = shopifyByDate.get(d);
+          const m = metaByDate.get(d);
+          const g = googleAdsByDate.get(d);
+          if (!sho || sho.orders === 0) return null;
+          return { cac: ((m?.spend ?? 0) + (g?.spend ?? 0)) / sho.orders };
+        })
+        .filter((x): x is { cac: number } => !!x);
+      const cacTempo = buildTodayTempo(cacToday, cacPriors, "cac", hoursElapsed);
+
+      const netToday = shopifyToday.revenue - totalSpendToday;
+      const netPriors = todayPriors
+        .map((d) => {
+          const sho = shopifyByDate.get(d);
+          const m = metaByDate.get(d);
+          const g = googleAdsByDate.get(d);
+          if (!sho && !m && !g) return null;
+          return { net: (sho?.revenue ?? 0) - (m?.spend ?? 0) - (g?.spend ?? 0) };
+        })
+        .filter((x): x is { net: number } => !!x);
+      const netTempo = buildTodayTempo(netToday, netPriors, "net", hoursElapsed);
+
+      const channelMix = buildChannelMix(
+        shopifyToday.revenue,
+        today.revenue,
+        safeGaToday.revenue
+      );
+
+      // Unused suppression — we computed totalSpendPriors above for completeness
+      // but the per-day CAC/net priors above already encode the same data.
+      void totalSpendPriors;
 
       response = {
         mode: "today",
@@ -425,6 +520,11 @@ export async function GET(req: NextRequest) {
           },
         },
         googleAds: googleAdsSection,
+        crossPlatform: {
+          cac: cacTempo,
+          netAfterAds: netTempo,
+          channelMix,
+        },
         anomalyCount: anomalyRaw ?? 0,
         freshAsOf: latestFetched ?? now.toISOString(),
       };
@@ -476,6 +576,22 @@ export async function GET(req: NextRequest) {
         googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
       }
 
+      // Cross-platform composites for range mode. CAC is aggregate spend
+      // divided by aggregate orders over the window; netAfterAds is
+      // aggregate revenue minus aggregate spend. Comparison vs prior
+      // equal-length period using the same arithmetic.
+      const totalSpendCurrent = metaCurrent.spend + gaCurrent.spend;
+      const totalSpendPrev = metaPrev.spend + gaPrev.spend;
+      const cacCurrent = shopifyCurrent.orders > 0 ? totalSpendCurrent / shopifyCurrent.orders : 0;
+      const cacPrev = shopifyPrev.orders > 0 ? totalSpendPrev / shopifyPrev.orders : 0;
+      const netCurrent = shopifyCurrent.revenue - totalSpendCurrent;
+      const netPrev = shopifyPrev.revenue - totalSpendPrev;
+      const channelMix = buildChannelMix(
+        shopifyCurrent.revenue,
+        metaCurrent.revenue,
+        gaCurrent.revenue
+      );
+
       response = {
         mode: "range",
         window: {
@@ -495,6 +611,11 @@ export async function GET(req: NextRequest) {
           },
         },
         googleAds: googleAdsSection,
+        crossPlatform: {
+          cac: buildRangeTempo(cacCurrent, cacPrev),
+          netAfterAds: buildRangeTempo(netCurrent, netPrev),
+          channelMix,
+        },
         anomalyCount: anomalyRaw ?? 0,
         freshAsOf: latestFetched ?? now.toISOString(),
       };

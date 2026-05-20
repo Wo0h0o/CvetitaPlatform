@@ -47,6 +47,20 @@ interface TopStripResponse {
     roas: { value: number };
     purchases: TempoMetric;
   } | null;
+  /**
+   * Cross-platform composites. Each value combines Shopify + Meta + Google
+   * — uniquely the platform's job to compute.
+   */
+  crossPlatform: {
+    cac: TempoMetric;
+    netAfterAds: TempoMetric;
+    channelMix: {
+      meta: { revenue: number; pct: number };
+      googleAds: { revenue: number; pct: number };
+      other: { revenue: number; pct: number };
+      shopifyRevenue: number;
+    };
+  };
   anomalyCount: number;
   freshAsOf: string;
   error?: string;
@@ -108,6 +122,11 @@ interface TileProps {
    * сравнение" because there's no time-of-day signal to wait for.
    */
   nullLabel?: string;
+  /**
+   * Flip the colour logic for metrics where lower is better (CAC, bounce,
+   * cost-per-thing). A positive vsTypical (going up) is then RED, not green.
+   */
+  inverseDelta?: boolean;
 }
 
 function Tile({
@@ -119,6 +138,7 @@ function Tile({
   hideDelta,
   subText,
   nullLabel = "още рано",
+  inverseDelta = false,
 }: TileProps) {
   let deltaNode: React.ReactNode;
   if (hideDelta) {
@@ -127,12 +147,11 @@ function Tile({
     deltaNode = <span className="text-text-3">{nullLabel}</span>;
   } else {
     const sign = vsTypical > 0 ? "+" : "";
-    const color =
-      vsTypical > 3
-        ? "text-accent"
-        : vsTypical < -3
-          ? "text-red"
-          : "text-text-2";
+    // Above the noise threshold (±3%) we colour; otherwise neutral. Inverse
+    // flips accent ↔ red so CAC-style metrics read correctly (lower = good).
+    const isGood = inverseDelta ? vsTypical < -3 : vsTypical > 3;
+    const isBad = inverseDelta ? vsTypical > 3 : vsTypical < -3;
+    const color = isGood ? "text-accent" : isBad ? "text-red" : "text-text-2";
     deltaNode = (
       <span className={color}>
         {sign}
@@ -155,6 +174,86 @@ function Tile({
         {projected && (
           <span className="text-text-3">Прогноза за деня: {projected}</span>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ChannelMix tile — composition snapshot instead of a single hero number.
+ * Three stacked horizontal segments (Meta · Google · Organic), each
+ * proportional to its share of Shopify revenue. Below the bar: legend with
+ * absolute EUR values for context.
+ *
+ * Per design contract §1 we resist category accent colours; here we use
+ * accent only for the "Organic / друго" slice — that's the part the
+ * operator's business KEEPS, and visually anchoring it as positive carries
+ * meaning ("the bigger the green, the less you're paying for revenue").
+ * Meta and Google use neutral greys at different opacities — distinguish
+ * without colour-coding categories.
+ */
+interface ChannelMixTileProps {
+  meta: { revenue: number; pct: number };
+  googleAds: { revenue: number; pct: number };
+  other: { revenue: number; pct: number };
+  shopifyRevenue: number;
+}
+
+function ChannelMixTile({ meta, googleAds, other, shopifyRevenue }: ChannelMixTileProps) {
+  if (shopifyRevenue <= 0) {
+    return (
+      <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[120px] flex flex-col gap-2">
+        <div className="text-[13px] font-semibold text-text">Микс на каналите</div>
+        <div className="text-[13px] text-text-3 mt-auto">няма Shopify приходи още</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[120px] flex flex-col gap-3">
+      <div className="text-[13px] font-semibold text-text">Микс на каналите</div>
+      <div className="flex h-2 rounded-full overflow-hidden bg-surface-2">
+        <div
+          className="bg-text-3 transition-all"
+          style={{ width: `${meta.pct}%` }}
+          title={`Meta: ${meta.pct}%`}
+        />
+        <div
+          className="bg-text-2 transition-all"
+          style={{ width: `${googleAds.pct}%` }}
+          title={`Google: ${googleAds.pct}%`}
+        />
+        <div
+          className="bg-accent transition-all"
+          style={{ width: `${other.pct}%` }}
+          title={`Друго: ${other.pct}%`}
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-[11px] mt-auto">
+        <div>
+          <div className="flex items-center gap-1.5 text-text-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-text-3" />
+            Meta
+          </div>
+          <div className="text-[13px] font-semibold text-text tabular-nums">{meta.pct}%</div>
+          <div className="text-text-3 tabular-nums">{fmtEur(meta.revenue)}</div>
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5 text-text-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-text-2" />
+            Google
+          </div>
+          <div className="text-[13px] font-semibold text-text tabular-nums">{googleAds.pct}%</div>
+          <div className="text-text-3 tabular-nums">{fmtEur(googleAds.revenue)}</div>
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5 text-text-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-accent" />
+            Друго
+          </div>
+          <div className="text-[13px] font-semibold text-text tabular-nums">{other.pct}%</div>
+          <div className="text-text-3 tabular-nums">{fmtEur(other.revenue)}</div>
+        </div>
       </div>
     </div>
   );
@@ -218,6 +317,8 @@ function LoadingStrip({
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+const OVERALL_DESC =
+  "Cross-platform композиции — числата, които никой един source не може да покаже сам.";
 const BUSINESS_DESC =
   "Реалните продажби през Shopify — приходи, поръчки, средна стойност.";
 const ADS_DESC =
@@ -254,6 +355,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     ? `${typicalAdjectiveBg(weekdayBg)} ${weekdayBg}`
     : "предходен период";
 
+  const overallTitle = isToday ? "Общо днес" : `Общо — ${rangeLabel}`;
   const businessTitle = isToday ? "Бизнес днес" : `Бизнес — ${rangeLabel}`;
   const adsTitle = isToday ? "Meta днес" : `Meta — ${rangeLabel}`;
   const googleAdsTitle = isToday ? "Google Ads днес" : `Google Ads — ${rangeLabel}`;
@@ -261,6 +363,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
   if (isLoading || !data) {
     return (
       <>
+        <LoadingStrip title={overallTitle} description={OVERALL_DESC} />
         <LoadingStrip title={businessTitle} description={BUSINESS_DESC} />
         <LoadingStrip title={adsTitle} description={ADS_DESC} />
       </>
@@ -277,7 +380,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     );
   }
 
-  const { business, ads, googleAds } = data;
+  const { business, ads, googleAds, crossPlatform } = data;
 
   // === Ads section trim text — composability hints ===
   // ROAS sub-text shows the two numbers it divides, so the operator can
@@ -324,6 +427,42 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
 
   return (
     <>
+      <SectionShell title={overallTitle} description={OVERALL_DESC}>
+        <Tile
+          label="Цена за поръчка"
+          value={fmtEur(crossPlatform.cac.value)}
+          vsTypical={crossPlatform.cac.vsTypical}
+          projected={
+            crossPlatform.cac.projected !== null
+              ? fmtEur(crossPlatform.cac.projected)
+              : null
+          }
+          typicalLabel={typicalLabel}
+          nullLabel={nullLabel}
+          subText="(Meta + Google разход) / поръчки"
+          inverseDelta
+        />
+        <Tile
+          label="Нето след реклами"
+          value={fmtEur(crossPlatform.netAfterAds.value)}
+          vsTypical={crossPlatform.netAfterAds.vsTypical}
+          projected={
+            crossPlatform.netAfterAds.projected !== null
+              ? fmtEur(crossPlatform.netAfterAds.projected)
+              : null
+          }
+          typicalLabel={typicalLabel}
+          nullLabel={nullLabel}
+          subText="Shopify − Meta − Google разход"
+        />
+        <ChannelMixTile
+          meta={crossPlatform.channelMix.meta}
+          googleAds={crossPlatform.channelMix.googleAds}
+          other={crossPlatform.channelMix.other}
+          shopifyRevenue={crossPlatform.channelMix.shopifyRevenue}
+        />
+      </SectionShell>
+
       <SectionShell title={businessTitle} description={BUSINESS_DESC}>
         <Tile
           label="Приходи"
