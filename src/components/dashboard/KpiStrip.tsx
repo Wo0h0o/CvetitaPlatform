@@ -146,22 +146,30 @@ function Tile({
   } else if (vsTypical === null) {
     deltaNode = <span className="text-text-3">{nullLabel}</span>;
   } else {
-    const sign = vsTypical > 0 ? "+" : "";
-    // Above the noise threshold (±3%) we colour; otherwise neutral. Inverse
-    // flips accent ↔ red so CAC-style metrics read correctly (lower = good).
+    // Triangle glyphs match the analytics surface (see shared Delta.tsx,
+    // design contract §4). ▲ for up, ▼ for down, em-dash within the noise
+    // band so flat days don't claim a direction. ±3% threshold gates colour
+    // because matched-hour pacing is noisier than period-to-period delta.
+    const isFlat = Math.abs(vsTypical) < 1;
+    const arrow = isFlat ? "—" : vsTypical > 0 ? "▲" : "▼";
     const isGood = inverseDelta ? vsTypical < -3 : vsTypical > 3;
     const isBad = inverseDelta ? vsTypical > 3 : vsTypical < -3;
     const color = isGood ? "text-accent" : isBad ? "text-red" : "text-text-2";
     deltaNode = (
-      <span className={color}>
-        {sign}
-        {vsTypical}% vs {typicalLabel}
+      <span className={`${color} tabular-nums`}>
+        <span className="text-[10px] align-middle mr-0.5">{arrow}</span>
+        {Math.abs(vsTypical)}% vs {typicalLabel}
       </span>
     );
   }
 
+  // `projected` is intentionally not rendered — user requested the deeper
+  // tiles to free vertical space. The API still returns it; once we find a
+  // surface where end-of-day forecast adds real value we can wire it back.
+  void projected;
+
   return (
-    <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col gap-2 min-h-[120px]">
+    <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col gap-2 min-h-[110px]">
       <div className="text-[13px] font-semibold text-text">{label}</div>
       <div className="text-[28px] md:text-[32px] font-bold tracking-tight text-text leading-none">
         {value}
@@ -169,12 +177,7 @@ function Tile({
       {subText && (
         <div className="text-[11px] text-text-3 leading-tight">{subText}</div>
       )}
-      <div className="text-[12px] mt-auto flex flex-col gap-0.5">
-        {deltaNode}
-        {projected && (
-          <span className="text-text-3">Прогноза за деня: {projected}</span>
-        )}
-      </div>
+      <div className="text-[12px] mt-auto">{deltaNode}</div>
     </div>
   );
 }
