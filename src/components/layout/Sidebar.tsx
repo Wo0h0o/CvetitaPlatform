@@ -18,6 +18,7 @@ import {
   Shield,
   Inbox,
   CalendarDays,
+  Search,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -84,6 +85,7 @@ const fullNavSections: NavSection[] = [
           { href: "/ads/campaigns", label: "Кампании" },
         ],
       },
+      { href: "/google-ads", icon: Search, label: "Google Ads" },
       { href: "/competitors", icon: Shield, label: "Конкуренти" },
     ],
   },
