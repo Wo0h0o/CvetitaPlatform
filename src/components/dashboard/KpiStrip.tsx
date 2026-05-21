@@ -664,6 +664,16 @@ const ADS_DESC =
   "Meta — разход, ROAS и каква част от бизнеса идва от платените канали.";
 const GOOGLE_ADS_DESC =
   "Google Ads през GA4 — разход, ROAS и покупки (last-click attribution).";
+// In today/yesterday view we don't draw hourly sparklines on the GA tiles.
+// GA4's `advertiserAdCost` is a session-scoped metric that the Data API
+// refuses to combine with ANY hourly dimension — every variant returns
+// HTTP 400 with "Please remove advertiserAdCost to make the request
+// compatible". This is a structural limit of the Google Ads → GA4 cost
+// feed, not a fix we can apply our side. See
+// feedback_ga4_advertiseradcost_no_hourly.md for the test matrix and
+// future-fix path (Google Ads API direct, requires Developer Token).
+const GOOGLE_ADS_DESC_HOURLY =
+  "Google Ads през GA4 — числата са за деня; GA4 не дава cost на час, затова без криви.";
 
 interface KpiStripProps {
   queryString: string;
@@ -913,7 +923,11 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
       </SectionShell>
 
       {googleAds && (
-        <SectionShell title={googleAdsTitle} description={GOOGLE_ADS_DESC} source="google_ads">
+        <SectionShell
+          title={googleAdsTitle}
+          description={isHourly ? GOOGLE_ADS_DESC_HOURLY : GOOGLE_ADS_DESC}
+          source="google_ads"
+        >
           <HeroCard
             label="Разход"
             value={fmtEur(googleAds.spend.value)}

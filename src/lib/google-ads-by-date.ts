@@ -135,3 +135,21 @@ export async function fetchGoogleAdsByDateAllMarkets(
   }
   return merged;
 }
+
+// NB: there is intentionally no hourly variant here. GA4's
+// `advertiserAdCost` is a session-scoped metric that the API refuses
+// to combine with ANY hourly dimension (`dateHour`, `hour`, etc.) —
+// every combination returns HTTP 400 INVALID_ARGUMENT with "Please
+// remove advertiserAdCost to make the request compatible".
+//
+// This is a structural limit of the Google Ads → GA4 cost feed
+// (daily aggregation only), not a bug we can work around. Hourly
+// purchases + revenue ARE available, but without hourly cost we
+// can't compute hourly ROAS — and showing two-of-three cards with
+// charts while one has none reads worse than showing none, so the
+// home dashboard renders the GA section without hourly series at
+// all in `today` / `yesterday` mode.
+//
+// For real hourly cost we'd need the Google Ads API directly
+// (`segments.hour` works there), which requires a Developer Token +
+// separate OAuth flow. See feedback_ga4_advertiseradcost_no_hourly.md.
