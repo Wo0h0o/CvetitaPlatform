@@ -1,38 +1,135 @@
 "use client";
 
+import { useState } from "react";
+import dynamic from "next/dynamic";
+import useSWR from "swr";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { StoreSelector } from "@/components/shared/StoreSelector";
+import { Card } from "@/components/shared/Card";
+import { Skeleton } from "@/components/shared/Skeleton";
 import { SalesHeroStrip } from "@/components/sales/SalesHeroStrip";
 import { SalesSignalStrip } from "@/components/sales/SalesSignalStrip";
 import { SalesTrend } from "@/components/sales/SalesTrend";
 import { SalesHourHeatmap } from "@/components/sales/SalesHourHeatmap";
-import { StorePerformanceTable } from "@/components/sales/StorePerformanceTable";
 import { TopProductsAggregate } from "@/components/sales/TopProductsAggregate";
+import { CountryListPanel } from "@/components/sales/geography/CountryListPanel";
+import { useDateRange } from "@/hooks/useDateRange";
+import { useStoreSelection } from "@/hooks/useStoreSelection";
+import type {
+  CountrySales,
+  CitySales,
+  OfficePoint,
+} from "@/lib/sales-queries";
+import type { Metric } from "@/components/sales/geography/WorldMap";
 
 // ============================================================
-// /sales — three deliberate zones, deliberately asymmetric.
+// /sales — single landing surface for the sales story.
 //
-//   1. Hero strip      — Приходи (6) + Поръчки (3) + Среден чек (3)
-//                        with sparklines + delta + "Най-силен ден" sub.
+//   1. Hero strip      — Приходи + Поръчки + Среден чек
+//   2. Signal strip    — secondary KPIs (клиенти, refund, top SKU…)
+//   3. Тренд           — full-width revenue line with comparison overlay
+//   4. География       — world map + countries side panel. Folded in
+//                        from the standalone /sales/geography route so
+//                        the dashboard tells the "where from" story at
+//                        a glance, not behind a click. The Countries
+//                        list to the right of the map replaces the
+//                        prior Магазини table below — for our 1:1
+//                        store↔country shape they answer the same
+//                        question, and two adjacent right-rail lists
+//                        of the same markets read as duplication.
+//   5. Топ продукти    — full-width (gets to breathe now that its
+//                        former row companion is gone).
+//   6. Hour heatmap    — when in the week orders land.
 //
-//   2. Signal strip    — 5 micro-tiles answering the secondary questions
-//                        (клиенти, ст-ст/клиент, refund, top SKU, top market).
-//                        Mobile = horizontal snap carousel.
-//
-//   3. Trend           — full-width revenue line with comparison overlay
-//                        + peak annotation. The "how is the period
-//                        shaped" answer.
-//
-//   4. Breakdown row   — Топ продукти (lg:7) + Магазини (lg:5).
-//                        Asymmetric so the products card breathes.
-//
-// Mobile order is identical to desktop — stacking is implicit because the
-// 12-col grid degrades to grid-cols-1 below `lg`. No mobile-specific
-// reordering needed.
+// The metric chip (Приходи/Поръчки/Клиенти) lives inside the География
+// section header — it only changes what the map and the Countries
+// list paint, not the hero/trend numbers above. Putting it in the
+// page-level PageHeader would imply it controls everything, which is
+// wrong and confusing.
 // ============================================================
+
+const WorldMap = dynamic(
+  () =>
+    import("@/components/sales/geography/WorldMap").then((m) => m.WorldMap),
+  {
+    ssr: false,
+    loading: () => (
+      <Card className="h-full">
+        <Skeleton className="h-full w-full rounded-xl" />
+      </Card>
+    ),
+  }
+);
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+interface CountriesResponse {
+  countries: CountrySales[];
+  error?: string;
+}
+
+interface CitiesResponse {
+  cities: CitySales[];
+  error?: string;
+}
+
+interface OrderPointsResponse {
+  points: OfficePoint[];
+  error?: string;
+}
 
 export default function SalesPage() {
+  const { queryString } = useDateRange();
+  const { storeParam } = useStoreSelection();
+  const [metric, setMetric] = useState<Metric>("revenue");
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+
+  // Three parallel SWR sources — choropleth outlines + city centroids
+  // fallback + per-office points. The map renders progressively as
+  // each lands; the side panel only needs the countries call.
+  const { data: countriesData, isLoading } = useSWR<CountriesResponse>(
+    `/api/sales/geography/countries?${queryString}&${storeParam}`,
+    fetcher,
+    { refreshInterval: 300_000, revalidateOnFocus: false }
+  );
+  const { data: citiesData } = useSWR<CitiesResponse>(
+    `/api/sales/geography/cities?${queryString}&${storeParam}`,
+    fetcher,
+    { refreshInterval: 300_000, revalidateOnFocus: false }
+  );
+  const { data: orderPointsData } = useSWR<OrderPointsResponse>(
+    `/api/sales/geography/order-points?${queryString}&${storeParam}`,
+    fetcher,
+    { refreshInterval: 300_000, revalidateOnFocus: false }
+  );
+
+  const countries = countriesData?.countries ?? [];
+  const cities = citiesData?.cities ?? [];
+  const orderPoints = orderPointsData?.points ?? [];
+
+  const metricChip = (
+    <div className="inline-flex rounded-md bg-surface-2 p-0.5">
+      {(["revenue", "orders", "customers"] as Metric[]).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => setMetric(m)}
+          className={`
+            px-2.5 py-1 rounded text-[12px] font-medium transition-colors
+            ${
+              metric === m
+                ? "bg-surface text-text shadow-xs"
+                : "text-text-3 hover:text-text-2"
+            }
+          `}
+        >
+          {m === "revenue" ? "Приходи" : m === "orders" ? "Поръчки" : "Клиенти"}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <>
       <PageHeader title="Продажби">
@@ -47,13 +144,40 @@ export default function SalesPage() {
         <SalesTrend />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 mb-4 md:mb-6">
-        <div className="lg:col-span-7">
-          <TopProductsAggregate />
+      {/* География — section header carries the metric chip so its
+          scope is unambiguous. Same 8/4 split as the prior standalone
+          page; slightly shorter overall height because the page is
+          dense already. */}
+      <div className="mb-4 md:mb-6">
+        <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-[15px] font-semibold text-text">География</h2>
+          {metricChip}
         </div>
-        <div className="lg:col-span-5">
-          <StorePerformanceTable />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
+          <div className="lg:col-span-8 h-[400px] md:h-[520px] lg:h-[600px]">
+            <WorldMap
+              data={countries}
+              cities={cities}
+              orderPoints={orderPoints}
+              metric={metric}
+              selectedCountry={selectedCountry}
+              onSelectCountry={setSelectedCountry}
+            />
+          </div>
+          <div className="lg:col-span-4 h-[400px] lg:h-[600px]">
+            <CountryListPanel
+              data={countries}
+              metric={metric}
+              isLoading={isLoading}
+              selectedCountry={selectedCountry}
+              onSelectCountry={setSelectedCountry}
+            />
+          </div>
         </div>
+      </div>
+
+      <div className="mb-4 md:mb-6">
+        <TopProductsAggregate />
       </div>
 
       <div className="mb-4 md:mb-6">
