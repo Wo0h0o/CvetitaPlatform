@@ -10,7 +10,7 @@ import maplibregl, {
 import * as topojson from "topojson-client";
 import type { FeatureCollection, Feature, Geometry } from "geojson";
 import { MarketFlag } from "@/components/shared/MarketFlag";
-import { ALPHA2_TO_NAME_BG, countryDisplayName } from "@/lib/geo/country-codes";
+import { countryDisplayName } from "@/lib/geo/country-codes";
 import { lookupCity } from "@/lib/geo/cities";
 import worldTopojson from "@/lib/geo/world-110m.json";
 import type { CountrySales, CitySales } from "@/lib/sales-queries";
@@ -459,6 +459,24 @@ export function WorldMap({
           "circle-blur": 0.3,
         },
       });
+      // Invisible hit-area layer — §10.4 ("hit area decoupled from
+      // visible size"). Sits between halo and visible dot; T3 dots are
+      // 4px visible and would be brutal mouse/touch targets on their
+      // own, so we give every marker a 12px transparent hit circle.
+      // queryRenderedFeatures in updateHoverFromEvent picks this up
+      // first because we list it ahead of city-dots in the layer query
+      // (see updateHoverFromEvent below).
+      map.addLayer({
+        id: "city-hit",
+        type: "circle",
+        source: "cities",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-radius": 12,
+          // No stroke, no opacity — pure invisible click/hover surface.
+        },
+      });
       map.addLayer({
         id: "city-dots",
         type: "circle",
@@ -533,9 +551,11 @@ export function WorldMap({
         const y = e.originalEvent.clientY - rect.top;
 
         // Marker layers take priority — they paint on top, so the cursor
-        // is intentionally on them when both layers report a hit.
+        // is intentionally on them when both layers report a hit. The
+        // invisible `city-hit` layer is listed first so T3 4px dots get
+        // a forgiving 12px hit surface (§10.4).
         const cityFeatures = map.queryRenderedFeatures(e.point, {
-          layers: ["city-dots", "city-t1-halo"],
+          layers: ["city-hit", "city-dots", "city-t1-halo"],
         });
         if (cityFeatures.length > 0) {
           const f = cityFeatures[0];
@@ -630,7 +650,10 @@ export function WorldMap({
         }
       });
 
-      map.on("click", "city-dots", (e) => {
+      // Bind to the invisible hit layer so even T3 4px dots take a
+      // 12px-wide click target. The hit layer carries the same
+      // ResolvedCityProps as city-dots (both read from the same source).
+      map.on("click", "city-hit", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const p = f.properties as ResolvedCityProps;
@@ -833,8 +856,6 @@ function CountryTooltipBody({
         <div className="text-text-3 text-[11px] leading-snug max-w-[220px]">
           Извън ISO модела. Поръчки от тук се отчитат към съседна държава.
         </div>
-      ) : ALPHA2_TO_NAME_BG[alpha2] ? (
-        <div className="text-text-3 italic">Няма продажби в периода</div>
       ) : (
         <div className="text-text-3 italic">Няма продажби в периода</div>
       )}
