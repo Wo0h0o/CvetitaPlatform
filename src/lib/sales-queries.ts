@@ -680,3 +680,79 @@ export async function fetchSalesByCountry(
 
   return Array.from(byCountry.values()).sort((a, b) => b.revenue - a.revenue);
 }
+
+// ---------------------------------------------------------------------------
+// Sales by city — for the world-map pulsing dots overlay
+// ---------------------------------------------------------------------------
+
+/** Aggregated sales for one (country, city) tuple across the period. */
+export interface CitySales {
+  countryCode: string;
+  city: string;
+  revenue: number;
+  orders: number;
+  customers: number;
+}
+
+interface CityRpcRow {
+  country_code: string;
+  city: string;
+  total_revenue: string | number;
+  total_orders: string | number;
+  unique_customers: string | number;
+}
+
+/**
+ * Cross-store sales aggregated by (country, city). City strings come back
+ * raw from Shopify — alias normalisation + lat/lng resolution happens on
+ * the client against `src/lib/geo/cities.ts` so we can iterate the alias
+ * table without redeploying the DB.
+ */
+export async function fetchSalesByCity(
+  schemas: StoreSchema[],
+  from: string,
+  to: string
+): Promise<CitySales[]> {
+  const all = await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin.rpc("read_store_sales_by_city", {
+        p_schema: s.schemaName,
+        p_from: from,
+        p_to: to,
+      });
+
+      if (error) {
+        logger.error("Failed read_store_sales_by_city", {
+          schema: s.schemaName,
+          error: error.message,
+        });
+        return [] as CityRpcRow[];
+      }
+      return (data ?? []) as CityRpcRow[];
+    })
+  );
+
+  // Merge across schemas by (countryCode, city) lowercased for the key,
+  // but preserve the raw city string from the first row so the client
+  // sees the actual Shopify-provided spelling.
+  const byKey = new Map<string, CitySales>();
+  for (const rows of all) {
+    for (const r of rows) {
+      if (!r.country_code || !r.city) continue;
+      const key = `${r.country_code}|${r.city.toLowerCase()}`;
+      const existing = byKey.get(key) ?? {
+        countryCode: r.country_code,
+        city: r.city,
+        revenue: 0,
+        orders: 0,
+        customers: 0,
+      };
+      existing.revenue += Number(r.total_revenue);
+      existing.orders += Number(r.total_orders);
+      existing.customers += Number(r.unique_customers);
+      byKey.set(key, existing);
+    }
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
+}

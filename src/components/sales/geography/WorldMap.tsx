@@ -5,12 +5,14 @@ import {
   ComposableMap,
   Geographies,
   Geography,
+  Marker,
   ZoomableGroup,
 } from "react-simple-maps";
 import { MarketFlag } from "@/components/shared/MarketFlag";
 import { numericToAlpha2, countryDisplayName } from "@/lib/geo/country-codes";
+import { lookupCity, type CityEntry } from "@/lib/geo/cities";
 import worldTopojson from "@/lib/geo/world-110m.json";
-import type { CountrySales } from "@/lib/sales-queries";
+import type { CountrySales, CitySales } from "@/lib/sales-queries";
 
 // ============================================================
 // WorldMap — branded choropleth for /sales/geography.
@@ -46,20 +48,37 @@ export type Metric = "revenue" | "orders" | "customers";
 
 interface WorldMapProps {
   data: CountrySales[];
+  /** City-level data for pulsing marker overlay. Optional — if absent
+   *  the map renders the choropleth only. Markers are filtered to
+   *  cities our lookup table can resolve to lat/lng; the rest fold
+   *  silently into the country aggregate (which is shown via choropleth
+   *  intensity anyway). */
+  cities?: CitySales[];
   metric: Metric;
   /** Optional currently-highlighted country (sync from side list). */
   selectedCountry?: string | null;
   onSelectCountry?: (alpha2: string | null) => void;
 }
 
-interface HoverState {
-  alpha2: string | null;
-  englishName: string;
-  x: number;
-  y: number;
-  geoCenterX?: number;
-  geoCenterY?: number;
+/** A resolved city — sales joined with its lat/lng entry. */
+interface ResolvedCity extends CitySales {
+  entry: CityEntry;
 }
+
+type HoverState =
+  | {
+      kind: "country";
+      alpha2: string | null;
+      englishName: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "city";
+      city: ResolvedCity;
+      x: number;
+      y: number;
+    };
 
 // Recharts/react-simple-maps types are loose — geography feature.id is
 // `string | number` depending on the source. We coerce in a single place.
@@ -78,29 +97,19 @@ function fmtInt(n: number): string {
 }
 
 // ============================================================
-// CountryTooltip — glass card, same grammar as TempoTooltip
+// TooltipShell — shared glass container for both country + city
+// tooltips, anchored to the hover xy with the standard 12px offset.
 // ============================================================
 
-interface CountryTooltipProps {
-  hover: HoverState;
-  data: CountrySales | undefined;
-  totalRevenue: number;
-  totalOrders: number;
-  totalCustomers: number;
-}
-
-function CountryTooltip({
-  hover,
-  data,
-  totalRevenue,
-  totalOrders,
-  totalCustomers,
-}: CountryTooltipProps) {
-  const displayName = countryDisplayName(hover.alpha2, hover.englishName);
-  const sharePct = data && totalRevenue > 0
-    ? Math.round((data.revenue / totalRevenue) * 100)
-    : null;
-
+function TooltipShell({
+  x,
+  y,
+  children,
+}: {
+  x: number;
+  y: number;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className="
@@ -111,15 +120,47 @@ function CountryTooltip({
         text-[11px] leading-tight
       "
       style={{
-        // 12px offset from cursor so the arrow tip doesn't sit on the
-        // tooltip box (which would block hover events on adjacent
-        // countries).
-        left: `${hover.x + 12}px`,
-        top: `${hover.y + 12}px`,
+        // 12px offset from cursor so the tooltip doesn't sit on
+        // adjacent hover targets (countries / markers).
+        left: `${x + 12}px`,
+        top: `${y + 12}px`,
       }}
     >
+      {children}
+    </div>
+  );
+}
+
+// ============================================================
+// Country tooltip body
+// ============================================================
+
+interface CountryTooltipProps {
+  alpha2: string | null;
+  englishName: string;
+  data: CountrySales | undefined;
+  totalRevenue: number;
+  totalOrders: number;
+  totalCustomers: number;
+}
+
+function CountryTooltipBody({
+  alpha2,
+  englishName,
+  data,
+  totalRevenue,
+  totalOrders,
+  totalCustomers,
+}: CountryTooltipProps) {
+  const displayName = countryDisplayName(alpha2, englishName);
+  const sharePct = data && totalRevenue > 0
+    ? Math.round((data.revenue / totalRevenue) * 100)
+    : null;
+
+  return (
+    <>
       <div className="flex items-center gap-2 text-text font-medium text-[11.5px]">
-        {hover.alpha2 && <MarketFlag market={hover.alpha2.toLowerCase()} size={14} />}
+        {alpha2 && <MarketFlag market={alpha2.toLowerCase()} size={14} />}
         <span>{displayName}</span>
       </div>
       <div className="h-px bg-border/70 my-1.5" />
@@ -154,7 +195,121 @@ function CountryTooltip({
           потенциален пазар
         </div>
       )}
-    </div>
+    </>
+  );
+}
+
+// ============================================================
+// City tooltip body — same grammar, surfaces the city + country
+// breakdown for a single marker.
+// ============================================================
+
+function CityTooltipBody({ city }: { city: ResolvedCity }) {
+  return (
+    <>
+      <div className="flex items-center gap-2 text-text font-medium text-[11.5px]">
+        <MarketFlag market={city.countryCode.toLowerCase()} size={14} />
+        <span>{city.entry.name}</span>
+        <span className="text-text-3 text-[10px]">
+          ({countryDisplayName(city.countryCode, city.countryCode)})
+        </span>
+      </div>
+      <div className="h-px bg-border/70 my-1.5" />
+      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
+        <span className="text-text-3">Приходи</span>
+        <span className="text-text font-semibold tabular-nums text-right">
+          {fmtEur(city.revenue)}
+        </span>
+        <span className="text-text-3">Поръчки</span>
+        <span className="text-text-2 tabular-nums text-right">
+          {fmtInt(city.orders)}
+        </span>
+        <span className="text-text-3">Клиенти</span>
+        <span className="text-text-2 tabular-nums text-right">
+          {fmtInt(city.customers)}
+        </span>
+      </div>
+    </>
+  );
+}
+
+// ============================================================
+// PulseMarker — accent dot + animated expanding ring per city.
+//
+// Uses SMIL <animate> inside SVG rather than CSS keyframes because
+// transform-on-SVG-children is jittery in some browser releases (Safari
+// has a long-standing bug); SMIL on `r` and `opacity` is rock-solid and
+// requires no CSS class plumbing.
+//
+// The `delaySeconds` stagger across the marker list desyncs the pulses
+// so the eye doesn't read a single global heartbeat — gives the surface
+// a "many alive cities" feel rather than "scheduled animation".
+// ============================================================
+
+interface PulseMarkerProps {
+  city: ResolvedCity;
+  radius: number;
+  delaySeconds: number;
+  isSelected: boolean;
+  onMouseMove: (e: React.MouseEvent) => void;
+  onMouseLeave: () => void;
+  onClick: () => void;
+}
+
+function PulseMarker({
+  city,
+  radius,
+  delaySeconds,
+  isSelected,
+  onMouseMove,
+  onMouseLeave,
+  onClick,
+}: PulseMarkerProps) {
+  // Outer ring expands to ~3.5× the dot radius then fades; constant max
+  // independent of dot size so even tiny cities have a perceptible ping.
+  const ringMax = Math.max(12, radius * 3.5);
+
+  return (
+    <Marker coordinates={[city.entry.lng, city.entry.lat]}>
+      {/* Expanding pulse ring — drawn first so the solid dot paints on top. */}
+      <circle
+        r={radius}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={1.2}
+        opacity={0.6}
+      >
+        <animate
+          attributeName="r"
+          from={radius}
+          to={ringMax}
+          dur="2.4s"
+          begin={`${delaySeconds}s`}
+          repeatCount="indefinite"
+        />
+        <animate
+          attributeName="opacity"
+          from="0.55"
+          to="0"
+          dur="2.4s"
+          begin={`${delaySeconds}s`}
+          repeatCount="indefinite"
+        />
+      </circle>
+      {/* Solid dot — the actual marker. Pointer events live here so
+          only the dot is hoverable, not the radius of the expanded ring. */}
+      <circle
+        r={radius}
+        fill="var(--accent)"
+        stroke="var(--surface)"
+        strokeWidth={isSelected ? 2 : 1}
+        opacity={0.95}
+        style={{ cursor: "pointer" }}
+        onMouseMove={onMouseMove}
+        onMouseLeave={onMouseLeave}
+        onClick={onClick}
+      />
+    </Marker>
   );
 }
 
@@ -162,8 +317,14 @@ function CountryTooltip({
 // Main export
 // ============================================================
 
+// Cap on rendered markers. SMIL animations on hundreds of nodes start
+// to chug; top-N by metric value keeps the canvas responsive while still
+// covering the long tail visually via the country choropleth underneath.
+const MAX_MARKERS = 80;
+
 export function WorldMap({
   data,
+  cities = [],
   metric,
   selectedCountry,
   onSelectCountry,
@@ -225,7 +386,40 @@ export function WorldMap({
     };
   }, [data, metric, byAlpha2]);
 
-  function handleMouseMove(
+  // Resolve cities → lat/lng entries via the alias lookup. Cities we
+  // can't match drop silently (the country choropleth still counts
+  // their revenue). Sorted by the active metric so MAX_MARKERS keeps
+  // the top performers visible.
+  const resolvedCities = useMemo<ResolvedCity[]>(() => {
+    const matched: ResolvedCity[] = [];
+    for (const c of cities) {
+      const entry = lookupCity(c.countryCode, c.city);
+      if (entry) matched.push({ ...c, entry });
+    }
+    matched.sort((a, b) => b[metric] - a[metric]);
+    return matched.slice(0, MAX_MARKERS);
+  }, [cities, metric]);
+
+  // Marker radius scale — log10 percentile within the resolved set,
+  // mapped to a 3-9px SVG radius so even the smallest marker is
+  // clickable, and the largest doesn't dominate the canvas.
+  const radiusFor = useMemo(() => {
+    const values = resolvedCities
+      .map((c) => c[metric])
+      .filter((v) => v > 0)
+      .map((v) => Math.log10(v + 1));
+    if (values.length === 0) return () => 3;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    return (city: ResolvedCity): number => {
+      const v = Math.log10(city[metric] + 1);
+      const ratio = (v - min) / range;
+      return 3 + ratio * 6; // 3px → 9px
+    };
+  }, [resolvedCities, metric]);
+
+  function handleCountryMouseMove(
     e: React.MouseEvent<SVGPathElement>,
     geo: GeoFeature
   ) {
@@ -233,8 +427,21 @@ export function WorldMap({
     if (!container) return;
     const rect = container.getBoundingClientRect();
     setHover({
+      kind: "country",
       alpha2: numericToAlpha2(geo.id),
       englishName: geo.properties?.name ?? "—",
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  }
+
+  function handleCityMouseMove(e: React.MouseEvent, city: ResolvedCity) {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    setHover({
+      kind: "city",
+      city,
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     });
@@ -251,6 +458,14 @@ export function WorldMap({
     }
   }
 
+  function handleCityClick(city: ResolvedCity) {
+    if (onSelectCountry) {
+      onSelectCountry(
+        city.countryCode === selectedCountry ? null : city.countryCode
+      );
+    }
+  }
+
   function zoomIn() {
     setZoom((z) => ({ ...z, zoom: Math.min(z.zoom * 1.4, 8) }));
   }
@@ -262,8 +477,6 @@ export function WorldMap({
   function resetZoom() {
     setZoom({ coordinates: [15, 35], zoom: 1.4 });
   }
-
-  const hoverData = hover?.alpha2 ? byAlpha2.get(hover.alpha2) : undefined;
 
   return (
     <div
@@ -292,7 +505,7 @@ export function WorldMap({
                     key={geo.rsmKey}
                     geography={geo}
                     onMouseMove={(e: React.MouseEvent<SVGPathElement>) =>
-                      handleMouseMove(e, geo)
+                      handleCountryMouseMove(e, geo)
                     }
                     onMouseLeave={handleMouseLeave}
                     onClick={() => handleCountryClick(geo)}
@@ -323,6 +536,25 @@ export function WorldMap({
               })
             }
           </Geographies>
+          {/* Pulsing city markers — rendered AFTER Geographies so they
+              paint on top of the country fills. Each marker carries
+              its own SMIL animation; the delay stagger across the
+              list desyncs the pulse so the canvas feels alive, not
+              metronome-driven. */}
+          {resolvedCities.map((city, i) => (
+            <PulseMarker
+              key={`${city.countryCode}|${city.entry.name}`}
+              city={city}
+              radius={radiusFor(city)}
+              // Stagger pulses over a ~2s window (the cycle length) so
+              // 80 markers don't all expand at the same frame.
+              delaySeconds={(i % 12) * 0.18}
+              isSelected={city.countryCode === selectedCountry}
+              onMouseMove={(e) => handleCityMouseMove(e, city)}
+              onMouseLeave={handleMouseLeave}
+              onClick={() => handleCityClick(city)}
+            />
+          ))}
         </ZoomableGroup>
       </ComposableMap>
 
@@ -366,15 +598,27 @@ export function WorldMap({
         </button>
       </div>
 
-      {/* Hover tooltip — anchored to mouse position within the card. */}
-      {hover && (
-        <CountryTooltip
-          hover={hover}
-          data={hoverData}
-          totalRevenue={totals.revenue}
-          totalOrders={totals.orders}
-          totalCustomers={totals.customers}
-        />
+      {/* Hover tooltip — anchored to mouse position within the card.
+          Two variants: country (when hovering a country fill) and city
+          (when hovering a marker). The marker tooltip wins because
+          markers paint on top of countries; mouse events on a marker
+          don't propagate to the country below. */}
+      {hover?.kind === "country" && (
+        <TooltipShell x={hover.x} y={hover.y}>
+          <CountryTooltipBody
+            alpha2={hover.alpha2}
+            englishName={hover.englishName}
+            data={hover.alpha2 ? byAlpha2.get(hover.alpha2) : undefined}
+            totalRevenue={totals.revenue}
+            totalOrders={totals.orders}
+            totalCustomers={totals.customers}
+          />
+        </TooltipShell>
+      )}
+      {hover?.kind === "city" && (
+        <TooltipShell x={hover.x} y={hover.y}>
+          <CityTooltipBody city={hover.city} />
+        </TooltipShell>
       )}
     </div>
   );

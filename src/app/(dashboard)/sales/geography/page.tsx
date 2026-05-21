@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/shared/Skeleton";
 import { CountryListPanel } from "@/components/sales/geography/CountryListPanel";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
-import type { CountrySales } from "@/lib/sales-queries";
+import type { CountrySales, CitySales } from "@/lib/sales-queries";
 import type { Metric } from "@/components/sales/geography/WorldMap";
 
 // ============================================================
@@ -73,6 +73,11 @@ interface CountriesResponse {
   error?: string;
 }
 
+interface CitiesResponse {
+  cities: CitySales[];
+  error?: string;
+}
+
 export default function SalesGeographyPage() {
   const { queryString } = useDateRange();
   const { storeParam } = useStoreSelection();
@@ -85,7 +90,17 @@ export default function SalesGeographyPage() {
     { refreshInterval: 300_000, revalidateOnFocus: false }
   );
 
+  // City-level pulse markers — separate SWR key so the choropleth can
+  // render while the city resolution is still loading. No `keepPreviousData`
+  // because the date / store filter genuinely invalidates the marker set.
+  const { data: cityData } = useSWR<CitiesResponse>(
+    `/api/sales/geography/cities?${queryString}&${storeParam}`,
+    fetcher,
+    { refreshInterval: 300_000, revalidateOnFocus: false }
+  );
+
   const countries = data?.countries ?? [];
+  const cities = cityData?.cities ?? [];
 
   const metricChip = (
     <div className="inline-flex rounded-md bg-surface-2 p-0.5">
@@ -135,6 +150,7 @@ export default function SalesGeographyPage() {
           <div className="lg:col-span-8 h-[400px] md:h-[520px] lg:h-[640px]">
             <WorldMap
               data={countries}
+              cities={cities}
               metric={metric}
               selectedCountry={selectedCountry}
               onSelectCountry={setSelectedCountry}
