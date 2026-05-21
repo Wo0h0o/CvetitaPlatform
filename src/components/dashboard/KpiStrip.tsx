@@ -113,14 +113,31 @@ function fmtPctVal(n: number): string {
 /**
  * Build the human label for a bucket index given the SeriesShape kind.
  *
- * - hourly: "14ч" (0-23 → "00ч" - "23ч")
- * - daily:  "21 май" (ISO date → БГ short)
- * - weekly: "Седмица до 21 май" (week-ending date — what the bucket represents)
+ * - hourly: "14:00 — 14:59" (the literal Sofia clock window)
+ * - daily:  "Пон, 21 май" (weekday + БГ short date — context for the value)
+ * - weekly: "Седм. до пон, 21 май" (week-ending = "what the bucket holds")
+ *
+ * The weekday prefix matters more than it looks: in a 30d daily chart the
+ * difference between Friday €1,200 (typical strong) and Tuesday €1,200
+ * (well below typical) is the whole story, and the user shouldn't have
+ * to count back on the calendar to know which day they're hovering.
  */
 function formatBucketLabel(label: string, kind: SeriesKind): string {
-  if (kind === "hourly") return `${label}ч`;
-  if (kind === "weekly") return `Седмица до ${fmtBgDate(label)}`;
-  return fmtBgDate(label);
+  if (kind === "hourly") {
+    const h = String(label).padStart(2, "0");
+    const next = String((parseInt(label, 10) + 1) % 24).padStart(2, "0");
+    return `${h}:00 — ${next}:00`;
+  }
+  const weekday = new Intl.DateTimeFormat("bg-BG", {
+    weekday: "short",
+  })
+    .format(new Date(label))
+    .replace(".", "");
+  // БГ short weekday returns "пн"/"вт"/... — capitalise first letter for the
+  // tooltip header so it doesn't read as a typo next to the date.
+  const wd = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  if (kind === "weekly") return `Седм. до ${wd}, ${fmtBgDate(label)}`;
+  return `${wd}, ${fmtBgDate(label)}`;
 }
 
 // ============================================================
@@ -234,20 +251,25 @@ function HeroCard({
                 </linearGradient>
               </defs>
               <Tooltip
+                // Recharts wraps `content` in its own div; we strip that
+                // wrapper to a no-op so the glass container inside
+                // TempoTooltip carries all the visual weight (otherwise
+                // we'd be painting a glass card inside an opaque card).
                 contentStyle={{
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  fontSize: 11,
-                  boxShadow: "var(--shadow-md)",
-                  padding: "6px 10px",
-                  minWidth: 140,
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 0,
+                  boxShadow: "none",
+                  padding: 0,
+                  outline: "none",
                 }}
+                wrapperStyle={{ outline: "none" }}
                 cursor={{ stroke: "var(--text-3)", strokeWidth: 1, strokeDasharray: "2 2" }}
                 content={(props) => (
                   <TempoTooltip
                     {...props}
                     seriesKind={seriesKind}
+                    metricLabel={label}
                     formatValue={formatValue}
                     inverseDelta={inverseDelta}
                   />
@@ -339,22 +361,41 @@ function buildChartRows(series: SeriesShape | null): ChartRow[] | null {
 }
 
 // ============================================================
-// Tooltip — three-row layout (bucket / current / comparison + delta)
+// Tooltip — glass container, header + label/value grid
 // ============================================================
+//
+// Layout (visual sketch):
+//
+//   ┌───────────────────────────────┐
+//   │ Пон, 19 май                    │  ← bucket header, text-text 12px
+//   │ ─────────────────              │  ← 1px hairline (border-border)
+//   │ Поръчки         65             │  ← label muted, value text-text bold
+//   │ Типично         68    ▼ 4%     │  ← label muted, value muted, delta tone
+//   └───────────────────────────────┘
+//
+// The container itself is `bg-surface/85 backdrop-blur-xl` — same glass
+// vocabulary the TopBar, ToastProvider, Modal, and ads sticky toolbars
+// already use across the platform. We strip Recharts' default wrapper
+// (transparent, no border) so the glass card is the only painted layer.
+//
+// The two-column grid keeps "Типично" and "Поръчки" labels right-aligned
+// to a single tab stop, so the eye can scan label → value without
+// re-anchoring per row. Tabular-nums on the value column makes 65 and 68
+// line up under each other even with different widths.
 
-// Recharts ships strict generic typings for the `content` prop of
-// <Tooltip>. We only read `active` + the first item's payload, so we
-// accept a loose unknown-shape and narrow inside.
 function TempoTooltip({
   active,
   payload,
   seriesKind,
+  metricLabel,
   formatValue,
   inverseDelta,
 }: {
   active?: boolean;
   payload?: ReadonlyArray<{ payload?: ChartRow }>;
   seriesKind: SeriesKind;
+  /** The card's metric name — used as the row label for the current value. */
+  metricLabel: string;
   formatValue: (n: number) => string;
   inverseDelta: boolean;
 }) {
@@ -387,22 +428,44 @@ function TempoTooltip({
         : "text-text-3";
 
   return (
-    <div>
-      <div className="text-text-2 font-semibold mb-0.5">{bucketLabel}</div>
-      {cur !== null && (
-        <div className="text-text tabular-nums">
-          {formatValue(cur)}
-          {row.partial && (
-            <span className="text-text-3 text-[10px] ml-1">(частична)</span>
-          )}
-        </div>
-      )}
-      {cmp !== null && (
-        <div className="flex items-center gap-1.5 text-text-3 tabular-nums">
-          <span>{formatValue(cmp)} типично</span>
-          {delta && <span className={toneColor}>{delta.text}</span>}
-        </div>
-      )}
+    <div
+      className="
+        bg-surface/85 backdrop-blur-xl
+        border border-border/60 rounded-xl shadow-xl
+        px-3 py-2.5 min-w-[180px]
+        text-[11px] leading-tight
+      "
+    >
+      <div className="flex items-baseline justify-between gap-2 text-text font-medium text-[11.5px]">
+        <span>{bucketLabel}</span>
+        {row.partial && (
+          <span className="text-text-3 text-[10px] font-normal">частична</span>
+        )}
+      </div>
+      <div className="h-px bg-border/70 my-1.5" />
+      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
+        {cur !== null && (
+          <>
+            <span className="text-text-3">{metricLabel}</span>
+            <span className="text-text font-semibold tabular-nums text-right">
+              {formatValue(cur)}
+            </span>
+          </>
+        )}
+        {cmp !== null && (
+          <>
+            <span className="text-text-3">Типично</span>
+            <span className="text-text-2 tabular-nums text-right">
+              <span>{formatValue(cmp)}</span>
+              {delta && (
+                <span className={`${toneColor} ml-2 tabular-nums`}>
+                  {delta.text}
+                </span>
+              )}
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
