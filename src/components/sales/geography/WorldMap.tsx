@@ -473,11 +473,21 @@ export function WorldMap({
         },
       });
 
-      // Cluster halo — accent at low opacity, size scales with summed
-      // ORDERS (not feature count) so the visual weight matches the
-      // label number and the side-panel mental model. Step thresholds
-      // chosen for Cvetita's range: foreign clusters (5-70 orders),
-      // single-city centres (~100-400), full БГ aggregate (~1.7k).
+      // Cluster halo — accent at low opacity. Size is purely a
+      // function of the cluster's aggregate weight; log10 keeps the
+      // mapping honest at any scale (a single market with 50k orders
+      // shouldn't blow up the canvas; a market with 3 orders should
+      // still read as a cluster, not a stray dot).
+      //
+      // log10(sum) mapping:
+      //   1 order   → log10=0   → 14px (the visual floor for a cluster)
+      //   10        → log10=1   → 19px
+      //   100       → log10=2   → 24px
+      //   1000      → log10=3   → 30px
+      //   10000     → log10=4   → 36px
+      //
+      // No data-tied thresholds — the gradient stretches with whatever
+      // data exists.
       map.addLayer({
         id: "marker-clusters",
         type: "circle",
@@ -487,13 +497,21 @@ export function WorldMap({
           "circle-color": "rgb(34, 197, 94)",
           "circle-opacity": 0.22,
           "circle-radius": [
-            "step",
-            ["coalesce", ["get", "sum_orders"], ["get", "point_count"]],
-            14,   // <10 orders
-            10, 17,
-            50, 20,
-            200, 24,
-            1000, 30,
+            "interpolate",
+            ["linear"],
+            [
+              "log10",
+              [
+                "max",
+                1,
+                ["coalesce", ["get", "sum_orders"], ["get", "point_count"], 1],
+              ],
+            ],
+            0, 14,
+            1, 19,
+            2, 24,
+            3, 30,
+            4, 36,
           ],
           "circle-stroke-color": "rgb(34, 197, 94)",
           "circle-stroke-width": 1,
@@ -501,16 +519,23 @@ export function WorldMap({
         },
       });
       // Cluster label shows summed ORDERS, not feature count.
-      // `point_count` (the MapLibre default) is "how many dots merged
-      // here" — useful for clustering diagnostics, but the operator's
-      // mental model is "how many orders" because that's what the side
-      // panel shows. Mismatched numbers ("сайдбар: 1628, карта: 997")
-      // would correctly raise "is something missing?", which is the bug
-      // that triggered this change. Same field as the hover tooltip
-      // count so the two read consistently.
+      // `point_count` (the MapLibre default) is "how many features
+      // merged here" — useful for clustering diagnostics, but the
+      // operator's mental model is "how many orders" because that's
+      // what the side panel shows. Mismatched numbers ("сайдбар:
+      // 1628, карта: 997") would correctly raise "is something
+      // missing?", which is the bug that triggered this change.
+      // Same field as the hover tooltip count so the two read
+      // consistently.
       //
-      // Format: <1000 → as-is ("847"); ≥1000 → "1.7k" via number-format.
-      // Keeps the label legible inside the 14-34px cluster circles.
+      // Plain `to-string` of the coalesced count — no abbreviation,
+      // no decimals, no chained operators. The earlier
+      // case+concat+number-format chain silently broke cluster
+      // rendering altogether (the cluster halo + symbol layers both
+      // disappeared, surfacing as bare 5px dots over БГ). A flat
+      // to-string has none of those failure modes, and for our scale
+      // (max ~10k orders per cluster) the raw number fits in the
+      // 30-36px cluster circle.
       map.addLayer({
         id: "marker-cluster-count",
         type: "symbol",
@@ -518,18 +543,8 @@ export function WorldMap({
         filter: ["has", "point_count"],
         layout: {
           "text-field": [
-            "case",
-            [">=", ["coalesce", ["get", "sum_orders"], 0], 1000],
-            [
-              "concat",
-              [
-                "number-format",
-                ["/", ["coalesce", ["get", "sum_orders"], 0], 1000],
-                { "max-fraction-digits": 1 },
-              ],
-              "k",
-            ],
-            ["to-string", ["coalesce", ["get", "sum_orders"], ["get", "point_count"]]],
+            "to-string",
+            ["coalesce", ["get", "sum_orders"], ["get", "point_count"]],
           ],
           "text-font": ["Stadia Bold"],
           "text-size": 11,
