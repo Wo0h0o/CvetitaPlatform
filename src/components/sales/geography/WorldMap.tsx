@@ -241,80 +241,155 @@ function CityTooltipBody({ city }: { city: ResolvedCity }) {
 }
 
 // ============================================================
-// PulseMarker — accent dot + animated expanding ring per city.
+// IntelMarker — constant-pixel city marker with tiered hierarchy.
 //
-// Uses SMIL <animate> inside SVG rather than CSS keyframes because
-// transform-on-SVG-children is jittery in some browser releases (Safari
-// has a long-standing bug); SMIL on `r` and `opacity` is rock-solid and
-// requires no CSS class plumbing.
+// Design philosophy: "Calm by default, alive on interaction." Markers
+// are UI overlays, not geographic features — they live in SCREEN
+// coordinate space, not SVG world space. ZoomableGroup scales the
+// geography; this marker counter-scales itself by `1/currentZoom` so
+// it stays at a constant pixel size on screen, locked to its lat/lng.
 //
-// The `delaySeconds` stagger across the marker list desyncs the pulses
-// so the eye doesn't read a single global heartbeat — gives the surface
-// a "many alive cities" feel rather than "scheduled animation".
+// Three tiers, three visual states:
+//
+//   T1 (top 1 per country) — 7px dot + static accent halo. The halo
+//      doesn't animate; it just "is" there, giving the marker quiet
+//      visual prominence without screaming. Like the bright outpost on
+//      an intelligence map.
+//
+//   T2 (next 4 per country) — 5px dot, no halo. Important but secondary.
+//
+//   T3 (rest)            — 4px dot, no halo. Present, not loud.
+//
+// And three interaction states layered on top:
+//
+//   * Idle (default)   — just the tier visuals. No animation. Calm.
+//   * Hovered          — a single elegant pulse ring expands from the
+//                        dot, 1.6s cycle, ~2.2× expansion. Subtle and
+//                        purposeful: "you are looking at me."
+//   * Selected country — accent stroke on the dot. No pulse (selection
+//                        is communicated via the country choropleth +
+//                        side list — adding a pulse would double-state).
+//
+// Hit area: a transparent 12-screen-px circle (counter-scaled) sits
+// behind everything so even the smallest 4px T3 dot remains comfortably
+// clickable on mouse and touch.
 // ============================================================
 
-interface PulseMarkerProps {
+type MarkerTier = 1 | 2 | 3;
+
+// Base sizes in SVG units (pre-zoom). At runtime each is divided by the
+// current zoom factor so the screen size stays constant.
+const TIER_VISUAL: Record<MarkerTier, {
+  dotR: number;
+  haloR: number;
+  haloOpacity: number;
+  dotStroke: number;
+}> = {
+  1: { dotR: 7, haloR: 12, haloOpacity: 0.18, dotStroke: 1.5 },
+  2: { dotR: 5, haloR: 0, haloOpacity: 0, dotStroke: 1 },
+  3: { dotR: 4, haloR: 0, haloOpacity: 0, dotStroke: 1 },
+};
+
+interface IntelMarkerProps {
   city: ResolvedCity;
-  radius: number;
-  delaySeconds: number;
+  tier: MarkerTier;
+  /** Current ZoomableGroup zoom — used to counter-scale dimensions. */
+  currentZoom: number;
+  isHovered: boolean;
   isSelected: boolean;
   onMouseMove: (e: React.MouseEvent) => void;
   onMouseLeave: () => void;
   onClick: () => void;
 }
 
-function PulseMarker({
+function IntelMarker({
   city,
-  radius,
-  delaySeconds,
+  tier,
+  currentZoom,
+  isHovered,
   isSelected,
   onMouseMove,
   onMouseLeave,
   onClick,
-}: PulseMarkerProps) {
-  // Outer ring expands to ~3.5× the dot radius then fades; constant max
-  // independent of dot size so even tiny cities have a perceptible ping.
-  const ringMax = Math.max(12, radius * 3.5);
+}: IntelMarkerProps) {
+  const v = TIER_VISUAL[tier];
+  const z = currentZoom;
+
+  // All visual dimensions counter-scale by z, so each marker remains
+  // exactly its base pixel size on screen regardless of map zoom.
+  const r = v.dotR / z;
+  const haloR = v.haloR / z;
+  const dotStroke = v.dotStroke / z;
+  const hitR = 12 / z; // ≥12px hit area on screen — comfortable mouse target.
+
+  // Hover pulse — one ring expanding from the dot edge to ~2.2× the dot
+  // radius, then fading. Short cycle (1.6s) makes it feel responsive,
+  // not lingering. Only rendered when isHovered, so the canvas stays
+  // calm during normal browsing.
+  const pulseMax = (v.dotR * 2.2) / z;
+  const pulseStroke = 1.2 / z;
 
   return (
     <Marker coordinates={[city.entry.lng, city.entry.lat]}>
-      {/* Expanding pulse ring — drawn first so the solid dot paints on top. */}
-      <circle
-        r={radius}
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth={1.2}
-        opacity={0.6}
-      >
-        <animate
-          attributeName="r"
-          from={radius}
-          to={ringMax}
-          dur="2.4s"
-          begin={`${delaySeconds}s`}
-          repeatCount="indefinite"
+      {/* Static halo — only T1 has a halo. Not animated; the halo is
+          structural presence, not motion. */}
+      {haloR > 0 && (
+        <circle
+          r={haloR}
+          fill="var(--accent)"
+          opacity={v.haloOpacity}
+          pointerEvents="none"
         />
-        <animate
-          attributeName="opacity"
-          from="0.55"
-          to="0"
-          dur="2.4s"
-          begin={`${delaySeconds}s`}
-          repeatCount="indefinite"
-        />
-      </circle>
-      {/* Solid dot — the actual marker. Pointer events live here so
-          only the dot is hoverable, not the radius of the expanded ring. */}
+      )}
+      {/* Hover pulse ring — drawn only while this marker is hovered. */}
+      {isHovered && (
+        <circle
+          r={r}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth={pulseStroke}
+          opacity={0.55}
+          pointerEvents="none"
+        >
+          <animate
+            attributeName="r"
+            from={r}
+            to={pulseMax}
+            dur="1.6s"
+            repeatCount="indefinite"
+          />
+          <animate
+            attributeName="opacity"
+            from="0.55"
+            to="0"
+            dur="1.6s"
+            repeatCount="indefinite"
+          />
+        </circle>
+      )}
+      {/* Transparent hit area — sized for comfortable clicking even at
+          tiny dot sizes. Pointer events live here, not on the visible
+          dot, so the hover region is forgiving. */}
       <circle
-        r={radius}
-        fill="var(--accent)"
-        stroke="var(--surface)"
-        strokeWidth={isSelected ? 2 : 1}
-        opacity={0.95}
+        r={hitR}
+        fill="transparent"
         style={{ cursor: "pointer" }}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
         onClick={onClick}
+      />
+      {/* The visible dot — tier-sized, surface-bordered for crisp edges
+          against varying country fills. Selection swaps the border to
+          accent for a clear "this country is selected" signal without
+          adding any pulse (selection is already communicated via the
+          country fill stroke and the side list). */}
+      <circle
+        r={r}
+        fill="var(--accent)"
+        stroke={isSelected ? "var(--accent)" : "var(--surface)"}
+        strokeWidth={dotStroke}
+        opacity={0.95}
+        pointerEvents="none"
       />
     </Marker>
   );
@@ -408,24 +483,25 @@ export function WorldMap({
     return matched.slice(0, MAX_MARKERS);
   }, [cities, metric]);
 
-  // Marker radius scale — log10 percentile within the resolved set,
-  // mapped to a 3-9px SVG radius so even the smallest marker is
-  // clickable, and the largest doesn't dominate the canvas.
-  const radiusFor = useMemo(() => {
-    const values = resolvedCities
-      .map((c) => c[metric])
-      .filter((v) => v > 0)
-      .map((v) => Math.log10(v + 1));
-    if (values.length === 0) return () => 3;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min || 1;
-    return (city: ResolvedCity): number => {
-      const v = Math.log10(city[metric] + 1);
-      const ratio = (v - min) / range;
-      return 3 + ratio * 6; // 3px → 9px
-    };
-  }, [resolvedCities, metric]);
+  // Tier assignment — per country, not global. Sorting by the active
+  // metric globally then walking the list lets us assign:
+  //   * T1 to the first occurrence of each country (its top city)
+  //   * T2 to the next four occurrences
+  //   * T3 to everyone else
+  //
+  // Three discrete tiers (not a continuous gradient) so the eye reads
+  // hierarchy at a glance — "this is the country's anchor city, these
+  // are its supporting cities, these are the rest" — instead of trying
+  // to compare 30 slightly-different dot sizes.
+  const tieredCities = useMemo<Array<ResolvedCity & { tier: MarkerTier }>>(() => {
+    const rankPerCountry = new Map<string, number>();
+    return resolvedCities.map((c) => {
+      const rank = rankPerCountry.get(c.countryCode) ?? 0;
+      rankPerCountry.set(c.countryCode, rank + 1);
+      const tier: MarkerTier = rank === 0 ? 1 : rank < 5 ? 2 : 3;
+      return { ...c, tier };
+    });
+  }, [resolvedCities]);
 
   function handleCountryMouseMove(
     e: React.MouseEvent<SVGPathElement>,
@@ -594,25 +670,29 @@ export function WorldMap({
               })
             }
           </Geographies>
-          {/* Pulsing city markers — rendered AFTER Geographies so they
-              paint on top of the country fills. Each marker carries
-              its own SMIL animation; the delay stagger across the
-              list desyncs the pulse so the canvas feels alive, not
-              metronome-driven. */}
-          {resolvedCities.map((city, i) => (
-            <PulseMarker
-              key={`${city.countryCode}|${city.entry.name}`}
-              city={city}
-              radius={radiusFor(city)}
-              // Stagger pulses over a ~2s window (the cycle length) so
-              // 80 markers don't all expand at the same frame.
-              delaySeconds={(i % 12) * 0.18}
-              isSelected={city.countryCode === selectedCountry}
-              onMouseMove={(e) => handleCityMouseMove(e, city)}
-              onMouseLeave={handleMouseLeave}
-              onClick={() => handleCityClick(city)}
-            />
-          ))}
+          {/* Intel-style city markers — rendered AFTER Geographies so
+              they paint on top of the country fills. Constant-pixel
+              sized (counter-scaled by currentZoom), three discrete
+              tiers, calm by default, pulse only on hover. */}
+          {tieredCities.map((city) => {
+            const key = `${city.countryCode}|${city.entry.name}`;
+            const isHovered =
+              hover?.kind === "city" &&
+              `${hover.city.countryCode}|${hover.city.entry.name}` === key;
+            return (
+              <IntelMarker
+                key={key}
+                city={city}
+                tier={city.tier}
+                currentZoom={zoom.zoom}
+                isHovered={isHovered}
+                isSelected={city.countryCode === selectedCountry}
+                onMouseMove={(e) => handleCityMouseMove(e, city)}
+                onMouseLeave={handleMouseLeave}
+                onClick={() => handleCityClick(city)}
+              />
+            );
+          })}
         </ZoomableGroup>
       </ComposableMap>
 
