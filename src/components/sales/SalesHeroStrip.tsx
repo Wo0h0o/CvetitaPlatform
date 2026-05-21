@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useId, useMemo } from "react";
 import {
   Area,
@@ -10,11 +10,20 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { Card, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Delta } from "@/components/shared/Delta";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
-import { formatBgDate } from "@/lib/dates";
+import {
+  fmtBgDate,
+  fmtBgDateWithWeekday,
+  fmtEur,
+  fmtEurFull,
+  fmtHourFromIso,
+  fmtInt,
+} from "@/lib/format";
 import type { KpiMetric } from "@/lib/sales-queries";
 
 // ============================================================
@@ -46,7 +55,6 @@ import type { KpiMetric } from "@/lib/sales-queries";
 // →value grid). One consistent "more detail" affordance across pages.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface KpisResponse {
   revenue: KpiMetric;
@@ -72,41 +80,6 @@ interface ChartRow {
   compDate: string | null;
 }
 
-function fmtEur(n: number, dp = 0): string {
-  return `${n.toLocaleString("bg-BG", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  })} EUR`;
-}
-
-function fmtEurFull(n: number): string {
-  return `${n.toLocaleString("bg-BG", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
-
-// БГ short weekday like "Пон" — gives the tooltip header context, so the
-// operator doesn't have to count back on the calendar to tell whether a
-// €1,200 day was a typical Friday or an off-rhythm Tuesday.
-function formatBucketHeader(dateStr: string): string {
-  const wd = new Intl.DateTimeFormat("bg-BG", { weekday: "short" })
-    .format(new Date(dateStr))
-    .replace(".", "");
-  const cap = wd.charAt(0).toUpperCase() + wd.slice(1);
-  return `${cap}, ${formatBgDate(dateStr)}`;
-}
-
-// Hourly mode header — ISO timestamps from the trend API look like
-// "2026-05-21T14:00:00" (no timezone suffix). Slice the HH:MM rather
-// than parsing via Date(), which would shift to the browser local tz.
-function formatHourHeader(iso: string): string {
-  return `${iso.slice(11, 16)} ч.`;
-}
 
 // ============================================================
 // SparkTooltip — glass hover card on the spark.
@@ -171,7 +144,7 @@ function SparkTooltip({
       "
     >
       <div className="text-text font-medium text-[11.5px]">
-        {hourly ? formatHourHeader(row.date) : formatBucketHeader(row.date)}
+        {hourly ? `${fmtHourFromIso(row.date)} ч.` : fmtBgDateWithWeekday(row.date)}
       </div>
       <div className="h-px bg-border/70 my-1.5" />
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
@@ -494,26 +467,30 @@ export function SalesHeroStrip() {
   const hourly = from === to;
   const granularitySuffix = hourly ? "&granularity=hour" : "";
 
-  const { data: kpis, isLoading: kpisLoading, error: kpisError } = useSWR<KpisResponse>(
-    `/api/sales/kpis?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const {
+    data: kpis,
+    isLoading: kpisLoading,
+    error: kpisError,
+    mutate: mutateKpis,
+  } = useAnalyticsSWR<KpisResponse>(
+    `/api/sales/kpis?${queryString}&${storeParam}`
   );
 
-  const { data: trend, isLoading: trendLoading } = useSWR<TrendResponse>(
-    `/api/sales/trend?${queryString}&${storeParam}${granularitySuffix}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: trend, isLoading: trendLoading } = useAnalyticsSWR<TrendResponse>(
+    `/api/sales/trend?${queryString}&${storeParam}${granularitySuffix}`
   );
 
-  // Same SWR key as SalesTrend — cache shared, no extra network call.
-  const compQs = `preset=custom&from=${compFrom}&to=${compTo}${granularitySuffix}`;
-  const { data: comp } = useSWR<TrendResponse>(
+  // Same SWR key as SalesTrend / SalesDayPulse — cache shared, no extra
+  // network call. The granularity suffix MUST sit after storeParam (not
+  // inside compQs): SWR keys are compared as raw strings, so
+  // "...&stores=X&granularity=hour" and "...&granularity=hour&stores=X"
+  // are two distinct cache entries. All three trend consumers append it
+  // in the same position now.
+  const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;
+  const { data: comp } = useAnalyticsSWR<TrendResponse>(
     compFrom && compTo
-      ? `/api/sales/trend?${compQs}&${storeParam}`
-      : null,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+      ? `/api/sales/trend?${compQs}&${storeParam}${granularitySuffix}`
+      : null
   );
 
   // Build per-tile ChartRow arrays. For AOV we synthesise the per-day
@@ -561,15 +538,23 @@ export function SalesHeroStrip() {
     return best.revenue > 0 ? best : null;
   }, [trend?.series]);
 
-  if (kpisLoading || trendLoading || !kpis) return <HeroStripSkeleton />;
-
-  if (kpisError || kpis.error) {
+  // Error before loading — jsonFetcher throws ApiError on a non-2xx
+  // response OR a 200 body with `{ error }`, so the old `kpis.error`
+  // check is dead (a soft failure now lands in `kpisError`, not in
+  // `kpis`). One ErrorState card, retry wired to the kpis fetch.
+  if (kpisError) {
     return (
-      <div className="bg-surface rounded-xl shadow-sm p-5 mb-6 text-center">
-        <p className="text-[13px] text-text-2">Грешка при зареждане на продажби</p>
+      <div className="mb-4 md:mb-6">
+        <Card>
+          <CardBody>
+            <ErrorState error={kpisError} onRetry={() => mutateKpis()} />
+          </CardBody>
+        </Card>
       </div>
     );
   }
+
+  if (kpisLoading || trendLoading || !kpis) return <HeroStripSkeleton />;
 
   // Headline callout under the Revenue tile. In hourly mode we use the
   // peak HOUR — "Най-силен ден" on a single-day window would self-refer
@@ -577,8 +562,8 @@ export function SalesHeroStrip() {
   // the original peak-day label.
   const peakSub = peakDay
     ? hourly
-      ? `Пик час: ${formatHourHeader(peakDay.date)} • ${fmtEur(peakDay.revenue)}`
-      : `Най-силен ден: ${formatBgDate(peakDay.date)} • ${fmtEur(peakDay.revenue)}`
+      ? `Пик час: ${fmtHourFromIso(peakDay.date)} ч. • ${fmtEur(peakDay.revenue)}`
+      : `Най-силен ден: ${fmtBgDate(peakDay.date)} • ${fmtEur(peakDay.revenue)}`
     : undefined;
 
   return (

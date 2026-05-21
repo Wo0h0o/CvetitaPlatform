@@ -1,12 +1,15 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useMemo } from "react";
+import { Card, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Delta } from "@/components/shared/Delta";
 import { MarketFlag } from "@/components/shared/MarketFlag";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
+import { fmtEur, fmtInt, fmtPct } from "@/lib/format";
 import type {
   KpiMetric,
   TopProduct,
@@ -33,7 +36,6 @@ import type {
 // so the cache is shared and no extra network calls are made.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface KpisResponse {
   revenue: KpiMetric;
@@ -54,20 +56,6 @@ interface StoresResponse {
   error?: string;
 }
 
-function fmtEur(n: number, dp = 0): string {
-  return `${n.toLocaleString("bg-BG", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  })} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
-
-function fmtPct(n: number, dp = 1): string {
-  return `${n.toFixed(dp)}%`;
-}
 
 // ============================================================
 // SignalTile — one dense card.
@@ -181,33 +169,38 @@ export function SalesSignalStrip() {
   const { queryString } = useDateRange();
   const { storeParam, isAll } = useStoreSelection();
 
-  const { data: kpis, isLoading: kpisLoading } = useSWR<KpisResponse>(
-    `/api/sales/kpis?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const {
+    data: kpis,
+    isLoading: kpisLoading,
+    error: kpisError,
+    mutate: mutateKpis,
+  } = useAnalyticsSWR<KpisResponse>(
+    `/api/sales/kpis?${queryString}&${storeParam}`
   );
 
-  const { data: topProducts } = useSWR<TopProductsResponse>(
-    `/api/sales/top-products?${queryString}&${storeParam}&limit=10`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: topProducts } = useAnalyticsSWR<TopProductsResponse>(
+    `/api/sales/top-products?${queryString}&${storeParam}&limit=10`
   );
 
   // Stores endpoint always returns the full org list — only relevant when
   // viewing "all stores". When the user picked a single store, the Топ
   // пазар tile is meaningless, so we suppress that fetch + tile.
-  const { data: stores } = useSWR<StoresResponse>(
-    isAll ? `/api/sales/store-performance?${queryString}` : null,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: stores } = useAnalyticsSWR<StoresResponse>(
+    isAll ? `/api/sales/store-performance?${queryString}` : null
   );
 
   // === Derive metrics from existing endpoints ===
+  //
+  // Concentration / rate metrics live as FRACTIONS (0..1), not as
+  // percent values (0..100). The canonical `fmtPct(n)` multiplies by
+  // 100 on its own, so keeping the math as ratios reads more honestly
+  // at every step ("share of revenue = X / total" — no spurious *100
+  // hiding the unit shift).
 
   const refundRate = useMemo(() => {
     if (!kpis) return null;
     if (kpis.revenue.value <= 0) return 0;
-    return (kpis.refunded.value / kpis.revenue.value) * 100;
+    return kpis.refunded.value / kpis.revenue.value;
   }, [kpis]);
 
   const revenuePerCustomer = useMemo(() => {
@@ -220,7 +213,7 @@ export function SalesSignalStrip() {
     if (kpis.revenue.value <= 0) return null;
     return {
       product: topProducts.products[0],
-      pct: (topProducts.products[0].revenue / kpis.revenue.value) * 100,
+      pct: topProducts.products[0].revenue / kpis.revenue.value,
     };
   }, [kpis, topProducts]);
 
@@ -233,9 +226,25 @@ export function SalesSignalStrip() {
     const top = active[0]; // store-performance returns sorted desc by revenue
     return {
       store: top,
-      pct: (top.revenue / total) * 100,
+      pct: top.revenue / total,
     };
   }, [isAll, stores]);
+
+  if (kpisError) {
+    return (
+      <div className="mb-4 md:mb-6">
+        <Card>
+          <CardBody>
+            <ErrorState
+              error={kpisError}
+              onRetry={() => mutateKpis()}
+              compact
+            />
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
 
   if (kpisLoading || !kpis) {
     return (

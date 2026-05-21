@@ -18,6 +18,7 @@ import type {
   CitySales,
   OfficePoint,
 } from "@/lib/sales-queries";
+import { fmtEur, fmtInt } from "@/lib/format";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // ============================================================
@@ -141,13 +142,6 @@ const STADIA_STYLE_URL =
 const INITIAL_CENTER: [number, number] = [15, 48];
 const INITIAL_ZOOM = 3.5;
 
-function fmtEur(n: number): string {
-  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
 
 // Strip Shopify's "Офис Speedy XYZ - ABC: Street ..." prefix down to
 // the readable office name. Keeps the tooltip from blowing past 240px

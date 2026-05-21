@@ -1,13 +1,12 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Badge } from "@/components/shared/Badge";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { Link2, Globe } from "lucide-react";
 import type { StoreRow } from "@/types/store";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface Connection {
   service: string;
@@ -28,10 +27,11 @@ const connectionStatus: Record<string, "green" | "red" | "orange"> = {
 };
 
 export function StoreInfo({ storeId }: { storeId: string }) {
-  const { data, isLoading } = useSWR<ConnectionsResponse>(
+  const { data, isLoading } = useAnalyticsSWR<ConnectionsResponse>(
     `/api/sales/store/${storeId}/connections`,
-    fetcher,
-    { refreshInterval: 600_000, revalidateOnFocus: false }
+    // Connection metadata changes rarely — 10-min refresh instead of
+    // the hook's 5-min default.
+    { refreshInterval: 600_000 }
   );
 
   if (isLoading) {

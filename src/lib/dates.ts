@@ -112,12 +112,14 @@ export function getDateRange(preset: DatePreset, customFrom?: string, customTo?:
   };
 }
 
-export function formatBgDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("bg-BG", {
-    day: "numeric",
-    month: "short",
-  });
-}
+// Re-export from `lib/format` for back-compat. The canonical home is
+// `lib/format.ts`; this alias lets existing call sites keep importing
+// from `@/lib/dates` while we migrate them.
+//
+// TODO: once the 4 callers (DateRangePicker, StoreTrend, SalesTrend,
+// SalesHeroStrip — minus this one) have migrated their imports to
+// `@/lib/format`, delete this re-export.
+export { fmtBgDate as formatBgDate } from "@/lib/format";
 
 // ============================================================
 // Range arithmetic helpers

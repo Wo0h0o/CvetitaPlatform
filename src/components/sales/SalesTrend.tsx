@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useMemo } from "react";
 import {
   Area,
@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useChartColors } from "@/components/charts/ChartContainer";
 import {
   MobileScrubber,
@@ -30,17 +31,12 @@ import {
 } from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
-import { formatBgDate } from "@/lib/dates";
-
-// For single-day windows (Днес / Вчера) a daily granularity gives one
-// data point and Recharts has nothing to draw — so we switch to hourly
-// and label everything in HH:00. We detect the mode from the resolved
-// range, not the preset name, so a custom from===to range works too.
-function formatHourLabel(iso: string): string {
-  // iso looks like "2026-05-21T14:00:00" — slice instead of new Date()
-  // to avoid the browser interpreting it as local time and shifting.
-  return iso.slice(11, 16);
-}
+import {
+  fmtBgDate,
+  fmtEur,
+  fmtEurFull,
+  fmtHourFromIso,
+} from "@/lib/format";
 
 // ============================================================
 // SalesTrend — daily revenue line, but with two upgrades:
@@ -58,7 +54,6 @@ function formatHourLabel(iso: string): string {
 // Same visual language as HeroCard's TempoTooltip on /home.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface TrendResponse {
   series: { date: string; revenue: number; orders: number }[];
@@ -73,16 +68,6 @@ interface ChartRow {
   compRevenue: number | null;
 }
 
-function fmtEur(n: number): string {
-  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
-}
-
-function fmtEurFull(n: number): string {
-  return `${n.toLocaleString("bg-BG", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} EUR`;
-}
 
 // ============================================================
 // Tooltip data — one builder, two callsites. Recharts' hover tooltip
@@ -106,7 +91,7 @@ function buildTrendPopup(
     });
   }
   return {
-    header: hourly ? `${formatHourLabel(row.date)} ч.` : formatBgDate(row.date),
+    header: hourly ? `${fmtHourFromIso(row.date)} ч.` : fmtBgDate(row.date),
     rows: baseRows,
     minWidth: 200,
   };
@@ -127,21 +112,17 @@ export function SalesTrend() {
   const hourly = from === to;
   const granularitySuffix = hourly ? "&granularity=hour" : "";
 
-  const { data: cur, isLoading } = useSWR<TrendResponse>(
-    `/api/sales/trend?${queryString}&${storeParam}${granularitySuffix}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: cur, isLoading, error, mutate } = useAnalyticsSWR<TrendResponse>(
+    `/api/sales/trend?${queryString}&${storeParam}${granularitySuffix}`
   );
 
   // Comparison period — reuse the same /api/sales/trend endpoint with
   // explicit custom from/to. Keys are unique so SWR caches both.
   const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;
-  const { data: comp } = useSWR<TrendResponse>(
+  const { data: comp } = useAnalyticsSWR<TrendResponse>(
     compFrom && compTo
       ? `/api/sales/trend?${compQs}&${storeParam}${granularitySuffix}`
-      : null,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+      : null
   );
 
   // Zip into Recharts-friendly rows, aligned by INDEX so the chart shows
@@ -177,6 +158,17 @@ export function SalesTrend() {
   const { activeIdx, setActiveIdx, wrapperRef, pointerHandlers } =
     useChartScrubber({ count: rows.length });
 
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>Тренд на приходите</CardHeader>
+        <CardBody>
+          <ErrorState error={error} onRetry={() => mutate()} />
+        </CardBody>
+      </Card>
+    );
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -196,8 +188,8 @@ export function SalesTrend() {
       />
       Пик:{" "}
       {hourly
-        ? `${formatHourLabel(peak.date)} ч.`
-        : formatBgDate(peak.date)}{" "}
+        ? `${fmtHourFromIso(peak.date)} ч.`
+        : fmtBgDate(peak.date)}{" "}
       • {fmtEur(peak.revenue)}
     </span>
   ) : null;
@@ -265,7 +257,7 @@ export function SalesTrend() {
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(v) =>
-                  hourly ? formatHourLabel(String(v)) : formatBgDate(String(v))
+                  hourly ? fmtHourFromIso(String(v)) : fmtBgDate(String(v))
                 }
                 minTickGap={hourly ? 18 : 28}
               />

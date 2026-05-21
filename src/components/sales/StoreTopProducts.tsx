@@ -1,13 +1,12 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { Package } from "lucide-react";
 import type { TopProduct } from "@/lib/sales-queries";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 function fmtEur(n: number) {
   return n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,10 +20,8 @@ interface Response {
 export function StoreTopProducts({ storeId }: { storeId: string }) {
   const { queryString } = useDateRange();
 
-  const { data, isLoading } = useSWR<Response>(
-    `/api/sales/store/${storeId}/top-products?${queryString}&limit=10`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data, isLoading } = useAnalyticsSWR<Response>(
+    `/api/sales/store/${storeId}/top-products?${queryString}&limit=10`
   );
 
   if (isLoading) {

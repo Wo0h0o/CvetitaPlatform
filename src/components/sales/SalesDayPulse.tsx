@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useId, useMemo } from "react";
 import {
   Bar,
@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useChartColors } from "@/components/charts/ChartContainer";
 import {
   MobileScrubber,
@@ -30,6 +31,11 @@ import {
 } from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
+import {
+  fmtEur,
+  fmtHourFromIso,
+  fmtInt,
+} from "@/lib/format";
 
 // ============================================================
 // SalesDayPulse — the "Пулс на деня" view rendered when the user picks
@@ -52,7 +58,6 @@ import { useStoreSelection } from "@/hooks/useStoreSelection";
 // the hero strip's Поръчки tile.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface TrendResponse {
   series: { date: string; revenue: number; orders: number }[];
@@ -71,22 +76,6 @@ interface PulseRow {
   compOrders: number | null;
 }
 
-function fmtEur(n: number, dp = 0): string {
-  return `${n.toLocaleString("bg-BG", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  })} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
-
-function hourLabel(iso: string): string {
-  // Slice instead of `new Date()` — the synthetic ISO has no timezone
-  // suffix and parsing it would shift it to the browser's local zone.
-  return iso.slice(11, 16);
-}
 
 // ============================================================
 // Tooltip data — one builder, two callsites. Recharts' hover tooltip
@@ -110,7 +99,7 @@ function buildPulsePopup(row: PulseRow): {
       accent: deltaAccent(row.revenue, row.compRevenue),
     });
   }
-  return { header: `${hourLabel(row.iso)} ч.`, rows: baseRows };
+  return { header: `${fmtHourFromIso(row.iso)} ч.`, rows: baseRows };
 }
 
 // ============================================================
@@ -126,19 +115,19 @@ export function SalesDayPulse() {
   const gradId = `dayPulse-${useId().replace(/:/g, "")}`;
 
 
-  const { data: cur, isLoading } = useSWR<TrendResponse>(
-    `/api/sales/trend?${queryString}&${storeParam}&granularity=hour`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: cur, isLoading, error, mutate } = useAnalyticsSWR<TrendResponse>(
+    `/api/sales/trend?${queryString}&${storeParam}&granularity=hour`
   );
 
-  const compQs = `preset=custom&from=${compFrom}&to=${compTo}&granularity=hour`;
-  const { data: comp } = useSWR<TrendResponse>(
+  // Granularity suffix appended AFTER storeParam so this key is
+  // byte-identical to SalesTrend / SalesHeroStrip's comparison key —
+  // SWR shares one fetch across all three trend consumers. (Putting
+  // granularity inside compQs reorders the params and forks the cache.)
+  const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;
+  const { data: comp } = useAnalyticsSWR<TrendResponse>(
     compFrom && compTo
-      ? `/api/sales/trend?${compQs}&${storeParam}`
-      : null,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+      ? `/api/sales/trend?${compQs}&${storeParam}&granularity=hour`
+      : null
   );
 
   // Zip into a 24-bucket array. The trend API already returns dense
@@ -175,6 +164,17 @@ export function SalesDayPulse() {
   const { activeIdx, setActiveIdx, wrapperRef, pointerHandlers } =
     useChartScrubber({ count: rows.length });
 
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>Пулс на деня</CardHeader>
+        <CardBody>
+          <ErrorState error={error} onRetry={() => mutate()} />
+        </CardBody>
+      </Card>
+    );
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -192,7 +192,7 @@ export function SalesDayPulse() {
         className="inline-block w-1.5 h-1.5 rounded-full"
         style={{ background: c.accent }}
       />
-      Пик: {hourLabel(peak.iso)} ч. • {fmtEur(peak.revenue)} •{" "}
+      Пик: {fmtHourFromIso(peak.iso)} ч. • {fmtEur(peak.revenue)} •{" "}
       {fmtInt(peak.orders)} поръчки
     </span>
   ) : null;
@@ -284,7 +284,7 @@ export function SalesDayPulse() {
                 tick={{ fontSize: 11, fill: c.text3 }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(v) => hourLabel(String(v))}
+                tickFormatter={(v) => fmtHourFromIso(String(v))}
                 interval={2}
               />
               {/* Left axis — orders count. Bars live here. */}

@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useId, useMemo, useState } from "react";
 import {
   Area,
@@ -17,6 +17,8 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { MetricChips } from "@/components/shared/MetricChips";
 import { useChartColors } from "@/components/charts/ChartContainer";
 import {
   MobileScrubber,
@@ -32,6 +34,7 @@ import {
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
 import { countWeekdaysInRange, daysInRange } from "@/lib/dates";
+import { fmtEur, fmtInt } from "@/lib/format";
 import type { HourWeekdayBucket } from "@/lib/sales-queries";
 
 // ============================================================
@@ -60,7 +63,6 @@ import type { HourWeekdayBucket } from "@/lib/sales-queries";
 // them to stare at.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface HourWeekdayResponse {
   buckets: HourWeekdayBucket[];
@@ -80,18 +82,6 @@ const WEEKDAY_FULL = [
   "Неделя",
 ];
 
-function fmtEur(n: number): string {
-  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
-
-function fmtCompactEur(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return String(Math.round(n));
-}
 
 // ============================================================
 // Helpers — fold the 168 buckets into the two shapes we render.
@@ -385,19 +375,15 @@ export function SalesRhythm() {
     [compFrom, compTo]
   );
 
-  const { data: cur, isLoading } = useSWR<HourWeekdayResponse>(
-    `/api/sales/hour-weekday?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: cur, isLoading, error, mutate } = useAnalyticsSWR<HourWeekdayResponse>(
+    `/api/sales/hour-weekday?${queryString}&${storeParam}`
   );
 
   const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;
-  const { data: comp } = useSWR<HourWeekdayResponse>(
+  const { data: comp } = useAnalyticsSWR<HourWeekdayResponse>(
     compFrom && compTo
       ? `/api/sales/hour-weekday?${compQs}&${storeParam}`
-      : null,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+      : null
   );
 
   const curBuckets = useMemo(() => cur?.buckets ?? [], [cur?.buckets]);
@@ -472,6 +458,17 @@ export function SalesRhythm() {
     return pw;
   }, [weekdaySeries]);
 
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>Ритъм на покупките</CardHeader>
+        <CardBody>
+          <ErrorState error={error} onRetry={() => mutate()} />
+        </CardBody>
+      </Card>
+    );
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -499,30 +496,15 @@ export function SalesRhythm() {
   ) : null;
 
   const metricToggle = (
-    <div className="inline-flex rounded-md bg-surface-2 p-0.5">
-      <button
-        type="button"
-        onClick={() => setMetric("revenue")}
-        className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-          metric === "revenue"
-            ? "bg-surface text-text shadow-xs"
-            : "text-text-3 hover:text-text-2"
-        }`}
-      >
-        Приходи
-      </button>
-      <button
-        type="button"
-        onClick={() => setMetric("orders")}
-        className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-          metric === "orders"
-            ? "bg-surface text-text shadow-xs"
-            : "text-text-3 hover:text-text-2"
-        }`}
-      >
-        Поръчки
-      </button>
-    </div>
+    <MetricChips<Metric>
+      size="sm"
+      value={metric}
+      onChange={setMetric}
+      options={[
+        { value: "revenue", label: "Приходи" },
+        { value: "orders", label: "Поръчки" },
+      ]}
+    />
   );
 
   return (
@@ -702,6 +684,3 @@ export function SalesRhythm() {
   );
 }
 
-// Tiny helper exported for the parent panel — kept here so the file is
-// self-contained for code reviews. Not used externally.
-export const __compactEur = fmtCompactEur;

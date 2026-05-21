@@ -1,10 +1,19 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useMemo, useState } from "react";
 import { HeatmapGrid } from "@/components/charts/HeatmapGrid";
+import { Card, CardHeader, CardBody } from "@/components/shared/Card";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { MetricChips } from "@/components/shared/MetricChips";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
+import {
+  fmtCompactEur,
+  fmtCompactInt,
+  fmtEur,
+  fmtInt,
+} from "@/lib/format";
 import type { HourWeekdayBucket } from "@/lib/sales-queries";
 
 // ============================================================
@@ -45,7 +54,6 @@ import type { HourWeekdayBucket } from "@/lib/sales-queries";
 // (handled by HeatmapGrid). The card itself fits in any column.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface HourWeekdayResponse {
   buckets: HourWeekdayBucket[];
@@ -64,26 +72,6 @@ const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => (h % 3 === 0 ? String(h
 
 type Metric = "revenue" | "orders";
 
-function fmtEur(n: number): string {
-  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
-
-// Compact cell label — heatmap cells are tiny (32-44px), so values must
-// truncate to k-notation past 1000. "2.3k" reads better than "2 345" in
-// a 36px cell.
-function fmtCompactEur(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return String(Math.round(n));
-}
-
-function fmtCompactInt(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
 
 interface PeakCallout {
   weekday: number;
@@ -118,10 +106,8 @@ export function SalesHourHeatmap({ storeId }: SalesHourHeatmapProps = {}) {
   const storeParam = storeId ? `stores=${storeId}` : urlStoreParam;
   const [metric, setMetric] = useState<Metric>("revenue");
 
-  const { data, isLoading } = useSWR<HourWeekdayResponse>(
-    `/api/sales/hour-weekday?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data, isLoading, error, mutate } = useAnalyticsSWR<HourWeekdayResponse>(
+    `/api/sales/hour-weekday?${queryString}&${storeParam}`
   );
 
   const buckets = useMemo(() => data?.buckets ?? [], [data?.buckets]);
@@ -159,6 +145,17 @@ export function SalesHourHeatmap({ storeId }: SalesHourHeatmapProps = {}) {
       } ${metric === "orders" ? "поръчки" : ""}`.trim()
     : null;
 
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>Кога купуват</CardHeader>
+        <CardBody>
+          <ErrorState error={error} onRetry={() => mutate()} />
+        </CardBody>
+      </Card>
+    );
+  }
+
   return (
     <HeatmapGrid
       title="Кога купуват"
@@ -175,28 +172,15 @@ export function SalesHourHeatmap({ storeId }: SalesHourHeatmapProps = {}) {
               {peakCallout}
             </span>
           )}
-          <div className="inline-flex rounded-md bg-surface-2 p-0.5">
-            <button
-              type="button"
-              onClick={() => setMetric("revenue")}
-              className={`
-                px-2 py-0.5 rounded text-[11px] font-medium transition-colors
-                ${metric === "revenue" ? "bg-surface text-text shadow-xs" : "text-text-3 hover:text-text-2"}
-              `}
-            >
-              Приходи
-            </button>
-            <button
-              type="button"
-              onClick={() => setMetric("orders")}
-              className={`
-                px-2 py-0.5 rounded text-[11px] font-medium transition-colors
-                ${metric === "orders" ? "bg-surface text-text shadow-xs" : "text-text-3 hover:text-text-2"}
-              `}
-            >
-              Поръчки
-            </button>
-          </div>
+          <MetricChips<Metric>
+            size="sm"
+            value={metric}
+            onChange={setMetric}
+            options={[
+              { value: "revenue", label: "Приходи" },
+              { value: "orders", label: "Поръчки" },
+            ]}
+          />
         </div>
       }
     />

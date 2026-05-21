@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { DataTable, type Column } from "@/components/shared/DataTable";
 import { Badge } from "@/components/shared/Badge";
@@ -9,7 +9,6 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { ShoppingCart } from "lucide-react";
 import type { OrderRow } from "@/lib/sales-queries";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 function fmtEur(n: number) {
   return `${n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
@@ -138,10 +137,8 @@ interface OrdersResponse {
 export function StoreOrdersTable({ storeId }: { storeId: string }) {
   const { queryString } = useDateRange();
 
-  const { data, isLoading } = useSWR<OrdersResponse>(
-    `/api/sales/store/${storeId}/orders?${queryString}&limit=50`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data, isLoading } = useAnalyticsSWR<OrdersResponse>(
+    `/api/sales/store/${storeId}/orders?${queryString}&limit=50`
   );
 
   if (isLoading) {

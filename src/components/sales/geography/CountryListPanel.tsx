@@ -6,6 +6,7 @@ import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { MarketFlag } from "@/components/shared/MarketFlag";
 import { countryDisplayName } from "@/lib/geo/country-codes";
+import { fmtEur, fmtInt } from "@/lib/format";
 import type { CountrySales } from "@/lib/sales-queries";
 import type { Metric } from "./WorldMap";
 
@@ -28,14 +29,6 @@ interface CountryListPanelProps {
   isLoading: boolean;
   selectedCountry: string | null;
   onSelectCountry: (alpha2: string | null) => void;
-}
-
-function fmtEur(n: number): string {
-  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
 }
 
 function METRIC_LABEL(m: Metric): string {

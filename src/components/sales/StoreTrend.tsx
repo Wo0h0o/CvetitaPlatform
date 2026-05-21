@@ -1,13 +1,12 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { TrendingUp } from "lucide-react";
 import { useDateRange } from "@/hooks/useDateRange";
 import { formatBgDate } from "@/lib/dates";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface TrendResponse {
   series: { date: string; revenue: number; orders: number }[];
@@ -18,10 +17,8 @@ interface TrendResponse {
 export function StoreTrend({ storeId }: { storeId: string }) {
   const { queryString } = useDateRange();
 
-  const { data, isLoading } = useSWR<TrendResponse>(
-    `/api/sales/store/${storeId}/trend?${queryString}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data, isLoading } = useAnalyticsSWR<TrendResponse>(
+    `/api/sales/store/${storeId}/trend?${queryString}`
   );
 
   if (isLoading) {

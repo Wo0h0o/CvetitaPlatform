@@ -1,12 +1,11 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { KpiSkeleton } from "@/components/shared/Skeleton";
 import { useDateRange } from "@/hooks/useDateRange";
 import type { KpiMetric } from "@/lib/sales-queries";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface StoreKpiResponse {
   revenue: KpiMetric;
@@ -20,10 +19,8 @@ interface StoreKpiResponse {
 export function StoreKpiGrid({ storeId }: { storeId: string }) {
   const { queryString } = useDateRange();
 
-  const { data, isLoading, error } = useSWR<StoreKpiResponse>(
-    `/api/sales/store/${storeId}/kpis?${queryString}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data, isLoading, error } = useAnalyticsSWR<StoreKpiResponse>(
+    `/api/sales/store/${storeId}/kpis?${queryString}`
   );
 
   if (isLoading || !data) {

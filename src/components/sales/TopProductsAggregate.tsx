@@ -1,11 +1,13 @@
 "use client";
 
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { useMemo, useState } from "react";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
+import { fmtEur, fmtInt } from "@/lib/format";
 import type { KpiMetric, TopProduct } from "@/lib/sales-queries";
 
 // ============================================================
@@ -31,7 +33,6 @@ import type { KpiMetric, TopProduct } from "@/lib/sales-queries";
 // reserve `flex-1` for the bar track and let the title truncate.
 // ============================================================
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface TopProductsResponse {
   products: TopProduct[];
@@ -46,29 +47,18 @@ interface KpisResponse {
 const DEFAULT_VISIBLE = 6;
 const MAX_VISIBLE = 10;
 
-function fmtEur(n: number): string {
-  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG");
-}
 
 export function TopProductsAggregate() {
   const { queryString } = useDateRange();
   const { storeParam } = useStoreSelection();
   const [expanded, setExpanded] = useState(false);
 
-  const { data, isLoading } = useSWR<TopProductsResponse>(
-    `/api/sales/top-products?${queryString}&${storeParam}&limit=${MAX_VISIBLE}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data, isLoading, error, mutate } = useAnalyticsSWR<TopProductsResponse>(
+    `/api/sales/top-products?${queryString}&${storeParam}&limit=${MAX_VISIBLE}`
   );
 
-  const { data: kpis } = useSWR<KpisResponse>(
-    `/api/sales/kpis?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: kpis } = useAnalyticsSWR<KpisResponse>(
+    `/api/sales/kpis?${queryString}&${storeParam}`
   );
 
   const products = useMemo(() => data?.products ?? [], [data?.products]);
@@ -81,6 +71,17 @@ export function TopProductsAggregate() {
     const top3 = products.slice(0, 3).reduce((s, p) => s + p.revenue, 0);
     return Math.round((top3 / totalRevenue) * 100);
   }, [products, totalRevenue]);
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>Топ продукти</CardHeader>
+        <CardBody>
+          <ErrorState error={error} onRetry={() => mutate()} />
+        </CardBody>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

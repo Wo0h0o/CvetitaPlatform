@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import useSWR from "swr";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { MetricChips } from "@/components/shared/MetricChips";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { StoreSelector } from "@/components/shared/StoreSelector";
 import { Card } from "@/components/shared/Card";
@@ -68,8 +69,6 @@ const WorldMap = dynamic(
   }
 );
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
 interface CountriesResponse {
   countries: CountrySales[];
   error?: string;
@@ -94,20 +93,14 @@ export default function SalesPage() {
   // Three parallel SWR sources — choropleth outlines + city centroids
   // fallback + per-office points. The map renders progressively as
   // each lands; the side panel only needs the countries call.
-  const { data: countriesData, isLoading } = useSWR<CountriesResponse>(
-    `/api/sales/geography/countries?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: countriesData, isLoading } = useAnalyticsSWR<CountriesResponse>(
+    `/api/sales/geography/countries?${queryString}&${storeParam}`
   );
-  const { data: citiesData } = useSWR<CitiesResponse>(
-    `/api/sales/geography/cities?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: citiesData } = useAnalyticsSWR<CitiesResponse>(
+    `/api/sales/geography/cities?${queryString}&${storeParam}`
   );
-  const { data: orderPointsData } = useSWR<OrderPointsResponse>(
-    `/api/sales/geography/order-points?${queryString}&${storeParam}`,
-    fetcher,
-    { refreshInterval: 300_000, revalidateOnFocus: false }
+  const { data: orderPointsData } = useAnalyticsSWR<OrderPointsResponse>(
+    `/api/sales/geography/order-points?${queryString}&${storeParam}`
   );
 
   const countries = countriesData?.countries ?? [];
@@ -115,25 +108,15 @@ export default function SalesPage() {
   const orderPoints = orderPointsData?.points ?? [];
 
   const metricChip = (
-    <div className="inline-flex rounded-md bg-surface-2 p-0.5">
-      {(["revenue", "orders", "customers"] as Metric[]).map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => setMetric(m)}
-          className={`
-            px-2.5 py-1 rounded text-[12px] font-medium transition-colors
-            ${
-              metric === m
-                ? "bg-surface text-text shadow-xs"
-                : "text-text-3 hover:text-text-2"
-            }
-          `}
-        >
-          {m === "revenue" ? "Приходи" : m === "orders" ? "Поръчки" : "Клиенти"}
-        </button>
-      ))}
-    </div>
+    <MetricChips<Metric>
+      value={metric}
+      onChange={setMetric}
+      options={[
+        { value: "revenue", label: "Приходи" },
+        { value: "orders", label: "Поръчки" },
+        { value: "customers", label: "Клиенти" },
+      ]}
+    />
   );
 
   return (
