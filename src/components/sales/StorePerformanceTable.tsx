@@ -1,8 +1,10 @@
 "use client";
 
 import useSWR from "swr";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
+import { ArrowRight } from "lucide-react";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { MarketFlag } from "@/components/shared/MarketFlag";
@@ -104,16 +106,25 @@ export function StorePerformanceTable() {
     <Card>
       <CardHeader
         action={
-          totalRevenue > 0 ? (
-            <span className="text-[11px] text-text-3 tabular-nums">
-              {active.length} {active.length === 1 ? "активен" : "активни"}
-              {inactive.length > 0 && (
-                <span className="text-text-3"> • {inactive.length} без продажби</span>
-              )}
-            </span>
-          ) : (
-            <span className="text-[11px] text-text-3">Няма продажби за периода</span>
-          )
+          <div className="flex items-center gap-3">
+            {totalRevenue > 0 ? (
+              <span className="text-[11px] text-text-3 tabular-nums">
+                {active.length} {active.length === 1 ? "активен" : "активни"}
+                {inactive.length > 0 && (
+                  <span className="text-text-3"> • {inactive.length} без продажби</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-[11px] text-text-3">Няма продажби за периода</span>
+            )}
+            <Link
+              href="/sales/geography"
+              className="inline-flex items-center gap-1 text-[11px] text-text-2 hover:text-text transition-colors"
+            >
+              На карта
+              <ArrowRight size={12} />
+            </Link>
+          </div>
         }
       >
         Магазини
