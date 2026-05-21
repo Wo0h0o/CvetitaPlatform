@@ -13,7 +13,11 @@ import { Skeleton } from "@/components/shared/Skeleton";
 import { CountryListPanel } from "@/components/sales/geography/CountryListPanel";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
-import type { CountrySales, CitySales } from "@/lib/sales-queries";
+import type {
+  CountrySales,
+  CitySales,
+  OfficePoint,
+} from "@/lib/sales-queries";
 import type { Metric } from "@/components/sales/geography/WorldMap";
 
 // ============================================================
@@ -84,6 +88,11 @@ interface CitiesResponse {
   error?: string;
 }
 
+interface OrderPointsResponse {
+  points: OfficePoint[];
+  error?: string;
+}
+
 export default function SalesGeographyPage() {
   const { queryString } = useDateRange();
   const { storeParam } = useStoreSelection();
@@ -96,17 +105,29 @@ export default function SalesGeographyPage() {
     { refreshInterval: 300_000, revalidateOnFocus: false }
   );
 
-  // City-level pulse markers — separate SWR key so the choropleth can
-  // render while the city resolution is still loading. No `keepPreviousData`
-  // because the date / store filter genuinely invalidates the marker set.
+  // City-level fallback markers — used only for countries whose store
+  // schemas have PII-redacted webhooks (no lat/lng in payload). Office
+  // points (next fetch) take precedence; cities fills in the rest.
+  // Separate SWR keys so the country outline can paint while the marker
+  // sources are still loading.
   const { data: cityData } = useSWR<CitiesResponse>(
     `/api/sales/geography/cities?${queryString}&${storeParam}`,
     fetcher,
     { refreshInterval: 300_000, revalidateOnFocus: false }
   );
 
+  // Per-office order points (migration 042). Present for store_bg today
+  // — foreign-store schemas return zero rows here and rely on the city
+  // fallback above.
+  const { data: orderPointData } = useSWR<OrderPointsResponse>(
+    `/api/sales/geography/order-points?${queryString}&${storeParam}`,
+    fetcher,
+    { refreshInterval: 300_000, revalidateOnFocus: false }
+  );
+
   const countries = data?.countries ?? [];
   const cities = cityData?.cities ?? [];
+  const orderPoints = orderPointData?.points ?? [];
 
   const metricChip = (
     <div className="inline-flex rounded-md bg-surface-2 p-0.5">
@@ -157,6 +178,7 @@ export default function SalesGeographyPage() {
             <WorldMap
               data={countries}
               cities={cities}
+              orderPoints={orderPoints}
               metric={metric}
               selectedCountry={selectedCountry}
               onSelectCountry={setSelectedCountry}

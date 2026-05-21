@@ -756,3 +756,100 @@ export async function fetchSalesByCity(
 
   return Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
 }
+
+// ---------------------------------------------------------------------------
+// Order points — per-(lat,lng) office aggregation for the hierarchical
+// zoom-driven dot view on /sales/geography. Per migration 042: returns
+// rows only for schemas whose Shopify payloads carry shipping_address
+// latitude/longitude (currently store_bg). Foreign-store schemas
+// (PII-redacted webhooks) return zero rows here; those markets fall
+// back to the city-centroid path via fetchSalesByCity.
+// ---------------------------------------------------------------------------
+
+/** Aggregated sales for one (lat, lng) office address across the period. */
+export interface OfficePoint {
+  lat: number;
+  lng: number;
+  countryCode: string;
+  city: string;
+  address1: string;
+  zip: string;
+  revenue: number;
+  orders: number;
+  customers: number;
+}
+
+interface OfficePointRpcRow {
+  lat: number;
+  lng: number;
+  country_code: string;
+  city: string | null;
+  address1: string | null;
+  zip: string | null;
+  total_revenue: string | number;
+  total_orders: string | number;
+  unique_customers: string | number;
+}
+
+/**
+ * Cross-store per-(lat,lng) order aggregation. Same office in two
+ * schemas (unlikely but possible if a shop migrates) would merge by
+ * coordinate key — we round to 5 decimal places (~1.1m on the equator)
+ * to dedupe Shopify's occasional floating-point drift while keeping
+ * meaningfully separate offices distinct.
+ */
+export async function fetchOrderPoints(
+  schemas: StoreSchema[],
+  from: string,
+  to: string
+): Promise<OfficePoint[]> {
+  const all = await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin.rpc("read_store_order_points", {
+        p_schema: s.schemaName,
+        p_from: from,
+        p_to: to,
+      });
+
+      if (error) {
+        logger.error("Failed read_store_order_points", {
+          schema: s.schemaName,
+          error: error.message,
+        });
+        return [] as OfficePointRpcRow[];
+      }
+      return (data ?? []) as OfficePointRpcRow[];
+    })
+  );
+
+  // Merge by quantised (lat, lng) key — 5 decimals = ~1.1m precision,
+  // tight enough that two different offices never collide while loose
+  // enough that the same office across schemas merges deterministically.
+  const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
+  const byKey = new Map<string, OfficePoint>();
+  for (const rows of all) {
+    for (const r of rows) {
+      const lat = Number(r.lat);
+      const lng = Number(r.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const key = `${round5(lat)}|${round5(lng)}`;
+      const existing = byKey.get(key) ?? {
+        lat: round5(lat),
+        lng: round5(lng),
+        countryCode: r.country_code,
+        city: r.city ?? "",
+        address1: r.address1 ?? "",
+        zip: r.zip ?? "",
+        revenue: 0,
+        orders: 0,
+        customers: 0,
+      };
+      existing.revenue += Number(r.total_revenue);
+      existing.orders += Number(r.total_orders);
+      existing.customers += Number(r.unique_customers);
+      byKey.set(key, existing);
+    }
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
+}

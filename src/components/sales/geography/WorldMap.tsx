@@ -10,47 +10,60 @@ import maplibregl, {
 import * as topojson from "topojson-client";
 import type { FeatureCollection, Feature, Geometry } from "geojson";
 import { MarketFlag } from "@/components/shared/MarketFlag";
-import { countryDisplayName } from "@/lib/geo/country-codes";
+import { countryDisplayName, numericToAlpha2 } from "@/lib/geo/country-codes";
 import { lookupCity } from "@/lib/geo/cities";
 import worldTopojson from "@/lib/geo/world-110m.json";
-import type { CountrySales, CitySales } from "@/lib/sales-queries";
+import type {
+  CountrySales,
+  CitySales,
+  OfficePoint,
+} from "@/lib/sales-queries";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // ============================================================
 // WorldMap — MapLibre-GL backed intelligence map for /sales/geography.
 //
-// What changed (vs. the previous react-simple-maps version):
+// Data model (post 2026-05-21 refactor):
 //
-//   * **Continuous zoom (world → street)** via Stadia Alidade Smooth Dark
-//     vector tiles. The earlier choropleth was capped at zoom 8 because
-//     world-110m has no detail past that; MapLibre + a real basemap lets
-//     the operator zoom into a Sofia street and see the dot on the map.
+//   * **Office points** (migration 042) — per-(lat, lng) aggregates from
+//     Shopify shipping_address. Available for store_bg only today (the
+//     other schemas have PII-redacted payloads — see
+//     feedback_foreign_store_pii_redacted_payloads.md). Renders as
+//     individual clusterable points: at low zoom they merge into one
+//     mass over Bulgaria; at zoom 8+ they break into per-district
+//     groups; at zoom 13+ into per-Speedy/Econt-office dots.
 //
-//   * **Choropleth + basemap layering**. The country fill still drives
-//     the high-level "where are we present" signal (single accent ladder,
-//     §1 / §9.5 of analytics-design-contract.md). It fades on zoom-in so
-//     the basemap takes over once you're focused on a country — no fight
-//     for visual attention.
+//   * **City centroids** (existing) — used only as fallback for
+//     countries that have NO office points (i.e., the foreign-store
+//     schemas). Same alias resolution against `src/lib/geo/cities.ts`.
 //
-//   * **Clustering for markers**. MapLibre's native cluster algorithm
-//     groups overlapping dots at low zoom and breaks them apart as you
-//     zoom in. Removes the old MAX_MARKERS=80 global cap that was
-//     starving foreign-market cities of any visibility.
+//   The two feed a single MapLibre source. The country filter happens
+//   client-side: any country code present in office points is excluded
+//   from the city-centroid set, so we never double-count БГ.
 //
-//   * **Constant-pixel markers, native**. MapLibre `circle-radius` is in
-//     screen pixels — no counter-scale gymnastics needed. §10.1 of the
-//     design contract is honoured by construction, not by 1/currentZoom
-//     arithmetic.
+// Choropleth:
 //
-//   * **Glass tooltip preserved**. Same `bg-surface/85 backdrop-blur`
-//     vocabulary as the prior version (and KpiStrip's TempoTooltip) — it
-//     renders as a React overlay positioned to the cursor, NOT a
-//     MapLibre Popup, so the styling stays consistent with the rest of
-//     the platform.
+//   Country fills are gone. The earlier green colour-mix tinting fought
+//   with the dot story (operator feedback: "цветните части не помагат").
+//   Replaced by:
+//
+//   * `countries-fill` — kept as an invisible hit-test surface so
+//     clicking inside a country still selects it.
+//   * `countries-outline-active` — accent line for any country with
+//     sales in the period, subtle (line-opacity 0.45). Communicates
+//     "we are present here" without obscuring the basemap.
+//   * `countries-outline-selected` — bumped to bold accent line on
+//     selection. Same feature-state pattern as before.
+//
+// Clustering:
+//
+//   `clusterMaxZoom` lifted from 11 → 16 so the hierarchy "country →
+//   city → district → office" reads cleanly across the full zoom range.
+//   Below zoom 16 the user is always seeing aggregates; only at extreme
+//   zoom do individual office dots emerge.
 //
 // Stadia auth model:
-//   * `localhost` / `127.0.0.1` works out of the box (Stadia allow-lists
-//     local dev automatically).
+//   * `localhost` / `127.0.0.1` works out of the box.
 //   * Production needs `cvetita-platform.vercel.app` registered under
 //     "Add Domain" in the Stadia dashboard. No API key in client code.
 // ============================================================
@@ -60,6 +73,9 @@ export type Metric = "revenue" | "orders" | "customers";
 interface WorldMapProps {
   data: CountrySales[];
   cities?: CitySales[];
+  /** Per-office order points (migration 042). Empty for schemas with
+   *  PII-redacted webhooks; those markets fall back to city centroids. */
+  orderPoints?: OfficePoint[];
   metric: Metric;
   selectedCountry?: string | null;
   onSelectCountry?: (alpha2: string | null) => void;
@@ -86,6 +102,18 @@ type HoverState =
       y: number;
     }
   | {
+      kind: "office";
+      countryCode: string;
+      city: string;
+      address1: string;
+      zip: string;
+      revenue: number;
+      orders: number;
+      customers: number;
+      x: number;
+      y: number;
+    }
+  | {
       kind: "cluster";
       count: number;
       revenue: number;
@@ -95,24 +123,11 @@ type HoverState =
 
 // ----- Constants -------------------------------------------------------
 
-// Stadia Alidade Smooth Dark — the closest free-tier match to the
-// "intelligence-hub" aesthetic §10 implicitly describes (Palantir-style
-// dark cartography with subtle labels). Auth is by domain, configured in
-// the Stadia dashboard; no key in the URL.
 const STADIA_STYLE_URL =
   "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
 
-// Initial framing — Europe/Med, where 99% of orders live. Zoom 3.5 shows
-// the full continent comfortably; users zoom in for detail.
 const INITIAL_CENTER: [number, number] = [15, 48];
 const INITIAL_ZOOM = 3.5;
-
-// Per-country tier rank — top city = T1, next four = T2, rest = T3.
-type MarkerTier = 1 | 2 | 3;
-
-function tierForRank(rank: number): MarkerTier {
-  return rank === 0 ? 1 : rank < 5 ? 2 : 3;
-}
 
 function fmtEur(n: number): string {
   return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
@@ -122,16 +137,19 @@ function fmtInt(n: number): string {
   return n.toLocaleString("bg-BG");
 }
 
+// Strip Shopify's "Офис Speedy XYZ - ABC: Street ..." prefix down to
+// the readable office name. Keeps the tooltip from blowing past 240px
+// on long addresses while preserving the meaningful identifier.
+function shortAddress(addr: string): string {
+  if (!addr) return "";
+  const m = addr.match(/^Офис\s+(Speedy|Econt)\s+(.+?)(:|$)/i);
+  if (m) return `${m[1]} ${m[2]}`;
+  return addr.length > 50 ? addr.slice(0, 47) + "…" : addr;
+}
+
 // ============================================================
 // Country GeoJSON — converted from world-110m topojson at module load.
-//
-// world-110m keys countries by ISO numeric (BG = "100", GR = "300"). We
-// translate each feature.id to ISO alpha-2 once and stamp it onto the
-// feature properties so MapLibre data-driven expressions can match on a
-// stable, readable key.
 // ============================================================
-
-import { numericToAlpha2 } from "@/lib/geo/country-codes";
 
 interface CountryFeatureProperties {
   alpha2: string | null;
@@ -139,8 +157,6 @@ interface CountryFeatureProperties {
 }
 
 const COUNTRIES_GEOJSON: FeatureCollection<Geometry, CountryFeatureProperties> = (() => {
-  // The topojson-client typings model the input loosely; world-110m has
-  // exactly one object collection called "countries".
   const tj = worldTopojson as unknown as Parameters<typeof topojson.feature>[0];
   const fc = topojson.feature(
     tj,
@@ -153,9 +169,6 @@ const COUNTRIES_GEOJSON: FeatureCollection<Geometry, CountryFeatureProperties> =
     type: "FeatureCollection",
     features: fc.features.map((f: Feature<Geometry, { name?: string }>) => ({
       ...f,
-      // MapLibre needs a feature `id` for setFeatureState; alpha-2 is
-      // the natural key. Numeric ids (`f.id`) collide between the
-      // topojson source and our alpha-2 model, so we don't reuse them.
       id: undefined,
       properties: {
         alpha2: numericToAlpha2(f.id),
@@ -166,53 +179,82 @@ const COUNTRIES_GEOJSON: FeatureCollection<Geometry, CountryFeatureProperties> =
 })();
 
 // ============================================================
-// City features — built per-render from CitySales + alias lookup.
-// Cities our table can't resolve are dropped silently (the country
-// choropleth still counts their revenue).
+// Marker features — unified office-point + city-centroid feature
+// collection. Office points (per-(lat,lng) aggregates) take precedence;
+// city centroids fill in for any country with no office data.
 // ============================================================
 
-interface ResolvedCityProps {
+// MapLibre GeoJSON features only carry primitive properties — we serialise
+// the marker discriminant + payload as primitive fields.
+interface MarkerProps {
+  kind: "office" | "city";
   countryCode: string;
-  cityName: string;
+  // Office-only fields (kept as empty strings for city markers so the
+  // shape stays flat for MapLibre cluster expressions).
+  city: string;
+  address1: string;
+  zip: string;
+  // Aggregates — present on both kinds.
   revenue: number;
   orders: number;
   customers: number;
-  tier: MarkerTier;
-  // Numeric value of the active metric, used for cluster aggregation
-  // (MapLibre cluster properties only work on numeric fields).
+  // Numeric value of the active metric for cluster aggregation.
   metricValue: number;
 }
 
-function buildCityFeatureCollection(
+function buildMarkerFeatureCollection(
+  orderPoints: OfficePoint[],
   cities: CitySales[],
   metric: Metric
-): FeatureCollection<Geometry, ResolvedCityProps> {
-  // Resolve + sort by metric so the first city per country is its anchor.
-  const resolved = cities
-    .map((c) => ({ raw: c, entry: lookupCity(c.countryCode, c.city) }))
-    .filter((r): r is { raw: CitySales; entry: NonNullable<ReturnType<typeof lookupCity>> } =>
-      r.entry !== null
-    )
-    .sort((a, b) => b.raw[metric] - a.raw[metric]);
+): FeatureCollection<Geometry, MarkerProps> {
+  // Countries that already have per-office data — skip their
+  // city-centroid rows to avoid double-rendering the same revenue.
+  const countriesWithOfficeData = new Set(
+    orderPoints.map((p) => p.countryCode)
+  );
 
-  const rankPerCountry = new Map<string, number>();
-  const features: Feature<Geometry, ResolvedCityProps>[] = resolved.map(({ raw, entry }) => {
-    const rank = rankPerCountry.get(raw.countryCode) ?? 0;
-    rankPerCountry.set(raw.countryCode, rank + 1);
-    return {
+  const features: Feature<Geometry, MarkerProps>[] = [];
+
+  // Office points first — one feature per (lat, lng) office.
+  for (const p of orderPoints) {
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+      properties: {
+        kind: "office",
+        countryCode: p.countryCode,
+        city: p.city,
+        address1: p.address1,
+        zip: p.zip,
+        revenue: p.revenue,
+        orders: p.orders,
+        customers: p.customers,
+        metricValue: p[metric],
+      },
+    });
+  }
+
+  // City centroids — only for countries not covered by office data.
+  for (const c of cities) {
+    if (countriesWithOfficeData.has(c.countryCode)) continue;
+    const entry = lookupCity(c.countryCode, c.city);
+    if (!entry) continue;
+    features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [entry.lng, entry.lat] },
       properties: {
-        countryCode: raw.countryCode,
-        cityName: entry.name,
-        revenue: raw.revenue,
-        orders: raw.orders,
-        customers: raw.customers,
-        tier: tierForRank(rank),
-        metricValue: raw[metric],
+        kind: "city",
+        countryCode: c.countryCode,
+        city: entry.name,
+        address1: "",
+        zip: "",
+        revenue: c.revenue,
+        orders: c.orders,
+        customers: c.customers,
+        metricValue: c[metric],
       },
-    };
-  });
+    });
+  }
 
   return { type: "FeatureCollection", features };
 }
@@ -224,6 +266,7 @@ function buildCityFeatureCollection(
 export function WorldMap({
   data,
   cities = [],
+  orderPoints = [],
   metric,
   selectedCountry,
   onSelectCountry,
@@ -231,8 +274,6 @@ export function WorldMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
   const styleLoadedRef = useRef(false);
-  // Refs for the latest callbacks so the (one-shot) MapLibre event
-  // handlers always call the current closure.
   const onSelectCountryRef = useRef(onSelectCountry);
   const selectedCountryRef = useRef<string | null | undefined>(selectedCountry);
   useEffect(() => {
@@ -244,66 +285,41 @@ export function WorldMap({
 
   const [hover, setHover] = useState<HoverState | null>(null);
 
-  // Index sales data by alpha-2 for tooltip lookups.
   const byAlpha2 = useMemo(() => {
     const m = new Map<string, CountrySales>();
     for (const c of data) m.set(c.countryCode, c);
     return m;
   }, [data]);
 
-  // Total revenue across the active dataset — feeds the share-% line in
-  // the country tooltip.
   const totalRevenue = useMemo(
     () => data.reduce((s, c) => s + c.revenue, 0),
     [data]
   );
 
-  // Per-country fill color, computed as a MapLibre `match` expression
-  // keyed off the alpha2 property. Log-percentile so БГ's 90% share
-  // doesn't render everyone else as invisible.
-  const fillExpression = useMemo(() => {
-    const values = data
-      .map((c) => c[metric])
-      .filter((v) => v > 0)
-      .map((v) => Math.log10(v + 1));
-
-    if (values.length === 0) {
-      // No data → flat near-transparent. Don't render the choropleth at
-      // all in this state; the basemap tells the story.
-      return "transparent" as const;
-    }
-
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min || 1;
-
-    // Build [code, color, code2, color2, ...] flat array for `match`.
-    const pairs: (string | string[])[] = [];
-    for (const c of data) {
-      if (c[metric] <= 0) continue;
-      const v = Math.log10(c[metric] + 1);
-      const ratio = (v - min) / range;
-      // 0.22 floor — even the smallest active market reads as
-      // accent-tinted, not background.
-      const opacity = 0.22 + ratio * 0.78;
+  // Country outline expression — accent stroke for any country with
+  // sales in the period, transparent elsewhere. Replaces the previous
+  // fill-color expression (fills were removed; the dot layer carries
+  // the geographic answer now).
+  const outlineExpression = useMemo(() => {
+    const active = data.filter((c) => c[metric] > 0);
+    if (active.length === 0) return "transparent" as const;
+    const pairs: string[] = [];
+    for (const c of active) {
       pairs.push(c.countryCode);
-      pairs.push(
-        `color-mix(in srgb, var(--accent) ${(opacity * 100).toFixed(1)}%, transparent)`
-      );
+      pairs.push("rgba(34, 197, 94, 0.55)");
     }
-
     return [
       "match",
       ["get", "alpha2"],
-      ...pairs.flat(),
-      "transparent", // default for unmapped / no-data countries
+      ...pairs,
+      "transparent",
     ];
   }, [data, metric]);
 
-  // City source GeoJSON, rebuilt when cities or metric change.
-  const cityGeoJSON = useMemo(
-    () => buildCityFeatureCollection(cities, metric),
-    [cities, metric]
+  // Marker source GeoJSON, rebuilt when inputs change.
+  const markerGeoJSON = useMemo(
+    () => buildMarkerFeatureCollection(orderPoints, cities, metric),
+    [orderPoints, cities, metric]
   );
 
   // ----- Map init (once) -----------------------------------------------
@@ -319,9 +335,6 @@ export function WorldMap({
       minZoom: 1.5,
       maxZoom: 18,
       attributionControl: { compact: true },
-      // The default cooperative-gestures behaviour gets in the way of a
-      // dashboard inside a scrollable page — operators expect to wheel-
-      // zoom freely on a focused map. We keep scroll zoom always-on.
       cooperativeGestures: false,
     });
 
@@ -333,45 +346,46 @@ export function WorldMap({
     map.on("load", () => {
       styleLoadedRef.current = true;
 
-      // ----- Country choropleth source + layers ------------------------
+      // ----- Country source + outline layers ---------------------------
       map.addSource("countries", {
         type: "geojson",
         data: COUNTRIES_GEOJSON,
         promoteId: "alpha2",
       });
 
+      // Invisible fill — kept so clicking inside a country still
+      // selects it and queryRenderedFeatures hits the country geometry
+      // for tooltip resolution. fill-color stays transparent forever.
       map.addLayer({
         id: "countries-fill",
         type: "fill",
         source: "countries",
         paint: {
-          "fill-color": "transparent",
-          // Strong at low zoom (the "where in the world" answer); fades
-          // to near-zero past zoom 6 so the basemap owns the city-level
-          // story without competing colour wash.
-          "fill-opacity": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            1,
-            0.85,
-            4,
-            0.75,
-            6,
-            0.35,
-            8,
-            0.12,
-          ],
+          "fill-color": "rgba(0,0,0,0)",
+          "fill-opacity": 1,
         },
       });
 
+      // Active outline — accent for any country with sales. Subtle
+      // (0.55 line opacity) so it reads as presence, not as fill.
+      map.addLayer({
+        id: "countries-outline-active",
+        type: "line",
+        source: "countries",
+        paint: {
+          "line-color": "transparent",
+          "line-width": 1,
+        },
+      });
+
+      // Selected outline — bold accent on top of everything else.
       map.addLayer({
         id: "countries-outline-selected",
         type: "line",
         source: "countries",
         paint: {
-          "line-color": "rgb(34, 197, 94)", // --accent
-          "line-width": 1.8,
+          "line-color": "rgb(34, 197, 94)",
+          "line-width": 2,
           "line-opacity": [
             "case",
             ["boolean", ["feature-state", "selected"], false],
@@ -381,28 +395,29 @@ export function WorldMap({
         },
       });
 
-      // ----- City source — clustered ----------------------------------
-      map.addSource("cities", {
+      // ----- Marker source (office points + city fallbacks) ----------
+      map.addSource("markers", {
         type: "geojson",
-        data: cityGeoJSON,
+        data: markerGeoJSON,
         cluster: true,
         clusterRadius: 38,
-        clusterMaxZoom: 11,
+        // Keep clustering active up to street-level zoom so the
+        // hierarchy "country → city → district → office" reads
+        // cleanly. Only at extreme zoom do individual office dots
+        // emerge.
+        clusterMaxZoom: 16,
         clusterProperties: {
-          // sum of metricValue across the cluster — used for tooltip and
-          // (later) for sizing/colouring clusters by aggregate weight.
           sum_metric: ["+", ["get", "metricValue"]],
           sum_revenue: ["+", ["get", "revenue"]],
+          sum_orders: ["+", ["get", "orders"]],
         },
       });
 
-      // Cluster halo + dot — accent at low opacity, simple "this is a
-      // group" signal. Size scales with the count, capped so a 30-city
-      // cluster doesn't dominate the canvas.
+      // Cluster halo — accent at low opacity, size scales with count.
       map.addLayer({
-        id: "city-clusters",
+        id: "marker-clusters",
         type: "circle",
-        source: "cities",
+        source: "markers",
         filter: ["has", "point_count"],
         paint: {
           "circle-color": "rgb(34, 197, 94)",
@@ -410,13 +425,7 @@ export function WorldMap({
           "circle-radius": [
             "step",
             ["get", "point_count"],
-            14,
-            5,
-            18,
-            15,
-            22,
-            50,
-            28,
+            14, 5, 18, 15, 22, 50, 28, 200, 34,
           ],
           "circle-stroke-color": "rgb(34, 197, 94)",
           "circle-stroke-width": 1,
@@ -424,9 +433,9 @@ export function WorldMap({
         },
       });
       map.addLayer({
-        id: "city-cluster-count",
+        id: "marker-cluster-count",
         type: "symbol",
-        source: "cities",
+        source: "markers",
         filter: ["has", "point_count"],
         layout: {
           "text-field": ["get", "point_count_abbreviated"],
@@ -441,60 +450,32 @@ export function WorldMap({
         },
       });
 
-      // ----- Unclustered city dots — tiered ---------------------------
-      // T1 has a static accent halo behind it (presence > motion, §10.5).
+      // Invisible hit-area layer — 12px transparent circles behind the
+      // visible dots so even single-order offices stay clickable.
       map.addLayer({
-        id: "city-t1-halo",
+        id: "marker-hit",
         type: "circle",
-        source: "cities",
-        filter: [
-          "all",
-          ["!", ["has", "point_count"]],
-          ["==", ["get", "tier"], 1],
-        ],
-        paint: {
-          "circle-color": "rgb(34, 197, 94)",
-          "circle-opacity": 0.18,
-          "circle-radius": 12,
-          "circle-blur": 0.3,
-        },
-      });
-      // Invisible hit-area layer — §10.4 ("hit area decoupled from
-      // visible size"). Sits between halo and visible dot; T3 dots are
-      // 4px visible and would be brutal mouse/touch targets on their
-      // own, so we give every marker a 12px transparent hit circle.
-      // queryRenderedFeatures in updateHoverFromEvent picks this up
-      // first because we list it ahead of city-dots in the layer query
-      // (see updateHoverFromEvent below).
-      map.addLayer({
-        id: "city-hit",
-        type: "circle",
-        source: "cities",
+        source: "markers",
         filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-color": "rgba(0,0,0,0)",
           "circle-radius": 12,
-          // No stroke, no opacity — pure invisible click/hover surface.
         },
       });
+
+      // Visible dot — single size for all unclustered points. The
+      // cluster sizing already tells the magnitude story; per-marker
+      // size differentiation would just add noise at the office level
+      // where most points represent 1-15 orders.
       map.addLayer({
-        id: "city-dots",
+        id: "marker-dots",
         type: "circle",
-        source: "cities",
+        source: "markers",
         filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-color": "rgb(34, 197, 94)",
           "circle-opacity": 0.95,
-          // Three discrete tiers (§10.3) — not a gradient.
-          "circle-radius": [
-            "match",
-            ["get", "tier"],
-            1,
-            7,
-            2,
-            5,
-            /* default tier 3 */ 4,
-          ],
+          "circle-radius": 5,
           "circle-stroke-color": [
             "case",
             ["boolean", ["feature-state", "selected"], false],
@@ -505,17 +486,15 @@ export function WorldMap({
         },
       });
 
-      // Initial paint of the choropleth — separated from layer creation
-      // so the fillExpression effect below can re-run independently.
-      if (fillExpression !== "transparent") {
+      // Initial paint of the country outline expression.
+      if (outlineExpression !== "transparent") {
         map.setPaintProperty(
-          "countries-fill",
-          "fill-color",
-          fillExpression as unknown as maplibregl.ExpressionSpecification
+          "countries-outline-active",
+          "line-color",
+          outlineExpression as unknown as maplibregl.ExpressionSpecification
         );
       }
 
-      // Initial selection sync.
       if (selectedCountryRef.current) {
         map.setFeatureState(
           { source: "countries", id: selectedCountryRef.current },
@@ -550,45 +529,59 @@ export function WorldMap({
         const x = e.originalEvent.clientX - rect.left;
         const y = e.originalEvent.clientY - rect.top;
 
-        // Marker layers take priority — they paint on top, so the cursor
-        // is intentionally on them when both layers report a hit. The
-        // invisible `city-hit` layer is listed first so T3 4px dots get
-        // a forgiving 12px hit surface (§10.4).
-        const cityFeatures = map.queryRenderedFeatures(e.point, {
-          layers: ["city-hit", "city-dots", "city-t1-halo"],
+        // Marker hits take priority — hit layer first for forgiving
+        // target size, visible dots as backup.
+        const markerFeatures = map.queryRenderedFeatures(e.point, {
+          layers: ["marker-hit", "marker-dots"],
         });
-        if (cityFeatures.length > 0) {
-          const f = cityFeatures[0];
-          const p = f.properties as ResolvedCityProps;
+        if (markerFeatures.length > 0) {
+          const f = markerFeatures[0];
+          const p = f.properties as MarkerProps;
           setCountryHoverState(null);
           map.getCanvas().style.cursor = "pointer";
-          setHover({
-            kind: "city",
-            countryCode: p.countryCode,
-            cityName: p.cityName,
-            revenue: Number(p.revenue),
-            orders: Number(p.orders),
-            customers: Number(p.customers),
-            x,
-            y,
-          });
+          if (p.kind === "office") {
+            setHover({
+              kind: "office",
+              countryCode: p.countryCode,
+              city: p.city,
+              address1: p.address1,
+              zip: p.zip,
+              revenue: Number(p.revenue),
+              orders: Number(p.orders),
+              customers: Number(p.customers),
+              x,
+              y,
+            });
+          } else {
+            setHover({
+              kind: "city",
+              countryCode: p.countryCode,
+              cityName: p.city,
+              revenue: Number(p.revenue),
+              orders: Number(p.orders),
+              customers: Number(p.customers),
+              x,
+              y,
+            });
+          }
           return;
         }
 
         const clusterFeatures = map.queryRenderedFeatures(e.point, {
-          layers: ["city-clusters"],
+          layers: ["marker-clusters"],
         });
         if (clusterFeatures.length > 0) {
           const f = clusterFeatures[0];
           const p = f.properties as {
             point_count: number;
             sum_revenue: number;
+            sum_orders: number;
           };
           setCountryHoverState(null);
           map.getCanvas().style.cursor = "pointer";
           setHover({
             kind: "cluster",
-            count: Number(p.point_count),
+            count: Number(p.sum_orders ?? p.point_count),
             revenue: Number(p.sum_revenue),
             x,
             y,
@@ -627,42 +620,35 @@ export function WorldMap({
         setHover(null);
       });
 
-      // Click handlers — country fill flips selection; cluster click
-      // zooms into the cluster; city dot click selects the city's country.
-      map.on("click", "city-clusters", async (e) => {
+      // Cluster click → zoom into the cluster.
+      map.on("click", "marker-clusters", async (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const clusterId = (f.properties as { cluster_id: number }).cluster_id;
-        const src = map.getSource("cities") as GeoJSONSource;
+        const src = map.getSource("markers") as GeoJSONSource;
         try {
           const zoom = await src.getClusterExpansionZoom(clusterId);
-          // Cluster features are always Points — cast via `unknown` to
-          // narrow past the generic `Geometry` union (which TS won't
-          // implicitly narrow because GeometryCollection has no
-          // `coordinates`).
           const coords = (f.geometry as unknown as {
             coordinates: [number, number];
           }).coordinates;
           map.easeTo({ center: coords, zoom });
         } catch {
-          // Cluster may have disappeared by the time the promise resolves
-          // (rapid pan/zoom). Failing silently is the right call here.
+          // Cluster may vanish between query + promise resolve.
         }
       });
 
-      // Bind to the invisible hit layer so even T3 4px dots take a
-      // 12px-wide click target. The hit layer carries the same
-      // ResolvedCityProps as city-dots (both read from the same source).
-      map.on("click", "city-hit", (e) => {
+      // Marker click → select country (via the forgiving hit layer).
+      map.on("click", "marker-hit", (e) => {
         const f = e.features?.[0];
         if (!f) return;
-        const p = f.properties as ResolvedCityProps;
+        const p = f.properties as MarkerProps;
         const cb = onSelectCountryRef.current;
         if (cb) {
           cb(p.countryCode === selectedCountryRef.current ? null : p.countryCode);
         }
       });
 
+      // Country fill click → toggle selection.
       map.on("click", "countries-fill", (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -683,32 +669,32 @@ export function WorldMap({
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount once; everything else flows through dedicated effects
+  }, []);
 
-  // ----- Sync: choropleth paint when data/metric change ----------------
+  // ----- Sync: outline paint when data/metric change -------------------
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
-    if (!map.getLayer("countries-fill")) return;
+    if (!map.getLayer("countries-outline-active")) return;
     map.setPaintProperty(
-      "countries-fill",
-      "fill-color",
-      (fillExpression === "transparent"
+      "countries-outline-active",
+      "line-color",
+      (outlineExpression === "transparent"
         ? "transparent"
-        : fillExpression) as unknown as maplibregl.ExpressionSpecification
+        : outlineExpression) as unknown as maplibregl.ExpressionSpecification
     );
-  }, [fillExpression]);
+  }, [outlineExpression]);
 
-  // ----- Sync: city source data when cityGeoJSON changes ---------------
+  // ----- Sync: marker source data --------------------------------------
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleLoadedRef.current) return;
-    const src = map.getSource("cities") as GeoJSONSource | undefined;
+    const src = map.getSource("markers") as GeoJSONSource | undefined;
     if (!src) return;
-    src.setData(cityGeoJSON);
-  }, [cityGeoJSON]);
+    src.setData(markerGeoJSON);
+  }, [markerGeoJSON]);
 
   // ----- Sync: selected-country feature state --------------------------
 
@@ -740,12 +726,8 @@ export function WorldMap({
     <div
       ref={containerRef}
       className="relative w-full h-full bg-surface rounded-xl overflow-hidden border border-border"
-      // MapLibre styles its canvas in absolute terms; ensure the
-      // container is the positioning context.
       style={{ position: "relative" }}
     >
-      {/* Hover tooltip — anchored to mouse position within the container.
-          Three variants reuse the same TooltipShell glass treatment. */}
       {hover?.kind === "country" && (
         <TooltipShell x={hover.x} y={hover.y}>
           <CountryTooltipBody
@@ -767,6 +749,19 @@ export function WorldMap({
           />
         </TooltipShell>
       )}
+      {hover?.kind === "office" && (
+        <TooltipShell x={hover.x} y={hover.y}>
+          <OfficeTooltipBody
+            countryCode={hover.countryCode}
+            city={hover.city}
+            address1={hover.address1}
+            zip={hover.zip}
+            revenue={hover.revenue}
+            orders={hover.orders}
+            customers={hover.customers}
+          />
+        </TooltipShell>
+      )}
       {hover?.kind === "cluster" && (
         <TooltipShell x={hover.x} y={hover.y}>
           <ClusterTooltipBody count={hover.count} revenue={hover.revenue} />
@@ -777,7 +772,7 @@ export function WorldMap({
 }
 
 // ============================================================
-// Tooltip components — same glass shell used by the prior version.
+// Tooltip components
 // ============================================================
 
 function TooltipShell({
@@ -795,7 +790,7 @@ function TooltipShell({
         pointer-events-none absolute z-50
         bg-surface/85 backdrop-blur-xl
         border border-border/60 rounded-xl shadow-xl
-        px-3 py-2.5 min-w-[200px]
+        px-3 py-2.5 min-w-[200px] max-w-[280px]
         text-[11px] leading-tight
       "
       style={{ left: `${x + 12}px`, top: `${y + 12}px` }}
@@ -904,6 +899,58 @@ function CityTooltipBody({
   );
 }
 
+function OfficeTooltipBody({
+  countryCode,
+  city,
+  address1,
+  zip,
+  revenue,
+  orders,
+  customers,
+}: {
+  countryCode: string;
+  city: string;
+  address1: string;
+  zip: string;
+  revenue: number;
+  orders: number;
+  customers: number;
+}) {
+  const short = shortAddress(address1);
+  return (
+    <>
+      <div className="flex items-center gap-2 text-text font-medium text-[11.5px]">
+        <MarketFlag market={countryCode.toLowerCase()} size={14} />
+        <span className="truncate">{short || city || "Адрес"}</span>
+      </div>
+      {(city || zip) && (
+        <div className="text-text-3 text-[10.5px] mt-0.5">
+          {[zip, city].filter(Boolean).join(" · ")}
+        </div>
+      )}
+      <div className="h-px bg-border/70 my-1.5" />
+      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
+        <span className="text-text-3">Поръчки</span>
+        <span className="text-text font-semibold tabular-nums text-right">
+          {fmtInt(orders)}
+        </span>
+        <span className="text-text-3">Сума</span>
+        <span className="text-text-2 tabular-nums text-right">
+          {fmtEur(revenue)}
+        </span>
+        {customers > 0 && customers !== orders && (
+          <>
+            <span className="text-text-3">Клиенти</span>
+            <span className="text-text-2 tabular-nums text-right">
+              {fmtInt(customers)}
+            </span>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 function ClusterTooltipBody({
   count,
   revenue,
@@ -914,17 +961,17 @@ function ClusterTooltipBody({
   return (
     <>
       <div className="text-text font-medium text-[11.5px]">
-        {fmtInt(count)} града в района
+        {fmtInt(count)} поръчки в района
       </div>
       <div className="h-px bg-border/70 my-1.5" />
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
-        <span className="text-text-3">Сумарни приходи</span>
+        <span className="text-text-3">Сума</span>
         <span className="text-text font-semibold tabular-nums text-right">
           {fmtEur(revenue)}
         </span>
       </div>
       <div className="text-text-3 text-[10.5px] mt-1.5">
-        Кликни, за да приближиш и видиш по града.
+        Кликни, за да приближиш и видиш по места.
       </div>
     </>
   );
