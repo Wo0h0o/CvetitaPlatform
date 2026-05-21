@@ -11,7 +11,7 @@ import * as topojson from "topojson-client";
 import type { FeatureCollection, Feature, Geometry } from "geojson";
 import { MarketFlag } from "@/components/shared/MarketFlag";
 import { countryDisplayName, numericToAlpha2 } from "@/lib/geo/country-codes";
-import { lookupCity } from "@/lib/geo/cities";
+import { lookupCity, lookupCountryAnchor } from "@/lib/geo/cities";
 import worldTopojson from "@/lib/geo/world-110m.json";
 import type {
   CountrySales,
@@ -114,6 +114,18 @@ type HoverState =
       y: number;
     }
   | {
+      // Country-anchor marker — single dot at the capital for markets
+      // with no city/office detail (PII-redacted foreign stores).
+      kind: "country-marker";
+      countryCode: string;
+      anchorName: string;
+      revenue: number;
+      orders: number;
+      customers: number;
+      x: number;
+      y: number;
+    }
+  | {
       kind: "cluster";
       count: number;
       revenue: number;
@@ -186,37 +198,54 @@ const COUNTRIES_GEOJSON: FeatureCollection<Geometry, CountryFeatureProperties> =
 
 // MapLibre GeoJSON features only carry primitive properties — we serialise
 // the marker discriminant + payload as primitive fields.
+//
+// Three marker kinds form a fallback cascade per country:
+//
+//   1. `office` — per-(lat, lng) Speedy/Econt point from migration 042.
+//      Available wherever Shopify delivers shipping_address.latitude
+//      (currently store_bg only).
+//
+//   2. `city`   — city centroid from cities.ts alias lookup. Filled in
+//      for countries that have city-level data but no per-office.
+//
+//   3. `country` — single anchor dot at the country's capital. Last-
+//      resort fallback for countries whose payloads strip everything
+//      including the city field (foreign-store PII redaction). Without
+//      this pass the user sees a market in the side list but no dot
+//      anywhere on the map.
+//
+// The passes are mutually exclusive per country: as soon as one pass
+// places a marker for country X, the next pass skips X. So БГ gets
+// office dots (and only office dots); a country like Greece that has
+// no office data but has city-level coverage gets city dots; one
+// like Cyprus or Italy whose payloads are fully redacted gets a
+// single country dot at the capital.
 interface MarkerProps {
-  kind: "office" | "city";
+  kind: "office" | "city" | "country";
   countryCode: string;
-  // Office-only fields (kept as empty strings for city markers so the
-  // shape stays flat for MapLibre cluster expressions).
   city: string;
   address1: string;
   zip: string;
-  // Aggregates — present on both kinds.
   revenue: number;
   orders: number;
   customers: number;
-  // Numeric value of the active metric for cluster aggregation.
   metricValue: number;
 }
 
 function buildMarkerFeatureCollection(
   orderPoints: OfficePoint[],
   cities: CitySales[],
+  countries: CountrySales[],
   metric: Metric
 ): FeatureCollection<Geometry, MarkerProps> {
-  // Countries that already have per-office data — skip their
-  // city-centroid rows to avoid double-rendering the same revenue.
-  const countriesWithOfficeData = new Set(
-    orderPoints.map((p) => p.countryCode)
-  );
-
+  // Cumulative set of countries already covered by a marker in some
+  // earlier pass — drives the fallback cascade.
+  const covered = new Set<string>();
   const features: Feature<Geometry, MarkerProps>[] = [];
 
-  // Office points first — one feature per (lat, lng) office.
+  // Pass 1: office points.
   for (const p of orderPoints) {
+    covered.add(p.countryCode);
     features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [p.lng, p.lat] },
@@ -234,11 +263,13 @@ function buildMarkerFeatureCollection(
     });
   }
 
-  // City centroids — only for countries not covered by office data.
+  // Pass 2: city centroids — only for countries not yet covered.
+  const citiesAddedFor = new Set<string>();
   for (const c of cities) {
-    if (countriesWithOfficeData.has(c.countryCode)) continue;
+    if (covered.has(c.countryCode)) continue;
     const entry = lookupCity(c.countryCode, c.city);
     if (!entry) continue;
+    citiesAddedFor.add(c.countryCode);
     features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [entry.lng, entry.lat] },
@@ -246,6 +277,35 @@ function buildMarkerFeatureCollection(
         kind: "city",
         countryCode: c.countryCode,
         city: entry.name,
+        address1: "",
+        zip: "",
+        revenue: c.revenue,
+        orders: c.orders,
+        customers: c.customers,
+        metricValue: c[metric],
+      },
+    });
+  }
+  for (const code of citiesAddedFor) covered.add(code);
+
+  // Pass 3: country-anchor dots — for countries with sales but no
+  // markers yet. Lands at the capital lat/lng so the dot reads as
+  // "Italy as a whole" rather than "this exact city".
+  for (const c of countries) {
+    if (covered.has(c.countryCode)) continue;
+    if (c[metric] <= 0) continue;
+    const anchor = lookupCountryAnchor(c.countryCode);
+    if (!anchor) continue;
+    covered.add(c.countryCode);
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] },
+      properties: {
+        kind: "country",
+        countryCode: c.countryCode,
+        // Anchor name kept on the feature for the tooltip header,
+        // even though the tooltip leads with the country name.
+        city: anchor.name,
         address1: "",
         zip: "",
         revenue: c.revenue,
@@ -318,8 +378,8 @@ export function WorldMap({
 
   // Marker source GeoJSON, rebuilt when inputs change.
   const markerGeoJSON = useMemo(
-    () => buildMarkerFeatureCollection(orderPoints, cities, metric),
-    [orderPoints, cities, metric]
+    () => buildMarkerFeatureCollection(orderPoints, cities, data, metric),
+    [orderPoints, cities, data, metric]
   );
 
   // ----- Map init (once) -----------------------------------------------
@@ -552,6 +612,17 @@ export function WorldMap({
               x,
               y,
             });
+          } else if (p.kind === "country") {
+            setHover({
+              kind: "country-marker",
+              countryCode: p.countryCode,
+              anchorName: p.city,
+              revenue: Number(p.revenue),
+              orders: Number(p.orders),
+              customers: Number(p.customers),
+              x,
+              y,
+            });
           } else {
             setHover({
               kind: "city",
@@ -762,6 +833,18 @@ export function WorldMap({
           />
         </TooltipShell>
       )}
+      {hover?.kind === "country-marker" && (
+        <TooltipShell x={hover.x} y={hover.y}>
+          <CountryMarkerTooltipBody
+            countryCode={hover.countryCode}
+            anchorName={hover.anchorName}
+            revenue={hover.revenue}
+            orders={hover.orders}
+            customers={hover.customers}
+            totalRevenue={totalRevenue}
+          />
+        </TooltipShell>
+      )}
       {hover?.kind === "cluster" && (
         <TooltipShell x={hover.x} y={hover.y}>
           <ClusterTooltipBody count={hover.count} revenue={hover.revenue} />
@@ -946,6 +1029,62 @@ function OfficeTooltipBody({
             </span>
           </>
         )}
+      </div>
+    </>
+  );
+}
+
+function CountryMarkerTooltipBody({
+  countryCode,
+  anchorName,
+  revenue,
+  orders,
+  customers,
+  totalRevenue,
+}: {
+  countryCode: string;
+  anchorName: string;
+  revenue: number;
+  orders: number;
+  customers: number;
+  totalRevenue: number;
+}) {
+  const sharePct =
+    totalRevenue > 0 ? Math.round((revenue / totalRevenue) * 100) : null;
+  return (
+    <>
+      <div className="flex items-center gap-2 text-text font-medium text-[11.5px]">
+        <MarketFlag market={countryCode.toLowerCase()} size={14} />
+        <span>{countryDisplayName(countryCode, countryCode)}</span>
+      </div>
+      <div className="text-text-3 text-[10.5px] mt-0.5">
+        Цялата държава · детайл по град не е наличен
+      </div>
+      <div className="h-px bg-border/70 my-1.5" />
+      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
+        <span className="text-text-3">Приходи</span>
+        <span className="text-text font-semibold tabular-nums text-right">
+          {fmtEur(revenue)}
+        </span>
+        <span className="text-text-3">Поръчки</span>
+        <span className="text-text-2 tabular-nums text-right">
+          {fmtInt(orders)}
+        </span>
+        <span className="text-text-3">Клиенти</span>
+        <span className="text-text-2 tabular-nums text-right">
+          {fmtInt(customers)}
+        </span>
+        {sharePct !== null && (
+          <>
+            <span className="text-text-3">Дял</span>
+            <span className="text-accent font-semibold tabular-nums text-right">
+              {sharePct >= 1 ? `${sharePct}%` : "<1%"}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="text-text-3 text-[10px] mt-1.5 italic">
+        Анкорна точка: {anchorName}
       </div>
     </>
   );

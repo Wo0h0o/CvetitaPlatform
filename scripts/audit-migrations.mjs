@@ -68,6 +68,79 @@ if (!res.ok) {
 const rows = JSON.parse(await res.text());
 const inDb = new Map(rows.map((r) => [r.version, r.name]));
 
+// ----- RPC smoke check -----
+//
+// Migration 039 shipped a format() escape bug (literal `%` inside a
+// SQL comment in the EXECUTE body) that hard-errored every call to
+// read_store_sales_by_city for two migrations — caught only by an
+// operator noticing missing markers. The audit script now runs a
+// curated set of RPCs with safe parameters against store_bg and
+// flags any runtime error. Cheap (~150ms total) and catches the
+// whole class of "function applies but errors at first call".
+//
+// Add new RPCs here as they ship. Each entry is { fn, args } where
+// args is a JSON object matching the function signature.
+const RPC_SMOKE_CHECKS = [
+  {
+    fn: 'read_store_sales_by_country',
+    args: { p_schema: 'store_bg', p_from: '2026-04-21', p_to: '2026-05-21' },
+  },
+  {
+    fn: 'read_store_sales_by_city',
+    args: { p_schema: 'store_bg', p_from: '2026-04-21', p_to: '2026-05-21' },
+  },
+  {
+    fn: 'read_store_order_points',
+    args: { p_schema: 'store_bg', p_from: '2026-04-21', p_to: '2026-05-21' },
+  },
+  {
+    fn: 'read_store_hour_weekday',
+    args: { p_schema: 'store_bg', p_from: '2026-04-21', p_to: '2026-05-21' },
+  },
+  {
+    fn: 'read_store_daily_aggregates',
+    args: { p_schema: 'store_bg', p_dates: ['2026-05-21'] },
+  },
+];
+
+// Emit a Postgres-safe literal from a JS value. Strings → single-
+// quoted text; date-shaped strings → `'…'::date`; arrays of date
+// strings → `ARRAY['…']::date[]`. Catches the obvious mistake of
+// JSON.stringify on string args (which wraps in double-quotes and
+// Postgres reads as an identifier, not a literal).
+function pgLiteral(v) {
+  if (Array.isArray(v)) {
+    return `ARRAY[${v.map(pgLiteral).join(', ')}]::date[]`;
+  }
+  if (typeof v === 'string') {
+    const esc = `'${v.replace(/'/g, "''")}'`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${esc}::date` : esc;
+  }
+  return String(v);
+}
+
+const rpcFailures = [];
+for (const { fn, args } of RPC_SMOKE_CHECKS) {
+  const sql = `SELECT 1 FROM public.${fn}(${Object.keys(args)
+    .map((k) => `${k} => ${pgLiteral(args[k])}`)
+    .join(', ')}) LIMIT 1`;
+  const probeRes = await fetch(
+    `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SBP_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: sql }),
+    }
+  );
+  if (!probeRes.ok) {
+    const body = await probeRes.text();
+    rpcFailures.push(`${fn}: ${body.slice(0, 200).replace(/\s+/g, ' ')}`);
+  }
+}
+
 // ----- Diff -----
 const pending = [];
 const orphan = [];
@@ -87,10 +160,17 @@ for (const [version, name] of inDb) {
 }
 
 // ----- Report -----
-console.log(`[audit] ${onDisk.size} on disk, ${inDb.size} in registry`);
+console.log(
+  `[audit] ${onDisk.size} on disk, ${inDb.size} in registry, ${RPC_SMOKE_CHECKS.length} RPCs probed`
+);
 
-if (pending.length === 0 && orphan.length === 0 && mismatchedNames.length === 0) {
-  console.log('[audit] ✓ clean — disk and registry agree');
+if (
+  pending.length === 0 &&
+  orphan.length === 0 &&
+  mismatchedNames.length === 0 &&
+  rpcFailures.length === 0
+) {
+  console.log('[audit] ✓ clean — disk + registry + RPC smoke checks all green');
   process.exit(0);
 }
 
@@ -107,6 +187,11 @@ if (orphan.length > 0) {
 if (mismatchedNames.length > 0) {
   console.error(`\n[audit] NAME MISMATCH (${mismatchedNames.length}):`);
   for (const m of mismatchedNames) console.error(`  - ${m}`);
+}
+if (rpcFailures.length > 0) {
+  console.error(`\n[audit] RPC SMOKE FAILURE (${rpcFailures.length}):`);
+  for (const r of rpcFailures) console.error(`  - ${r}`);
+  console.error('  → function applies but errors at first call; likely a format() escape bug or stale type signature');
 }
 
 process.exit(1);

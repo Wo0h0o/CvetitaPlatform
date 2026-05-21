@@ -181,6 +181,11 @@ const CITIES_OTHER: CityEntry[] = [
   { name: "Dublin", aliases: ["dublin", "дъблин"], country: "IE", lat: 53.3498, lng: -6.2603 },
   { name: "Stockholm", aliases: ["stockholm", "стокхолм"], country: "SE", lat: 59.3293, lng: 18.0686 },
   { name: "København", aliases: ["copenhagen", "kobenhavn", "københavn", "копенхаген"], country: "DK", lat: 55.6761, lng: 12.5683 },
+  // Cyprus — served from store_gr today; capital first so
+  // lookupCountryAnchor("CY") resolves to Nicosia.
+  { name: "Никозия", aliases: ["nicosia", "lefkosia", "λευκωσία", "λευκωσια", "никозия"], country: "CY", lat: 35.1856, lng: 33.3823 },
+  { name: "Лимасол", aliases: ["limassol", "lemesos", "λεμεσός", "лимасол"], country: "CY", lat: 34.6786, lng: 33.0413 },
+  { name: "Larnaca", aliases: ["larnaca", "larnaka", "λάρνακα", "ларнака"], country: "CY", lat: 34.9229, lng: 33.6233 },
   { name: "Beograd", aliases: ["belgrade", "beograd", "белград"], country: "RS", lat: 44.7866, lng: 20.4489 },
   { name: "Zagreb", aliases: ["zagreb", "загреб"], country: "HR", lat: 45.8150, lng: 15.9819 },
   { name: "Skopje", aliases: ["skopje", "скопие"], country: "MK", lat: 41.9981, lng: 21.4254 },
@@ -240,6 +245,30 @@ export function lookupCity(
   if (!countryCode || !rawCity) return null;
   const key = `${countryCode.toUpperCase()}|${normalise(rawCity)}`;
   return CITY_INDEX.get(key) ?? null;
+}
+
+// First-listed city per country — used as the geographic anchor when
+// we have country-level sales (CountrySales) but no city-level rows
+// (foreign-store schemas whose PII-redacted webhooks strip even the
+// city field, not just emails). The data file deliberately lists each
+// country's capital first; this map captures that convention so the
+// "Italy aggregate" fallback dot lands in Rome instead of Bari.
+const COUNTRY_ANCHOR = new Map<string, CityEntry>();
+for (const city of ALL_CITIES) {
+  if (!COUNTRY_ANCHOR.has(city.country)) {
+    COUNTRY_ANCHOR.set(city.country, city);
+  }
+}
+
+/**
+ * Geographic anchor for a country — its capital (or first-listed city
+ * in cities.ts). Returns null for countries we have no entry for,
+ * which the caller should treat as "this country can't be drawn on
+ * the map at all".
+ */
+export function lookupCountryAnchor(countryCode: string): CityEntry | null {
+  if (!countryCode) return null;
+  return COUNTRY_ANCHOR.get(countryCode.toUpperCase()) ?? null;
 }
 
 /**
