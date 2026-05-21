@@ -2,16 +2,23 @@
 
 import Link from "next/link";
 import useSWR from "swr";
-import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  Area,
+  AreaChart,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  ReferenceLine,
+} from "recharts";
 import { ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { FreshnessDot } from "@/components/shared/FreshnessDot";
 import { fmtBgDate } from "@/lib/format";
 import type { DatePreset } from "@/lib/dates";
+import type { SeriesShape, SeriesKind } from "@/lib/series";
 
 // ============================================================
-// Types — mirror /api/dashboard/home/top-strip response.
-// Two source-pure sections: business (Shopify) and ads (Meta).
+// Types — mirror /api/dashboard/home/top-strip response shape.
 // ============================================================
 
 interface TempoMetric {
@@ -42,38 +49,27 @@ interface TopStripResponse {
       shopifyRevenue: number;
     };
   };
-  /**
-   * Google Ads section — null when GA4 not configured / no data. UI hides
-   * the SectionShell entirely in that case rather than rendering zeros.
-   */
   googleAds: {
     spend: TempoMetric;
     roas: { value: number };
     purchases: TempoMetric;
   } | null;
-  /**
-   * Cross-platform composites. Each value combines Shopify + Meta + Google
-   * — uniquely the platform's job to compute.
-   */
   crossPlatform: {
     cac: TempoMetric;
     netAfterAds: TempoMetric;
     channelMix: {
       meta: { revenue: number; pct: number };
       googleAds: { revenue: number; pct: number };
-      /** Lower-bound revenue both platforms claim (cross-attribution). */
       mixed: { revenue: number; pct: number };
       other: { revenue: number; pct: number };
       shopifyRevenue: number;
     };
   };
-  /** Trailing-14d series for each metric — feeds hero card area charts. */
-  series14d: {
-    dates: string[];
-    business: { revenue: number[]; orders: number[]; aov: number[] };
-    ads: { spend: number[]; revenue: number[]; roas: number[]; attribution: number[] };
-    googleAds: { spend: number[]; revenue: number[]; purchases: number[]; roas: number[] } | null;
-    crossPlatform: { cac: number[]; netAfterAds: number[] };
+  series: {
+    business: { revenue: SeriesShape; orders: SeriesShape; aov: SeriesShape };
+    ads: { spend: SeriesShape; roas: SeriesShape; attribution: SeriesShape };
+    googleAds: { spend: SeriesShape; roas: SeriesShape; purchases: SeriesShape } | null;
+    crossPlatform: { cac: SeriesShape; netAfterAds: SeriesShape };
   };
   anomalyCount: number;
   freshAsOf: string;
@@ -93,67 +89,82 @@ function sofiaWeekdayBg(d: Date): string {
   }).format(d);
 }
 
-// Bulgarian adjectives agree in gender with the noun. Wed/Sat/Sun are
-// feminine ("типична сряда"); the rest are masculine ("типичен понеделник").
 const FEMININE_WEEKDAYS_BG = new Set(["сряда", "събота", "неделя"]);
 function typicalAdjectiveBg(weekdayBg: string): string {
   return FEMININE_WEEKDAYS_BG.has(weekdayBg) ? "типична" : "типичен";
 }
 
 function fmtEur(n: number): string {
-  return `${n.toLocaleString("bg-BG", { maximumFractionDigits: 0 })} EUR`;
+  return `${Math.round(n).toLocaleString("bg-BG")} EUR`;
 }
-
+function fmtEur2(n: number): string {
+  return `${n.toLocaleString("bg-BG", { maximumFractionDigits: 2 })} EUR`;
+}
 function fmtInt(n: number): string {
-  return n.toLocaleString("bg-BG", { maximumFractionDigits: 0 });
+  return Math.round(n).toLocaleString("bg-BG");
 }
-
 function fmtRoas(n: number): string {
   return n.toFixed(2);
 }
+function fmtPctVal(n: number): string {
+  return `${Math.round(n)}%`;
+}
 
 /**
- * HeroCard — Stripe-style big-number + chart + drill-down link, all on one
- * card. The chart sits at ~50% of card height and carries the visual
- * weight; the number stays leading the eye but isn't fighting for space.
+ * Build the human label for a bucket index given the SeriesShape kind.
  *
- * Used for time-series metrics (spend, revenue, orders, CAC, ROAS). For
- * pure composition (Channel mix) we keep ChannelMixTile, and for "no series
- * available" metrics we fall back to the compact Tile.
- *
- * `drillTo` is a route the card navigates to on click — Stripe pattern:
- * cards aren't just display, they're entry points. The card is wrapped in
- * a <Link>; the chart, value, and label all become tap targets.
+ * - hourly: "14ч" (0-23 → "00ч" - "23ч")
+ * - daily:  "21 май" (ISO date → БГ short)
+ * - weekly: "Седмица до 21 май" (week-ending date — what the bucket represents)
  */
+function formatBucketLabel(label: string, kind: SeriesKind): string {
+  if (kind === "hourly") return `${label}ч`;
+  if (kind === "weekly") return `Седмица до ${fmtBgDate(label)}`;
+  return fmtBgDate(label);
+}
+
+// ============================================================
+// HeroCard — Stripe-style number + dual-line chart + drill link
+// ============================================================
+//
+// Renders a SeriesShape into a 90px area chart with TWO traces:
+//   * accent area  = `current` values (the answer for the selected window)
+//   * grey line    = `comparison` values (typical day / prior period)
+//
+// In hourly mode the chart also gets a vertical "now" marker at nowIndex,
+// and the current series is masked past nowIndex so the area doesn't
+// extend into hours that haven't happened yet.
+//
+// Tooltip shows three rows: bucket label, current value, comparison value
+// + delta. Delta math matches the headline TempoMetric arithmetic
+// (matched-hour for hourly, equal-length-prior for daily/weekly).
+
 interface HeroCardProps {
   label: string;
   value: string;
   vsTypical: number | null;
   typicalLabel: string;
-  /** Trailing-14d daily values for the area chart. Min 2 to render. */
-  series: number[];
-  /**
-   * ISO dates aligned with `series` indices (oldest first). Tooltip shows
-   * the corresponding day in БГ short form ("21 май"). Length should match
-   * `series` — if mismatched we fall back to index-only labels.
-   */
-  dates?: string[];
-  /** Hide the delta line entirely (ratio metrics — ROAS, AOV, attribution). */
+  /** The new discriminated series. null → render value/delta only, no chart. */
+  series: SeriesShape | null;
   hideDelta?: boolean;
-  /** Label shown when vsTypical is null. */
   nullLabel?: string;
-  /** Flip colour logic for lower-is-better metrics (CAC). */
   inverseDelta?: boolean;
-  /** Free-form sub-text below the value (composability hints). */
   subText?: string;
-  /** Drill-down destination + visible link label. Both required together. */
   drillTo?: { href: string; label: string };
   /**
-   * Optional formatter for the tooltip value. Defaults to a plain БГ-locale
-   * number. Pass `fmtEur` / `fmtRoas` etc. so the tooltip reads in the
-   * same unit as the headline number.
+   * How tooltip values should be formatted (EUR / x / int / %). Defaults
+   * to plain БГ-locale number — pass `fmtEur` / `fmtRoas` etc. so the
+   * tooltip reads in the same unit as the headline.
    */
   valueFormatter?: (n: number) => string;
+}
+
+interface ChartRow {
+  i: number;
+  label: string;
+  current: number | null;
+  comparison: number | null;
+  partial: boolean;
 }
 
 function HeroCard({
@@ -162,7 +173,6 @@ function HeroCard({
   vsTypical,
   typicalLabel,
   series,
-  dates,
   hideDelta = false,
   nullLabel = "още рано",
   inverseDelta = false,
@@ -170,7 +180,7 @@ function HeroCard({
   drillTo,
   valueFormatter,
 }: HeroCardProps) {
-  // Delta rendering — same triangle convention as Tile + shared Delta.tsx.
+  // Delta rendering — same triangle convention as before.
   let deltaNode: React.ReactNode = null;
   if (!hideDelta) {
     if (vsTypical === null) {
@@ -190,19 +200,10 @@ function HeroCard({
     }
   }
 
-  // Series → Recharts shape. We zip the value series with the date series
-  // when lengths agree so the tooltip can label by day; otherwise we fall
-  // back to index-only (rare — happens only if backend shipped mismatched
-  // arrays). Skip the chart entirely if we don't have at least 2 points.
-  const chartData =
-    series.length >= 2
-      ? series.map((v, i) => ({
-          i,
-          v,
-          date: dates && dates.length === series.length ? dates[i] : null,
-        }))
-      : null;
-  const formatValue = valueFormatter ?? ((n: number) => n.toLocaleString("bg-BG", { maximumFractionDigits: 2 }));
+  const chartRows = buildChartRows(series);
+  const formatValue =
+    valueFormatter ?? ((n: number) => n.toLocaleString("bg-BG", { maximumFractionDigits: 2 }));
+  const seriesKind = series?.kind ?? "daily";
 
   const cardInner = (
     <>
@@ -221,13 +222,11 @@ function HeroCard({
       {subText && (
         <div className="text-[11px] text-text-3 leading-tight mt-1">{subText}</div>
       )}
-      {deltaNode && (
-        <div className="text-[12px] mt-1.5">{deltaNode}</div>
-      )}
-      {chartData && (
+      {deltaNode && <div className="text-[12px] mt-1.5">{deltaNode}</div>}
+      {chartRows && (
         <div className="h-[90px] -mx-2 mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+            <AreaChart data={chartRows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
               <defs>
                 <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
@@ -242,22 +241,52 @@ function HeroCard({
                   fontSize: 11,
                   boxShadow: "var(--shadow-md)",
                   padding: "6px 10px",
+                  minWidth: 140,
                 }}
-                labelFormatter={(_, payload) => {
-                  const date = payload?.[0]?.payload?.date as string | null | undefined;
-                  return date ? fmtBgDate(date) : "";
-                }}
-                formatter={(v) => [formatValue(Number(v ?? 0)), label]}
+                cursor={{ stroke: "var(--text-3)", strokeWidth: 1, strokeDasharray: "2 2" }}
+                content={(props) => (
+                  <TempoTooltip
+                    {...props}
+                    seriesKind={seriesKind}
+                    formatValue={formatValue}
+                    inverseDelta={inverseDelta}
+                  />
+                )}
+              />
+              {/* Comparison line — drawn FIRST so the accent area paints on top.
+                  Stroke kept thin + dashed at 30% opacity to read as "context"
+                  not data the user is reading. */}
+              <Line
+                type="monotone"
+                dataKey="comparison"
+                stroke="var(--text-3)"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls
               />
               <Area
                 type="monotone"
-                dataKey="v"
+                dataKey="current"
                 stroke="var(--accent)"
                 strokeWidth={1.5}
                 fill="url(#heroFill)"
                 isAnimationActive={false}
                 dot={false}
+                connectNulls={false}
               />
+              {/* "Now" marker — only hourly today renders this. The
+                  ReferenceLine sits at the last filled hour so the chart
+                  endpoint visually marks "we are here". */}
+              {series?.kind === "hourly" && series.nowIndex !== undefined && (
+                <ReferenceLine
+                  x={series.nowIndex}
+                  stroke="var(--text-2)"
+                  strokeDasharray="2 3"
+                  strokeWidth={1}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -283,15 +312,105 @@ function HeroCard({
 }
 
 /**
- * ChannelMix tile — composition snapshot with FOUR exclusive segments that
- * sum to 100%: Meta only · Google only · Смесена (overlap) · Друго.
+ * Zip the SeriesShape into Recharts-friendly rows. For hourly mode, mask
+ * current[h] = null past nowIndex so the area chart visibly stops at "now"
+ * (the holding-value-forward done server-side is for the headline math,
+ * not the chart — we want a clean drop-off at nowIndex).
  *
- * The mixed segment is rendered with a diagonal stripe pattern blending
- * Meta's and Google's neutral tones — visually saying "this is both" without
- * inventing a category colour (design contract §1 — no per-source accent).
- * Other (organic/email/direct) keeps the accent green: it's revenue the
- * business KEEPS, so visually anchoring it as positive carries meaning.
+ * Returns null when the series can't draw (need ≥2 points).
  */
+function buildChartRows(series: SeriesShape | null): ChartRow[] | null {
+  if (!series || series.current.length < 2) return null;
+  const rows: ChartRow[] = [];
+  for (let i = 0; i < series.current.length; i++) {
+    const isFuture =
+      series.kind === "hourly" &&
+      series.nowIndex !== undefined &&
+      i > series.nowIndex;
+    rows.push({
+      i,
+      label: series.labels[i] ?? String(i),
+      current: isFuture ? null : series.current[i],
+      comparison: series.comparison ? series.comparison[i] : null,
+      partial: series.partial?.[i] ?? false,
+    });
+  }
+  return rows;
+}
+
+// ============================================================
+// Tooltip — three-row layout (bucket / current / comparison + delta)
+// ============================================================
+
+// Recharts ships strict generic typings for the `content` prop of
+// <Tooltip>. We only read `active` + the first item's payload, so we
+// accept a loose unknown-shape and narrow inside.
+function TempoTooltip({
+  active,
+  payload,
+  seriesKind,
+  formatValue,
+  inverseDelta,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: ChartRow }>;
+  seriesKind: SeriesKind;
+  formatValue: (n: number) => string;
+  inverseDelta: boolean;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  const bucketLabel = formatBucketLabel(row.label, seriesKind);
+  const cur = row.current;
+  const cmp = row.comparison;
+
+  let delta: { text: string; tone: "good" | "bad" | "flat" } | null = null;
+  if (cur !== null && cmp !== null && cmp !== 0) {
+    const pct = Math.round(((cur - cmp) / cmp) * 100);
+    const isFlat = Math.abs(pct) < 1;
+    const isGood = inverseDelta ? pct < -3 : pct > 3;
+    const isBad = inverseDelta ? pct > 3 : pct < -3;
+    const arrow = isFlat ? "—" : pct > 0 ? "▲" : "▼";
+    delta = {
+      text: `${arrow} ${Math.abs(pct)}%`,
+      tone: isGood ? "good" : isBad ? "bad" : "flat",
+    };
+  }
+
+  const toneColor =
+    delta?.tone === "good"
+      ? "text-accent"
+      : delta?.tone === "bad"
+        ? "text-red"
+        : "text-text-3";
+
+  return (
+    <div>
+      <div className="text-text-2 font-semibold mb-0.5">{bucketLabel}</div>
+      {cur !== null && (
+        <div className="text-text tabular-nums">
+          {formatValue(cur)}
+          {row.partial && (
+            <span className="text-text-3 text-[10px] ml-1">(частична)</span>
+          )}
+        </div>
+      )}
+      {cmp !== null && (
+        <div className="flex items-center gap-1.5 text-text-3 tabular-nums">
+          <span>{formatValue(cmp)} типично</span>
+          {delta && <span className={toneColor}>{delta.text}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ChannelMix tile — unchanged behaviour from the previous file
+// ============================================================
+
 interface ChannelMixTileProps {
   meta: { revenue: number; pct: number };
   googleAds: { revenue: number; pct: number };
@@ -300,15 +419,18 @@ interface ChannelMixTileProps {
   shopifyRevenue: number;
 }
 
-// Striped pattern used for the "mixed" segment — alternating bands of the
-// two paid-channel tones. Inlined as a style object because Tailwind doesn't
-// have a built-in for arbitrary repeating-gradients.
 const MIXED_STRIPE: React.CSSProperties = {
   backgroundImage:
     "repeating-linear-gradient(45deg, var(--text-3) 0, var(--text-3) 4px, var(--text-2) 4px, var(--text-2) 8px)",
 };
 
-function ChannelMixTile({ meta, googleAds, mixed, other, shopifyRevenue }: ChannelMixTileProps) {
+function ChannelMixTile({
+  meta,
+  googleAds,
+  mixed,
+  other,
+  shopifyRevenue,
+}: ChannelMixTileProps) {
   if (shopifyRevenue <= 0) {
     return (
       <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col gap-2">
@@ -321,10 +443,6 @@ function ChannelMixTile({ meta, googleAds, mixed, other, shopifyRevenue }: Chann
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col gap-3">
       <div className="text-[13px] font-semibold text-text">Микс на каналите</div>
-      {/* h-3 + gap-x-px: 1.5x по-висок bar за повече визуална тежест; 1px
-          gap-овете показват surface-2 фона зад flex children-а и работят
-          като crisp разделители без да добавяме border (избягваме оverflow
-          edge cases при 0% сегменти). */}
       <div className="flex h-3 rounded-full overflow-hidden bg-surface-2 gap-x-px">
         <div
           className="bg-text-3 transition-all"
@@ -389,13 +507,23 @@ function ChannelMixTile({ meta, googleAds, mixed, other, shopifyRevenue }: Chann
   );
 }
 
-function TileSkeleton() {
+function TileSkeleton({ hourly = false }: { hourly?: boolean }) {
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 min-h-[220px] flex flex-col">
       <Skeleton className="h-3 w-20 mb-3" />
       <Skeleton className="h-8 w-32 mb-2" />
       <Skeleton className="h-3 w-28 mb-4" />
-      <Skeleton className="h-[80px] w-full mt-auto" />
+      {hourly ? (
+        // 24 thin bars hint at the upcoming hourly chart so the eye doesn't
+        // flicker from "smooth area placeholder" to "spiky hourly trace".
+        <div className="flex items-end gap-px h-[80px] mt-auto">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <Skeleton key={i} className="flex-1" style={{ height: `${30 + (i % 5) * 12}%` }} />
+          ))}
+        </div>
+      ) : (
+        <Skeleton className="h-[80px] w-full mt-auto" />
+      )}
     </div>
   );
 }
@@ -419,9 +547,7 @@ function SectionShell({ title, description, right, children }: SectionShellProps
         {right && <div className="flex items-center gap-3">{right}</div>}
       </div>
       <p className="text-[12px] text-text-3 mb-3">{description}</p>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-        {children}
-      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">{children}</div>
     </section>
   );
 }
@@ -429,21 +555,23 @@ function SectionShell({ title, description, right, children }: SectionShellProps
 function LoadingStrip({
   title,
   description,
+  hourly,
 }: {
   title: string;
   description: string;
+  hourly: boolean;
 }) {
   return (
     <SectionShell title={title} description={description}>
       {Array.from({ length: 3 }).map((_, i) => (
-        <TileSkeleton key={i} />
+        <TileSkeleton key={i} hourly={hourly} />
       ))}
     </SectionShell>
   );
 }
 
 // ============================================================
-// KpiStrip — orchestrates a single fetch then renders both sections.
+// KpiStrip — single fetch, multi-section render
 // ============================================================
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -458,19 +586,17 @@ const GOOGLE_ADS_DESC =
   "Google Ads през GA4 — разход, ROAS и покупки (last-click attribution).";
 
 interface KpiStripProps {
-  /** Query string from useDateRange (e.g. "preset=today" or "preset=30d"). */
   queryString: string;
-  /** Echoed preset — drives "today" vs "range" rendering. */
   preset: DatePreset;
-  /** Human label for the active range (e.g. "Днес", "30 дни"). */
   rangeLabel: string;
 }
 
 export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
   const isToday = preset === "today";
-  // 60s refresh for today (the running totals change minute-by-minute);
-  // 5 min for historical ranges (today's row contributes <0.1% of a 30d
-  // sum — no point hammering the edge cache).
+  const isHourly = preset === "today" || preset === "yesterday";
+
+  // 60s refresh for today (running totals change minute-by-minute); 5 min
+  // for everything else.
   const refreshInterval = isToday ? 60_000 : 300_000;
   const { data, isLoading, error } = useSWR<TopStripResponse>(
     `/api/dashboard/home/top-strip?${queryString}`,
@@ -478,25 +604,46 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     { refreshInterval, revalidateOnFocus: false }
   );
 
-  // For today, comparison baseline is the matched-hour same-weekday
-  // average; show that weekday in the delta label. For other ranges
-  // we compare to the equal-length preceding period.
-  const weekdayBg = sofiaWeekdayBg(new Date());
-  const typicalLabel = isToday
+  // For today/yesterday the comparison baseline is the matched-hour average
+  // across the last 4 same-weekdays; show that weekday in the delta label.
+  // For range presets we compare to the equal-length preceding period.
+  const baselineDate = isHourly
+    ? preset === "today"
+      ? new Date()
+      : new Date(Date.now() - 86_400_000)
+    : null;
+  const weekdayBg = baselineDate ? sofiaWeekdayBg(baselineDate) : "";
+  const typicalLabel = isHourly
     ? `${typicalAdjectiveBg(weekdayBg)} ${weekdayBg}`
     : "предходен период";
 
-  const overallTitle = isToday ? "Общо днес" : `Общо — ${rangeLabel}`;
-  const businessTitle = isToday ? "Бизнес днес" : `Бизнес — ${rangeLabel}`;
-  const adsTitle = isToday ? "Meta днес" : `Meta — ${rangeLabel}`;
-  const googleAdsTitle = isToday ? "Google Ads днес" : `Google Ads — ${rangeLabel}`;
+  const overallTitle = isToday
+    ? "Общо днес"
+    : preset === "yesterday"
+      ? "Общо вчера"
+      : `Общо — ${rangeLabel}`;
+  const businessTitle = isToday
+    ? "Бизнес днес"
+    : preset === "yesterday"
+      ? "Бизнес вчера"
+      : `Бизнес — ${rangeLabel}`;
+  const adsTitle = isToday
+    ? "Meta днес"
+    : preset === "yesterday"
+      ? "Meta вчера"
+      : `Meta — ${rangeLabel}`;
+  const googleAdsTitle = isToday
+    ? "Google Ads днес"
+    : preset === "yesterday"
+      ? "Google Ads вчера"
+      : `Google Ads — ${rangeLabel}`;
 
   if (isLoading || !data) {
     return (
       <>
-        <LoadingStrip title={overallTitle} description={OVERALL_DESC} />
-        <LoadingStrip title={businessTitle} description={BUSINESS_DESC} />
-        <LoadingStrip title={adsTitle} description={ADS_DESC} />
+        <LoadingStrip title={overallTitle} description={OVERALL_DESC} hourly={isHourly} />
+        <LoadingStrip title={businessTitle} description={BUSINESS_DESC} hourly={isHourly} />
+        <LoadingStrip title={adsTitle} description={ADS_DESC} hourly={isHourly} />
       </>
     );
   }
@@ -511,32 +658,17 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     );
   }
 
-  const { business, ads, googleAds, crossPlatform, series14d } = data;
+  const { business, ads, googleAds, crossPlatform, series } = data;
   const businessDrill = { href: "/sales", label: "Виж продажби" };
   const adsDrill = { href: "/ads", label: "Виж реклами" };
   const googleAdsDrill = { href: "/google-ads", label: "Виж Google Ads" };
-  // Series shares one date axis across every HeroCard (trailing-14d anchor).
-  const seriesDates = series14d.dates;
-  // Per-tile value formatters so the tooltip reads in the same unit as the
-  // headline number — EUR / x / int / pp — not a raw locale string.
-  const fmtPctVal = (n: number) => `${Math.round(n)}%`;
 
-  // === Ads section trim text — composability hints ===
-  // ROAS sub-text shows the two numbers it divides, so the operator can
-  // verify the ratio at a glance.
+  // === Composability sub-text per tile ===
   const roasSub =
     ads.spend.value > 0
       ? `${fmtEur(ads.attribution.metaRevenue)} / ${fmtEur(ads.spend.value)}`
       : "няма spend днес";
 
-  // Attribution sub-text grounds the % in the absolute numbers it came
-  // from. Bridges to business.revenue.
-  //
-  // Edge case: Meta credits a purchase before the Shopify webhook lands,
-  // so metaRevenue can briefly exceed shopifyRevenue. Server clamps pct to
-  // 100; we surface that with a "+" suffix and a short reason in subText
-  // so the operator doesn't see "100% · 850 EUR от 794 EUR" — a number
-  // pair that on its face contradicts the clamped pct.
   const overAttributed =
     ads.attribution.shopifyRevenue > 0 &&
     ads.attribution.metaRevenue > ads.attribution.shopifyRevenue;
@@ -553,16 +685,22 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
         ? `${fmtEur(ads.attribution.metaRevenue)} vs ${fmtEur(ads.attribution.shopifyRevenue)} Shopify · Meta изпреварва`
         : `${fmtEur(ads.attribution.metaRevenue)} от ${fmtEur(ads.attribution.shopifyRevenue)} Shopify`;
 
-  // Anomaly pill is locked to today's pending agent_briefs. In range
-  // mode it would float under the "30 дни" header but mean "right now",
-  // which reads wrong. Hide it; the operator still sees freshness via
-  // the FreshnessDot.
+  // Anomaly pill locked to today — see existing rationale in the route.
   const showAnomalyPill = isToday && data.anomalyCount > 0;
 
-  // Range-mode tiles show "няма сравнение" instead of "още рано" when
-  // the previous-period denominator is 0 — no time-of-day signal to
-  // wait for, just nothing to compare against.
-  const nullLabel = isToday ? undefined : "няма сравнение";
+  // Range-mode tiles say "няма сравнение" when the previous-period
+  // denominator is 0 — no time-of-day to wait for, just nothing to compare.
+  const nullLabel = isHourly ? undefined : "няма сравнение";
+
+  // Cross-platform sub-text — in hourly mode the chart can only render
+  // Shopify − Meta (no hourly Google Ads source). The headline still uses
+  // the full Meta + Google math, so the disclosure goes on the tile.
+  const netAfterAdsSub = isHourly
+    ? "Shopify − Meta − Google · кривата без Google днес"
+    : "Shopify − Meta − Google разход";
+  const cacSub = isHourly
+    ? "(Meta + Google) / поръчки · кривата само Meta днес"
+    : "(Meta + Google разход) / поръчки";
 
   return (
     <>
@@ -573,10 +711,9 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={crossPlatform.cac.vsTypical}
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
-          subText="(Meta + Google разход) / поръчки"
+          subText={cacSub}
           inverseDelta
-          series={series14d.crossPlatform.cac}
-          dates={seriesDates}
+          series={series.crossPlatform.cac}
           valueFormatter={fmtEur}
         />
         <HeroCard
@@ -585,9 +722,8 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={crossPlatform.netAfterAds.vsTypical}
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
-          subText="Shopify − Meta − Google разход"
-          series={series14d.crossPlatform.netAfterAds}
-          dates={seriesDates}
+          subText={netAfterAdsSub}
+          series={series.crossPlatform.netAfterAds}
           valueFormatter={fmtEur}
         />
         <ChannelMixTile
@@ -606,8 +742,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={business.revenue.vsTypical}
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
-          series={series14d.business.revenue}
-          dates={seriesDates}
+          series={series.business.revenue}
           valueFormatter={fmtEur}
           drillTo={businessDrill}
         />
@@ -617,20 +752,18 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={business.orders.vsTypical}
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
-          series={series14d.business.orders}
-          dates={seriesDates}
+          series={series.business.orders}
           valueFormatter={fmtInt}
           drillTo={businessDrill}
         />
         <HeroCard
           label="Средна стойност"
-          value={fmtEur(business.aov.value)}
+          value={fmtEur2(business.aov.value)}
           vsTypical={null}
           typicalLabel={typicalLabel}
           hideDelta
-          series={series14d.business.aov}
-          dates={seriesDates}
-          valueFormatter={fmtEur}
+          series={series.business.aov}
+          valueFormatter={fmtEur2}
           drillTo={businessDrill}
         />
       </SectionShell>
@@ -660,8 +793,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={ads.spend.vsTypical}
           typicalLabel={typicalLabel}
           nullLabel={nullLabel}
-          series={series14d.ads.spend}
-          dates={seriesDates}
+          series={series.ads.spend}
           valueFormatter={fmtEur}
           drillTo={adsDrill}
         />
@@ -672,8 +804,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={null}
           typicalLabel={typicalLabel}
           hideDelta
-          series={series14d.ads.roas}
-          dates={seriesDates}
+          series={series.ads.roas}
           valueFormatter={fmtRoas}
           drillTo={adsDrill}
         />
@@ -684,14 +815,13 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           vsTypical={null}
           typicalLabel={typicalLabel}
           hideDelta
-          series={series14d.ads.attribution}
-          dates={seriesDates}
+          series={series.ads.attribution}
           valueFormatter={fmtPctVal}
           drillTo={adsDrill}
         />
       </SectionShell>
 
-      {googleAds && series14d.googleAds && (
+      {googleAds && (
         <SectionShell title={googleAdsTitle} description={GOOGLE_ADS_DESC}>
           <HeroCard
             label="Разход"
@@ -699,8 +829,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             vsTypical={googleAds.spend.vsTypical}
             typicalLabel={typicalLabel}
             nullLabel={nullLabel}
-            series={series14d.googleAds.spend}
-            dates={seriesDates}
+            series={series.googleAds?.spend ?? null}
             valueFormatter={fmtEur}
             drillTo={googleAdsDrill}
           />
@@ -710,8 +839,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             vsTypical={null}
             typicalLabel={typicalLabel}
             hideDelta
-            series={series14d.googleAds.roas}
-            dates={seriesDates}
+            series={series.googleAds?.roas ?? null}
             valueFormatter={fmtRoas}
             drillTo={googleAdsDrill}
           />
@@ -721,8 +849,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             vsTypical={googleAds.purchases.vsTypical}
             typicalLabel={typicalLabel}
             nullLabel={nullLabel}
-            series={series14d.googleAds.purchases}
-            dates={seriesDates}
+            series={series.googleAds?.purchases ?? null}
             valueFormatter={fmtInt}
             drillTo={googleAdsDrill}
           />

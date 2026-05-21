@@ -7,17 +7,26 @@ import {
   sofiaDate,
   sofiaHoursElapsed,
   shiftDate,
-  lastNDates,
   resolveDateWindow,
   type DateWindow,
   type DateWindowPreset,
 } from "@/lib/sofia-date";
+import {
+  pickSeriesKind,
+  expandRange,
+  cumulative,
+  averageHourly,
+  nowIndexForToday,
+  weeklyBucketize,
+  type SeriesKind,
+  type SeriesShape,
+} from "@/lib/series";
 import { resolveAllHomeMarkets } from "@/lib/store-market-resolver";
 import { EARLY_DAY_THRESHOLD_HOURS } from "@/components/dashboard/store-state";
 import { fetchGoogleAdsByDateAllMarkets, sumGoogleAds } from "@/lib/google-ads-by-date";
 
 // ============================================================
-// Types
+// Public response contract
 // ============================================================
 
 interface TempoMetric {
@@ -29,11 +38,11 @@ interface TempoMetric {
   value: number;
   /**
    * Percentage delta vs comparison baseline.
-   *   - preset=today: matched-hour portion of average across last 4 same
-   *     weekdays.
-   *   - preset≠today: equal-length immediately-preceding period.
-   * null when the baseline is unavailable (too early in the day, no prior
-   * data, or denominator = 0). Clamped to ±999.
+   *   - preset=today / yesterday: matched-hour portion of average across the
+   *     last 4 same-weekdays (today) or the same hours of those weekdays
+   *     (yesterday — same baseline data, used as a full-day comparison).
+   *   - other presets: equal-length immediately-preceding period.
+   * null when the baseline is unavailable. Clamped to ±999.
    */
   vsTypical: number | null;
   /**
@@ -44,21 +53,21 @@ interface TempoMetric {
 }
 
 /**
- * Top-strip splits into two internally-composable sections:
+ * Top-strip splits into two internally-composable sections plus a
+ * cross-platform overlay. Each section's numbers add up among themselves.
  *
- *   business — what happened on the store (Shopify truth)
- *   ads      — what the paid channels did (Meta attribution)
+ *   business     — what happened on the store (Shopify truth)
+ *   ads          — what Meta did (Meta attribution)
+ *   googleAds    — Google Ads via GA4 (last-click)
+ *   crossPlatform — composites that blend all three
  *
- * Each section's numbers add up among themselves. The bridge is
- * `ads.attribution.pct`: what % of business revenue Meta attribution
- * claims, making the organic/email/direct gap explicit.
+ * The `series` block carries one chart-ready SeriesShape per card. Its
+ * `kind` discriminates how the UI labels the x-axis: "hourly" buckets the
+ * 24 hours of a single day (today/yesterday), "daily" plots N daily
+ * values (7d/30d/short customs), "weekly" plots N/7 week-ending values
+ * (90d/long customs, mobile-friendly).
  */
 interface TopStripResponse {
-  /**
-   * "today" → pacing tiles (vsTypical vs same-weekday baseline, projected
-   * end-of-day). "range" → aggregate over window, vsTypical vs previous
-   * equal-length period, projected always null.
-   */
   mode: "today" | "range";
   window: {
     from: string;
@@ -69,92 +78,61 @@ interface TopStripResponse {
   business: {
     revenue: TempoMetric;
     orders: TempoMetric;
-    /** Average order value = revenue/orders over the window. 0 when no orders. */
     aov: { value: number };
   };
   ads: {
     spend: TempoMetric;
-    /** ROAS = meta-revenue / meta-spend over the window. */
     roas: { value: number };
     attribution: {
-      /** 0-100 (or null when business revenue is 0). */
       pct: number | null;
       metaRevenue: number;
       shopifyRevenue: number;
     };
   };
-  /**
-   * Google Ads — pulled directly from GA4 Data API (no Supabase mirror yet,
-   * one runReport call per request). Null when GA4 is not configured or the
-   * query failed — UI hides the section rather than rendering zeros.
-   *
-   * Caveat: GA4 ad data has 4-24h freshness latency, so "today" numbers
-   * are usually incomplete until late afternoon Sofia time. The vsTypical
-   * baseline still works (same latency applies to the prior weekdays).
-   */
   googleAds: {
     spend: TempoMetric;
-    /** ROAS = google-revenue / google-spend over the window. */
     roas: { value: number };
     purchases: TempoMetric;
   } | null;
-  /**
-   * Cross-platform composites — the platform's superpower. Nothing here is
-   * derivable from a single source; every number combines Shopify + Meta
-   * + Google Ads. This is what no individual dashboard can show.
-   *
-   *   cac          = (meta_spend + google_spend) / shopify_orders
-   *   netAfterAds  = shopify_revenue − meta_spend − google_spend
-   *   channelMix   = how Shopify revenue splits across attribution sources
-   *
-   * `cac` and `netAfterAds` follow the same TempoMetric pacing logic as
-   * source-pure tiles. `channelMix` is a composition snapshot — no delta.
-   */
   crossPlatform: {
     cac: TempoMetric;
     netAfterAds: TempoMetric;
     channelMix: {
-      /** Revenue attributed only to Meta (after removing the mixed overlap). */
       meta: { revenue: number; pct: number };
-      /** Revenue attributed only to Google (after removing the mixed overlap). */
       googleAds: { revenue: number; pct: number };
-      /**
-       * Lower-bound estimate of orders where Meta AND Google both claim
-       * attribution. Computed via inclusion-exclusion: max(0, M + G − Shopify).
-       * This is the MINIMUM provable overlap (actual cross-attribution may
-       * be higher); we report the floor so business owners see a real number,
-       * not zero, when M + G > Shopify revenue.
-       */
       mixed: { revenue: number; pct: number };
-      /** Shopify revenue minus all paid attribution — organic/email/direct. */
       other: { revenue: number; pct: number };
       shopifyRevenue: number;
     };
   };
-  /**
-   * Daily series for the trailing 14 days ending at `window.to` (or today
-   * for "today" mode). `dates` is the ISO date for each index in the value
-   * arrays (Sofia-anchored); the rest are 14-element arrays oldest first,
-   * zero-filled for missing days. Feeds the hero-card area charts.
-   *
-   * Anchor stays at 14 days regardless of the selected preset so the chart
-   * shape is a stable visual baseline — comparing "today" to "30d" doesn't
-   * change the chart's horizontal span.
-   *
-   * Computed ratios (AOV, ROAS, attribution pct, CAC) are derived per-day
-   * inside the route so the UI doesn't have to recompute them from raw
-   * series and risk drift.
-   */
-  series14d: {
-    dates: string[];
-    business: { revenue: number[]; orders: number[]; aov: number[] };
-    ads: { spend: number[]; revenue: number[]; roas: number[]; attribution: number[] };
-    googleAds: { spend: number[]; revenue: number[]; purchases: number[]; roas: number[] } | null;
-    crossPlatform: { cac: number[]; netAfterAds: number[] };
+  series: {
+    business: {
+      revenue: SeriesShape;
+      orders: SeriesShape;
+      aov: SeriesShape;
+    };
+    ads: {
+      spend: SeriesShape;
+      roas: SeriesShape;
+      attribution: SeriesShape;
+    };
+    googleAds: {
+      spend: SeriesShape;
+      roas: SeriesShape;
+      purchases: SeriesShape;
+    } | null;
+    crossPlatform: {
+      cac: SeriesShape;
+      netAfterAds: SeriesShape;
+    };
   };
   anomalyCount: number;
   freshAsOf: string;
 }
+
+// ============================================================
+// Daily aggregation primitives (unchanged contract)
+// ============================================================
 
 interface DailyAggRow {
   order_date: string;
@@ -162,20 +140,49 @@ interface DailyAggRow {
   total_orders: number | string | null;
 }
 
+interface HourlyAggRow {
+  order_date: string;
+  hour: number;
+  total_revenue: number | string | null;
+  total_orders: number | string | null;
+}
+
+interface MetaDayRow {
+  date: string;
+  spend: number | string | null;
+  revenue: number | string | null;
+  purchases: number | string | null;
+  fetched_at: string | null;
+}
+
+interface MetaHourlyRow {
+  date: string;
+  hour: number;
+  spend: number | string | null;
+  revenue: number | string | null;
+  purchases: number | string | null;
+  fetched_at: string | null;
+}
+
+type ShopifyDaily = { revenue: number; orders: number };
+type ShopifyHourly = ShopifyDaily; // same shape per (date, hour)
+type MetaDaily = { spend: number; revenue: number; purchases: number };
+type MetaHourly = MetaDaily;
+type GaDaily = { spend: number; revenue: number; purchases: number };
+
 const num = (v: number | string | null | undefined): number => {
   if (v == null) return 0;
   const n = typeof v === "string" ? Number(v) : v;
   return Number.isFinite(n) ? n : 0;
 };
 
-/**
- * Fetch daily aggregates across all bound Shopify schemas (`store_${marketCode}`),
- * summed by date. See migration 025 for why this goes through the public
- * `read_store_daily_aggregates` RPC instead of `.schema(...).from(...)`.
- */
+// ============================================================
+// Shopify fetchers (daily + hourly)
+// ============================================================
+
 async function fetchShopifyByDate(
   dates: string[]
-): Promise<Map<string, { revenue: number; orders: number }>> {
+): Promise<Map<string, ShopifyDaily>> {
   const markets = await resolveAllHomeMarkets();
   const schemas = markets.map((m) => `store_${m.marketCode}`);
 
@@ -186,7 +193,7 @@ async function fetchShopifyByDate(
         { p_schema: schema, p_dates: dates }
       );
       if (error) {
-        logger.error("top-strip: shopify daily_aggregates fetch failed", {
+        logger.error("top-strip: shopify daily fetch failed", {
           schema,
           error: error.message,
         });
@@ -196,7 +203,7 @@ async function fetchShopifyByDate(
     })
   );
 
-  const byDate = new Map<string, { revenue: number; orders: number }>();
+  const byDate = new Map<string, ShopifyDaily>();
   for (const rows of perSchema) {
     for (const r of rows) {
       const bucket = byDate.get(r.order_date) ?? { revenue: 0, orders: 0 };
@@ -209,10 +216,140 @@ async function fetchShopifyByDate(
 }
 
 /**
- * Compute matched-hour tempo metric for preset=today: today's running
- * value vs the matched portion of the prior-weekdays average. Pure
- * function so Meta and Shopify share exactly the same arithmetic + clamps.
+ * Returns per-(date, hour) Shopify aggregates summed across schemas. Key
+ * is `${date}|${hour}` for fast lookups; converted into per-date 24-arrays
+ * in `buildHourlyArrayMap` below.
  */
+async function fetchShopifyHourlyByDates(
+  dates: string[]
+): Promise<Map<string, ShopifyHourly>> {
+  const markets = await resolveAllHomeMarkets();
+  const schemas = markets.map((m) => `store_${m.marketCode}`);
+
+  const perSchema = await Promise.all(
+    schemas.map(async (schema) => {
+      const { data, error } = await supabaseAdmin.rpc(
+        "read_store_hourly_aggregates_multi",
+        { p_schema: schema, p_dates: dates }
+      );
+      if (error) {
+        logger.error("top-strip: shopify hourly fetch failed", {
+          schema,
+          error: error.message,
+        });
+        return [] as HourlyAggRow[];
+      }
+      return (data ?? []) as HourlyAggRow[];
+    })
+  );
+
+  const byKey = new Map<string, ShopifyHourly>();
+  for (const rows of perSchema) {
+    for (const r of rows) {
+      const key = `${r.order_date}|${r.hour}`;
+      const bucket = byKey.get(key) ?? { revenue: 0, orders: 0 };
+      bucket.revenue += num(r.total_revenue);
+      bucket.orders += num(r.total_orders);
+      byKey.set(key, bucket);
+    }
+  }
+  return byKey;
+}
+
+/**
+ * Pivot a (date|hour) keyed map into one 24-element array per date. The
+ * array index IS the hour 0-23. Missing slots are 0. Returned map only
+ * contains the dates the caller asked for, regardless of source data.
+ */
+function buildHourlyArrayMap<T extends Record<string, number>>(
+  byKey: Map<string, T>,
+  dates: string[],
+  fields: (keyof T)[]
+): Map<string, Record<string, number[]>> {
+  const out = new Map<string, Record<string, number[]>>();
+  for (const date of dates) {
+    const perField: Record<string, number[]> = {};
+    for (const f of fields) perField[f as string] = new Array(24).fill(0);
+    for (let h = 0; h < 24; h++) {
+      const row = byKey.get(`${date}|${h}`);
+      if (!row) continue;
+      for (const f of fields) {
+        perField[f as string][h] = row[f] ?? 0;
+      }
+    }
+    out.set(date, perField);
+  }
+  return out;
+}
+
+// ============================================================
+// Meta fetchers (daily + hourly)
+// ============================================================
+
+async function fetchMetaByDate(
+  dates: string[]
+): Promise<{ byDate: Map<string, MetaDaily>; latestFetched: string | null }> {
+  const { data, error } = await supabaseAdmin
+    .from("meta_insights_by_store")
+    .select("date, spend, revenue, purchases, fetched_at")
+    .eq("level", "account")
+    .in("date", dates);
+
+  if (error) {
+    logger.error("top-strip: meta daily fetch failed", { error: error.message });
+    return { byDate: new Map(), latestFetched: null };
+  }
+
+  const rows = (data ?? []) as MetaDayRow[];
+  const byDate = new Map<string, MetaDaily>();
+  let latestFetched: string | null = null;
+  for (const r of rows) {
+    const bucket = byDate.get(r.date) ?? { spend: 0, revenue: 0, purchases: 0 };
+    bucket.spend += num(r.spend);
+    bucket.revenue += num(r.revenue);
+    bucket.purchases += num(r.purchases);
+    byDate.set(r.date, bucket);
+    if (r.fetched_at && (!latestFetched || r.fetched_at > latestFetched)) {
+      latestFetched = r.fetched_at;
+    }
+  }
+  return { byDate, latestFetched };
+}
+
+async function fetchMetaHourlyByDates(
+  dates: string[]
+): Promise<{ byKey: Map<string, MetaHourly>; latestFetched: string | null }> {
+  const { data, error } = await supabaseAdmin
+    .from("meta_insights_hourly_by_store")
+    .select("date, hour, spend, revenue, purchases, fetched_at")
+    .in("date", dates);
+
+  if (error) {
+    logger.error("top-strip: meta hourly fetch failed", { error: error.message });
+    return { byKey: new Map(), latestFetched: null };
+  }
+
+  const rows = (data ?? []) as MetaHourlyRow[];
+  const byKey = new Map<string, MetaHourly>();
+  let latestFetched: string | null = null;
+  for (const r of rows) {
+    const key = `${r.date}|${r.hour}`;
+    const bucket = byKey.get(key) ?? { spend: 0, revenue: 0, purchases: 0 };
+    bucket.spend += num(r.spend);
+    bucket.revenue += num(r.revenue);
+    bucket.purchases += num(r.purchases);
+    byKey.set(key, bucket);
+    if (r.fetched_at && (!latestFetched || r.fetched_at > latestFetched)) {
+      latestFetched = r.fetched_at;
+    }
+  }
+  return { byKey, latestFetched };
+}
+
+// ============================================================
+// Tempo math (unchanged)
+// ============================================================
+
 function buildTodayTempo<F extends string>(
   todayValue: number,
   priors: Array<Record<F, number>>,
@@ -233,11 +370,6 @@ function buildTodayTempo<F extends string>(
   return { value: todayValue, vsTypical, projected };
 }
 
-/**
- * Range-mode tempo: compare aggregate over [from..to] vs equal-length
- * immediately-preceding window. Projected is always null — no pacing
- * logic outside of today.
- */
 function buildRangeTempo(current: number, previous: number): TempoMetric {
   if (previous === 0) {
     return { value: current, vsTypical: null, projected: null };
@@ -247,37 +379,8 @@ function buildRangeTempo(current: number, previous: number): TempoMetric {
   return { value: current, vsTypical, projected: null };
 }
 
-// ============================================================
-// Aggregation helpers
-// ============================================================
-
-interface MetaDayRow {
-  date: string;
-  spend: number | string | null;
-  revenue: number | string | null;
-  purchases: number | string | null;
-  fetched_at: string | null;
-}
-
-/** Inclusive ISO date range expanded to an array. */
-function expandRange(fromIso: string, toIso: string): string[] {
-  const out: string[] = [];
-  let cursor = fromIso;
-  // Safety cap — 365 days max to avoid runaway queries.
-  let guard = 0;
-  while (cursor <= toIso && guard < 366) {
-    out.push(cursor);
-    cursor = shiftDate(cursor, -1);
-    guard++;
-  }
-  return out;
-}
-
-function sumMeta(
-  byDate: Map<string, { spend: number; revenue: number; purchases: number }>,
-  dates: string[]
-): { spend: number; revenue: number; purchases: number } {
-  const out = { spend: 0, revenue: 0, purchases: 0 };
+function sumMeta(byDate: Map<string, MetaDaily>, dates: string[]): MetaDaily {
+  const out: MetaDaily = { spend: 0, revenue: 0, purchases: 0 };
   for (const d of dates) {
     const row = byDate.get(d);
     if (!row) continue;
@@ -288,11 +391,8 @@ function sumMeta(
   return out;
 }
 
-function sumShopify(
-  byDate: Map<string, { revenue: number; orders: number }>,
-  dates: string[]
-): { revenue: number; orders: number } {
-  const out = { revenue: 0, orders: 0 };
+function sumShopify(byDate: Map<string, ShopifyDaily>, dates: string[]): ShopifyDaily {
+  const out: ShopifyDaily = { revenue: 0, orders: 0 };
   for (const d of dates) {
     const row = byDate.get(d);
     if (!row) continue;
@@ -302,103 +402,163 @@ function sumShopify(
   return out;
 }
 
+// ============================================================
+// Series builders
+// ============================================================
+
+const HOUR_LABELS: string[] = Array.from({ length: 24 }, (_, i) =>
+  String(i).padStart(2, "0")
+);
+
 /**
- * Build the trailing-14d series block that feeds the home hero-card charts.
- * One pass over the date anchor produces every series (raw + derived ratio
- * metrics) so the UI doesn't have to recompute them and drift.
+ * Build the SeriesShape for a single metric in HOURLY mode.
  *
- * `includeGoogleAds` mirrors the response's `googleAds: null` decision: if
- * the live section is hidden we suppress the series too, so the UI never
- * gets a half-populated chart strip.
+ * `currentHourly` is the 24-element raw per-hour series for the target
+ * day; `priorHourlies` are the same shape for the comparison days. The
+ * function cumulates both, masks current values past `nowIndex` (today
+ * mode), and emits ready-to-render arrays sharing the 00-23 x-axis.
+ *
+ * `agg` controls how the typical baseline averages priors:
+ *   "sum"  — additive metrics (revenue, orders, spend). Sum per hour
+ *            across priors, then divide by count; cumulate.
+ *   "ratio" — derived metrics (ROAS, AOV, attribution). The per-hour
+ *             ratio is computed from the cumulated numerator/denominator
+ *             — we ask the caller to pass pre-cumulated arrays via the
+ *             `cumulatedRatio` factory below. This branch is unused
+ *             directly; the route calls `buildHourlyRatioSeries` instead.
  */
-function buildSeries14d(
-  dates14d: string[],
-  shopifyByDate: Map<string, { revenue: number; orders: number }>,
-  metaByDate: Map<string, { spend: number; revenue: number; purchases: number }>,
-  googleAdsByDate: Map<string, { spend: number; revenue: number; purchases: number }>,
-  includeGoogleAds: boolean
-): TopStripResponse["series14d"] {
-  const dates: string[] = [];
-  const revenueS: number[] = [];
-  const ordersS: number[] = [];
-  const aovS: number[] = [];
-  const metaSpendS: number[] = [];
-  const metaRevenueS: number[] = [];
-  const metaRoasS: number[] = [];
-  const attributionS: number[] = [];
-  const gaSpendS: number[] = [];
-  const gaRevenueS: number[] = [];
-  const gaPurchasesS: number[] = [];
-  const gaRoasS: number[] = [];
-  const cacS: number[] = [];
-  const netS: number[] = [];
+function buildHourlySumSeries(
+  currentHourly: number[],
+  priorHourlies: number[][],
+  nowIdx: number | undefined
+): SeriesShape {
+  const typicalRaw = averageHourly(priorHourlies);
+  const currentCum = cumulative(currentHourly);
+  const typicalCum = typicalRaw ? cumulative(typicalRaw) : null;
 
-  for (const d of dates14d) {
-    dates.push(d);
-    const sho = shopifyByDate.get(d) ?? { revenue: 0, orders: 0 };
-    const m = metaByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 };
-    const g = googleAdsByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 };
-
-    revenueS.push(sho.revenue);
-    ordersS.push(sho.orders);
-    aovS.push(sho.orders > 0 ? sho.revenue / sho.orders : 0);
-
-    metaSpendS.push(m.spend);
-    metaRevenueS.push(m.revenue);
-    metaRoasS.push(m.spend > 0 ? m.revenue / m.spend : 0);
-    attributionS.push(sho.revenue > 0 ? (m.revenue / sho.revenue) * 100 : 0);
-
-    gaSpendS.push(g.spend);
-    gaRevenueS.push(g.revenue);
-    gaPurchasesS.push(g.purchases);
-    gaRoasS.push(g.spend > 0 ? g.revenue / g.spend : 0);
-
-    const totalSpend = m.spend + g.spend;
-    cacS.push(sho.orders > 0 ? totalSpend / sho.orders : 0);
-    netS.push(sho.revenue - totalSpend);
+  // When today, blank out future hours so the area chart doesn't draw
+  // a flat horizontal line at the running total to hour 23 (the cumulative
+  // function would otherwise carry the last value forward). We render
+  // the value only through `nowIndex` and let the comparison line continue
+  // full-day. Yesterday + earlier days have nowIdx undefined → no masking.
+  if (nowIdx !== undefined) {
+    for (let h = nowIdx + 1; h < 24; h++) {
+      currentCum[h] = currentCum[nowIdx]; // hold the last value; UI hides via nowIndex
+    }
   }
 
   return {
-    dates,
-    business: { revenue: revenueS, orders: ordersS, aov: aovS },
-    ads: { spend: metaSpendS, revenue: metaRevenueS, roas: metaRoasS, attribution: attributionS },
-    googleAds: includeGoogleAds
-      ? { spend: gaSpendS, revenue: gaRevenueS, purchases: gaPurchasesS, roas: gaRoasS }
-      : null,
-    crossPlatform: { cac: cacS, netAfterAds: netS },
+    kind: "hourly",
+    labels: HOUR_LABELS,
+    current: currentCum,
+    comparison: typicalCum,
+    nowIndex: nowIdx,
   };
 }
 
 /**
- * Build the channelMix composition snapshot — what % of Shopify revenue
- * each paid source claimed, split into FOUR exclusive segments that sum
- * to 100% (modulo rounding):
+ * Hourly ratio series — used for AOV / ROAS / attribution. Computed from
+ * the cumulated numerator/denominator pair (not from per-hour ratios)
+ * so the trace stays smooth and the endpoint matches the headline
+ * aggregate exactly.
  *
- *   meta       — only Meta claims this revenue
- *   googleAds  — only Google claims this revenue
- *   mixed      — BOTH platforms claim it (overlap; cross-attribution)
- *   other      — neither claims it (organic / direct / email / referral)
- *
- * Math: inclusion-exclusion on two attribution windows.
- *
- *   mixed_lower_bound = max(0, M + G − Shopify)
- *
- * This is the MINIMUM provable overlap — the slice both platforms
- * physically must have double-counted given the totals. Actual overlap
- * may be higher (depending on hidden journey patterns), but we can't
- * derive that from aggregates alone. So `mixed` is a floor, not the truth.
- *
- *   meta_unique   = max(0, M − mixed)
- *   google_unique = max(0, G − mixed)
- *   other         = max(0, Shopify − meta_unique − google_unique − mixed)
- *
- * When M + G ≤ Shopify, mixed = 0 and the segments behave like the old
- * 3-way split. When M + G > Shopify, the surplus is correctly attributed
- * to `mixed` instead of being silently clamped away.
- *
- * Rounding: we percent each segment from the same Shopify denominator,
- * then nudge the largest segment so the percentages sum to exactly 100.
- * Without that step, four rounded values often land at 99% or 101%.
+ * numerator/denominator arrays are RAW per-hour values (not cumulative).
+ * Result divides per-hour cumulated num by cumulated denom, with 0
+ * fallback when denom = 0 (hours before any activity).
+ */
+function buildHourlyRatioSeries(
+  currentNum: number[],
+  currentDenom: number[],
+  priorNum: number[][],
+  priorDenom: number[][],
+  nowIdx: number | undefined,
+  percentScale = false
+): SeriesShape {
+  const cur = ratioFromCumulated(cumulative(currentNum), cumulative(currentDenom), percentScale);
+
+  let comparison: number[] | null = null;
+  if (priorNum.length > 0 && priorNum.length === priorDenom.length) {
+    // Average prior-day numerators and denominators per hour, then ratio.
+    // Averaging the ratios directly would over-weight low-volume hours
+    // (a 5% day and a 95% day average to 50%, not the true mean).
+    const numAvg = averageHourly(priorNum);
+    const denomAvg = averageHourly(priorDenom);
+    if (numAvg && denomAvg) {
+      comparison = ratioFromCumulated(cumulative(numAvg), cumulative(denomAvg), percentScale);
+    }
+  }
+
+  if (nowIdx !== undefined) {
+    for (let h = nowIdx + 1; h < 24; h++) cur[h] = cur[nowIdx];
+  }
+
+  return {
+    kind: "hourly",
+    labels: HOUR_LABELS,
+    current: cur,
+    comparison,
+    nowIndex: nowIdx,
+  };
+}
+
+function ratioFromCumulated(
+  cumNum: number[],
+  cumDenom: number[],
+  percent: boolean
+): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < cumNum.length; i++) {
+    const d = cumDenom[i];
+    const r = d > 0 ? cumNum[i] / d : 0;
+    out.push(Number((percent ? r * 100 : r).toFixed(2)));
+  }
+  return out;
+}
+
+/**
+ * Build the SeriesShape for a single metric in DAILY or WEEKLY mode.
+ * Caller passes the per-day current + comparison value arrays plus the
+ * matching date list (oldest first). Weekly kind triggers bucketization.
+ */
+function buildRangeSeries(
+  kind: Exclude<SeriesKind, "hourly">,
+  dates: string[],
+  current: number[],
+  comparison: number[] | null,
+  agg: "sum" | "mean"
+): SeriesShape {
+  if (kind === "daily") {
+    return {
+      kind: "daily",
+      labels: dates,
+      current: current.map((v) => Number(v.toFixed(2))),
+      comparison: comparison ? comparison.map((v) => Number(v.toFixed(2))) : null,
+    };
+  }
+
+  // weekly bucketization
+  const curBuckets = weeklyBucketize(dates, current, agg);
+  let cmpBuckets: number[] | null = null;
+  if (comparison) {
+    // Comparison uses the same week-ending convention but anchored on its
+    // own to-date — we just bucket it the same way and trust the chart to
+    // align by INDEX (week-of-window), not by calendar week.
+    const cmpDates = dates.map((_, i) => `cmp-${i}`); // synthetic labels, never shown
+    cmpBuckets = weeklyBucketize(cmpDates, comparison, agg).values;
+  }
+
+  return {
+    kind: "weekly",
+    labels: curBuckets.labels,
+    current: curBuckets.values,
+    comparison: cmpBuckets,
+    partial: curBuckets.partial,
+  };
+}
+
+/**
+ * Build channelMix composition — same math as before. Returns a snapshot,
+ * no series counterpart (composition tile renders as a stacked bar).
  */
 function buildChannelMix(
   shopifyRevenue: number,
@@ -418,8 +578,6 @@ function buildChannelMix(
     mixed: pct(mixedRev),
     other: pct(otherRev),
   };
-  // Force-sum to 100 by nudging the largest segment. Avoids "Meta 55% +
-  // Google 46% + Mixed 1% = 102%" rounding artefacts.
   const sum = pcts.meta + pcts.googleAds + pcts.mixed + pcts.other;
   if (sum !== 100 && shopifyRevenue > 0) {
     const drift = 100 - sum;
@@ -438,6 +596,452 @@ function buildChannelMix(
   };
 }
 
+// ============================================================
+// Hourly mode (preset = today / yesterday)
+// ============================================================
+
+/**
+ * "Hourly mode" = a single day in view, charts show 0-24h cumulative.
+ *
+ * Date set:
+ *   target = window.from (== window.to in today / yesterday presets)
+ *   priors = 4 same-weekdays before target (7, 14, 21, 28 days back)
+ *
+ * Headline numbers use the same matched-hour pacing as before. Charts use
+ * the new hourly fetchers and feed buildHourlySumSeries / RatioSeries.
+ */
+async function handleHourly(
+  window: DateWindow,
+  now: Date,
+  anomalyCount: number
+): Promise<TopStripResponse> {
+  const targetDate = window.from;
+  const priorDates = [7, 14, 21, 28].map((n) => shiftDate(targetDate, n));
+  const allDates = [targetDate, ...priorDates];
+
+  // Daily fetches still drive the headline TempoMetric arithmetic — same
+  // formulas as the previous implementation, no regression.
+  const [
+    { byDate: metaDaily, latestFetched: metaDailyFresh },
+    shopifyDaily,
+    googleAdsDaily,
+    shopifyHourlyByKey,
+    { byKey: metaHourlyByKey, latestFetched: metaHourlyFresh },
+  ] = await Promise.all([
+    fetchMetaByDate(allDates),
+    fetchShopifyByDate(allDates),
+    fetchGoogleAdsByDateAllMarkets(allDates),
+    fetchShopifyHourlyByDates(allDates),
+    fetchMetaHourlyByDates(allDates),
+  ]);
+
+  const hoursElapsed = window.preset === "today" ? sofiaHoursElapsed(now) : 24;
+  const nowIdx =
+    window.preset === "today" ? nowIndexForToday(true) : undefined;
+
+  // -- Daily snapshots for headline numbers ----------------------
+  const shoToday = shopifyDaily.get(targetDate) ?? { revenue: 0, orders: 0 };
+  const metaToday = metaDaily.get(targetDate) ?? { spend: 0, revenue: 0, purchases: 0 };
+  const gaToday = googleAdsDaily.get(targetDate);
+  const safeGaToday = gaToday ?? { spend: 0, revenue: 0, purchases: 0 };
+
+  const shoPriors = priorDates
+    .map((d) => shopifyDaily.get(d))
+    .filter((x): x is ShopifyDaily => !!x);
+  const metaPriors = priorDates
+    .map((d) => metaDaily.get(d))
+    .filter((x): x is MetaDaily => !!x);
+  const gaPriors = priorDates
+    .map((d) => googleAdsDaily.get(d))
+    .filter((x): x is GaDaily => !!x);
+
+  // Headline TempoMetrics
+  const businessRevenue = buildTodayTempo(shoToday.revenue, shoPriors, "revenue", hoursElapsed);
+  const businessOrders = buildTodayTempo(shoToday.orders, shoPriors, "orders", hoursElapsed);
+  const aov = {
+    value: businessOrders.value > 0
+      ? Number((businessRevenue.value / businessOrders.value).toFixed(2))
+      : 0,
+  };
+
+  const metaSpend = buildTodayTempo(metaToday.spend, metaPriors, "spend", hoursElapsed);
+  const metaRevenue = buildTodayTempo(metaToday.revenue, metaPriors, "revenue", hoursElapsed);
+  const roas = {
+    value: metaSpend.value > 0
+      ? Math.min(99.99, Number((metaRevenue.value / metaSpend.value).toFixed(2)))
+      : 0,
+  };
+  const attributionPct = businessRevenue.value > 0
+    ? Math.min(100, Math.round((metaRevenue.value / businessRevenue.value) * 100))
+    : null;
+
+  let googleAdsSection: TopStripResponse["googleAds"] = null;
+  if (gaToday || gaPriors.length > 0) {
+    const gaSpend = buildTodayTempo(safeGaToday.spend, gaPriors, "spend", hoursElapsed);
+    const gaPurchases = buildTodayTempo(safeGaToday.purchases, gaPriors, "purchases", hoursElapsed);
+    const gaRoas = {
+      value: safeGaToday.spend > 0
+        ? Math.min(99.99, Number((safeGaToday.revenue / safeGaToday.spend).toFixed(2)))
+        : 0,
+    };
+    googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
+  }
+
+  // Cross-platform headlines — keep includesGoogle behaviour: CAC and
+  // netAfterAds use total_spend (Meta + GA) even in hourly mode, because
+  // those are the truthful end-of-day figures. The charts intentionally
+  // only show Shopify − Meta (no hourly GA source) — the gap between
+  // chart endpoint and headline equals today's GA spend, which is small
+  // and surfaced via subText on the UI side.
+  const totalSpendToday = metaToday.spend + safeGaToday.spend;
+  const cacToday = shoToday.orders > 0 ? totalSpendToday / shoToday.orders : 0;
+  const cacPriors = priorDates
+    .map((d) => {
+      const sho = shopifyDaily.get(d);
+      const m = metaDaily.get(d);
+      const g = googleAdsDaily.get(d);
+      if (!sho || sho.orders === 0) return null;
+      return { cac: ((m?.spend ?? 0) + (g?.spend ?? 0)) / sho.orders };
+    })
+    .filter((x): x is { cac: number } => !!x);
+  const cacTempo = buildTodayTempo(cacToday, cacPriors, "cac", hoursElapsed);
+
+  const netToday = shoToday.revenue - totalSpendToday;
+  const netPriors = priorDates
+    .map((d) => {
+      const sho = shopifyDaily.get(d);
+      const m = metaDaily.get(d);
+      const g = googleAdsDaily.get(d);
+      if (!sho && !m && !g) return null;
+      return { net: (sho?.revenue ?? 0) - (m?.spend ?? 0) - (g?.spend ?? 0) };
+    })
+    .filter((x): x is { net: number } => !!x);
+  const netTempo = buildTodayTempo(netToday, netPriors, "net", hoursElapsed);
+
+  const channelMix = buildChannelMix(
+    shoToday.revenue,
+    metaToday.revenue,
+    safeGaToday.revenue
+  );
+
+  // -- Hourly arrays for chart series ----------------------------
+  const shoHourly = buildHourlyArrayMap(shopifyHourlyByKey, allDates, ["revenue", "orders"]);
+  const metaHourly = buildHourlyArrayMap(metaHourlyByKey, allDates, [
+    "spend",
+    "revenue",
+    "purchases",
+  ]);
+
+  const shoToday24 = shoHourly.get(targetDate) ?? { revenue: zero24(), orders: zero24() };
+  const metaToday24 = metaHourly.get(targetDate) ?? {
+    spend: zero24(), revenue: zero24(), purchases: zero24(),
+  };
+
+  const shoPriors24 = priorDates
+    .map((d) => shoHourly.get(d))
+    .filter((x): x is Record<string, number[]> => !!x);
+  const metaPriors24 = priorDates
+    .map((d) => metaHourly.get(d))
+    .filter((x): x is Record<string, number[]> => !!x);
+
+  // Sum-style series
+  const businessRevenueSeries = buildHourlySumSeries(
+    shoToday24.revenue,
+    shoPriors24.map((p) => p.revenue),
+    nowIdx
+  );
+  const businessOrdersSeries = buildHourlySumSeries(
+    shoToday24.orders,
+    shoPriors24.map((p) => p.orders),
+    nowIdx
+  );
+  const metaSpendSeries = buildHourlySumSeries(
+    metaToday24.spend,
+    metaPriors24.map((p) => p.spend),
+    nowIdx
+  );
+
+  // Ratio series — AOV, ROAS, attribution. Each is derived from cumulated
+  // pairs so the chart endpoint exactly equals the headline aggregate.
+  const aovSeries = buildHourlyRatioSeries(
+    shoToday24.revenue, shoToday24.orders,
+    shoPriors24.map((p) => p.revenue), shoPriors24.map((p) => p.orders),
+    nowIdx
+  );
+  const roasSeries = buildHourlyRatioSeries(
+    metaToday24.revenue, metaToday24.spend,
+    metaPriors24.map((p) => p.revenue), metaPriors24.map((p) => p.spend),
+    nowIdx
+  );
+  const attributionSeries = buildHourlyRatioSeries(
+    metaToday24.revenue, shoToday24.revenue,
+    metaPriors24.map((p) => p.revenue), shoPriors24.map((p) => p.revenue),
+    nowIdx,
+    true  // percent scale
+  );
+
+  // CAC + netAfterAds — Shopify − Meta only at hourly resolution (no
+  // GA hourly source). See the headline comment above.
+  const cacNumHourly = metaToday24.spend.slice();          // numerator = Meta spend
+  const cacDenomHourly = shoToday24.orders.slice();        // denominator = orders
+  const cacNumPriors = metaPriors24.map((p) => p.spend);
+  const cacDenomPriors = shoPriors24.map((p) => p.orders);
+  const cacSeries = buildHourlyRatioSeries(
+    cacNumHourly, cacDenomHourly, cacNumPriors, cacDenomPriors, nowIdx
+  );
+
+  // netAfterAds — per-hour Shopify revenue minus Meta spend, cumulated.
+  // Use sum series (additive), not ratio. We build a synthetic raw array.
+  const netRawHourly: number[] = shoToday24.revenue.map(
+    (r, h) => r - metaToday24.spend[h]
+  );
+  const netRawPriors: number[][] = priorDates
+    .map((d) => {
+      const sho = shoHourly.get(d);
+      const m = metaHourly.get(d);
+      if (!sho || !m) return null;
+      return sho.revenue.map((r, h) => r - m.spend[h]);
+    })
+    .filter((x): x is number[] => x !== null);
+  const netSeries = buildHourlySumSeries(netRawHourly, netRawPriors, nowIdx);
+
+  const freshAsOf = pickFreshest(metaHourlyFresh, metaDailyFresh) ?? now.toISOString();
+
+  return {
+    mode: "today",
+    window: {
+      from: window.from, to: window.to, preset: window.preset, days: window.days,
+    },
+    business: { revenue: businessRevenue, orders: businessOrders, aov },
+    ads: {
+      spend: metaSpend,
+      roas,
+      attribution: {
+        pct: attributionPct,
+        metaRevenue: metaRevenue.value,
+        shopifyRevenue: businessRevenue.value,
+      },
+    },
+    googleAds: googleAdsSection,
+    crossPlatform: {
+      cac: cacTempo,
+      netAfterAds: netTempo,
+      channelMix,
+    },
+    series: {
+      business: {
+        revenue: businessRevenueSeries,
+        orders: businessOrdersSeries,
+        aov: aovSeries,
+      },
+      ads: {
+        spend: metaSpendSeries,
+        roas: roasSeries,
+        attribution: attributionSeries,
+      },
+      // No Google Ads hourly source — section's chart slot is null. UI
+      // continues to render the section header + headline numbers from
+      // the daily TempoMetric above, just without a chart on each tile.
+      googleAds: null,
+      crossPlatform: {
+        cac: cacSeries,
+        netAfterAds: netSeries,
+      },
+    },
+    anomalyCount,
+    freshAsOf,
+  };
+}
+
+const zero24 = (): number[] => new Array(24).fill(0);
+
+function pickFreshest(...candidates: (string | null)[]): string | null {
+  let best: string | null = null;
+  for (const c of candidates) {
+    if (c && (!best || c > best)) best = c;
+  }
+  return best;
+}
+
+// ============================================================
+// Range mode (preset = 7d / 30d / 90d / custom / yesterday-fallback)
+// ============================================================
+
+async function handleRange(
+  window: DateWindow,
+  kind: Exclude<SeriesKind, "hourly">,
+  now: Date,
+  anomalyCount: number
+): Promise<TopStripResponse> {
+  const windowDates = expandRange(window.from, window.to);
+  const comparisonDates = expandRange(window.compFrom, window.compTo);
+  const datesToFetch = Array.from(new Set([...windowDates, ...comparisonDates]));
+
+  const [
+    { byDate: metaByDate, latestFetched },
+    shopifyByDate,
+    googleAdsByDate,
+  ] = await Promise.all([
+    fetchMetaByDate(datesToFetch),
+    fetchShopifyByDate(datesToFetch),
+    fetchGoogleAdsByDateAllMarkets(datesToFetch),
+  ]);
+
+  // -- Aggregate snapshots (current vs prior period) ---------
+  const metaCurrent = sumMeta(metaByDate, windowDates);
+  const metaPrev = sumMeta(metaByDate, comparisonDates);
+  const shoCurrent = sumShopify(shopifyByDate, windowDates);
+  const shoPrev = sumShopify(shopifyByDate, comparisonDates);
+  const gaCurrent = sumGoogleAds(googleAdsByDate, windowDates);
+  const gaPrev = sumGoogleAds(googleAdsByDate, comparisonDates);
+
+  const metaSpend = buildRangeTempo(metaCurrent.spend, metaPrev.spend);
+  const roas = {
+    value: metaCurrent.spend > 0
+      ? Math.min(99.99, Number((metaCurrent.revenue / metaCurrent.spend).toFixed(2)))
+      : 0,
+  };
+  const businessRevenue = buildRangeTempo(shoCurrent.revenue, shoPrev.revenue);
+  const businessOrders = buildRangeTempo(shoCurrent.orders, shoPrev.orders);
+  const aov = {
+    value: shoCurrent.orders > 0
+      ? Number((shoCurrent.revenue / shoCurrent.orders).toFixed(2))
+      : 0,
+  };
+  const attributionPct = shoCurrent.revenue > 0
+    ? Math.min(100, Math.round((metaCurrent.revenue / shoCurrent.revenue) * 100))
+    : null;
+
+  let googleAdsSection: TopStripResponse["googleAds"] = null;
+  if (gaCurrent.spend > 0 || gaPrev.spend > 0) {
+    const gaSpend = buildRangeTempo(gaCurrent.spend, gaPrev.spend);
+    const gaPurchases = buildRangeTempo(gaCurrent.purchases, gaPrev.purchases);
+    const gaRoas = {
+      value: gaCurrent.spend > 0
+        ? Math.min(99.99, Number((gaCurrent.revenue / gaCurrent.spend).toFixed(2)))
+        : 0,
+    };
+    googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
+  }
+
+  const totalSpendCurrent = metaCurrent.spend + gaCurrent.spend;
+  const totalSpendPrev = metaPrev.spend + gaPrev.spend;
+  const cacCurrent = shoCurrent.orders > 0 ? totalSpendCurrent / shoCurrent.orders : 0;
+  const cacPrev = shoPrev.orders > 0 ? totalSpendPrev / shoPrev.orders : 0;
+  const netCurrent = shoCurrent.revenue - totalSpendCurrent;
+  const netPrev = shoPrev.revenue - totalSpendPrev;
+  const channelMix = buildChannelMix(shoCurrent.revenue, metaCurrent.revenue, gaCurrent.revenue);
+
+  // -- Per-day arrays for series (current + comparison) ------
+  const shoCurDaily = windowDates.map((d) => shopifyByDate.get(d) ?? { revenue: 0, orders: 0 });
+  const shoCmpDaily = comparisonDates.map((d) => shopifyByDate.get(d) ?? { revenue: 0, orders: 0 });
+  const metaCurDaily = windowDates.map((d) => metaByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 });
+  const metaCmpDaily = comparisonDates.map((d) => metaByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 });
+  const gaCurDaily = windowDates.map((d) => googleAdsByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 });
+  const gaCmpDaily = comparisonDates.map((d) => googleAdsByDate.get(d) ?? { spend: 0, revenue: 0, purchases: 0 });
+
+  const revenueSeries = buildRangeSeries(kind, windowDates,
+    shoCurDaily.map((r) => r.revenue), shoCmpDaily.map((r) => r.revenue), "sum");
+  const ordersSeries = buildRangeSeries(kind, windowDates,
+    shoCurDaily.map((r) => r.orders), shoCmpDaily.map((r) => r.orders), "sum");
+  const aovSeries = buildRangeSeries(kind, windowDates,
+    shoCurDaily.map((r) => (r.orders > 0 ? r.revenue / r.orders : 0)),
+    shoCmpDaily.map((r) => (r.orders > 0 ? r.revenue / r.orders : 0)),
+    "mean");
+
+  const spendSeries = buildRangeSeries(kind, windowDates,
+    metaCurDaily.map((r) => r.spend), metaCmpDaily.map((r) => r.spend), "sum");
+  const roasSeriesShape = buildRangeSeries(kind, windowDates,
+    metaCurDaily.map((r) => (r.spend > 0 ? r.revenue / r.spend : 0)),
+    metaCmpDaily.map((r) => (r.spend > 0 ? r.revenue / r.spend : 0)),
+    "mean");
+  const attributionSeries = buildRangeSeries(kind, windowDates,
+    windowDates.map((d) => {
+      const sho = shopifyByDate.get(d);
+      const m = metaByDate.get(d);
+      return sho && sho.revenue > 0 ? ((m?.revenue ?? 0) / sho.revenue) * 100 : 0;
+    }),
+    comparisonDates.map((d) => {
+      const sho = shopifyByDate.get(d);
+      const m = metaByDate.get(d);
+      return sho && sho.revenue > 0 ? ((m?.revenue ?? 0) / sho.revenue) * 100 : 0;
+    }),
+    "mean");
+
+  let googleAdsSeriesShape: TopStripResponse["series"]["googleAds"] = null;
+  if (googleAdsSection) {
+    googleAdsSeriesShape = {
+      spend: buildRangeSeries(kind, windowDates,
+        gaCurDaily.map((r) => r.spend), gaCmpDaily.map((r) => r.spend), "sum"),
+      roas: buildRangeSeries(kind, windowDates,
+        gaCurDaily.map((r) => (r.spend > 0 ? r.revenue / r.spend : 0)),
+        gaCmpDaily.map((r) => (r.spend > 0 ? r.revenue / r.spend : 0)),
+        "mean"),
+      purchases: buildRangeSeries(kind, windowDates,
+        gaCurDaily.map((r) => r.purchases), gaCmpDaily.map((r) => r.purchases), "sum"),
+    };
+  }
+
+  const cacSeries = buildRangeSeries(kind, windowDates,
+    windowDates.map((d, i) => {
+      const sho = shoCurDaily[i];
+      const m = metaCurDaily[i];
+      const g = gaCurDaily[i];
+      return sho.orders > 0 ? ((m.spend + g.spend) / sho.orders) : 0;
+    }),
+    comparisonDates.map((d, i) => {
+      const sho = shoCmpDaily[i];
+      const m = metaCmpDaily[i];
+      const g = gaCmpDaily[i];
+      return sho.orders > 0 ? ((m.spend + g.spend) / sho.orders) : 0;
+    }),
+    "mean");
+  const netSeries = buildRangeSeries(kind, windowDates,
+    windowDates.map((d, i) => {
+      const sho = shoCurDaily[i];
+      const m = metaCurDaily[i];
+      const g = gaCurDaily[i];
+      return sho.revenue - m.spend - g.spend;
+    }),
+    comparisonDates.map((d, i) => {
+      const sho = shoCmpDaily[i];
+      const m = metaCmpDaily[i];
+      const g = gaCmpDaily[i];
+      return sho.revenue - m.spend - g.spend;
+    }),
+    "sum");
+
+  return {
+    mode: "range",
+    window: {
+      from: window.from, to: window.to, preset: window.preset, days: window.days,
+    },
+    business: { revenue: businessRevenue, orders: businessOrders, aov },
+    ads: {
+      spend: metaSpend,
+      roas,
+      attribution: {
+        pct: attributionPct,
+        metaRevenue: metaCurrent.revenue,
+        shopifyRevenue: shoCurrent.revenue,
+      },
+    },
+    googleAds: googleAdsSection,
+    crossPlatform: {
+      cac: buildRangeTempo(cacCurrent, cacPrev),
+      netAfterAds: buildRangeTempo(netCurrent, netPrev),
+      channelMix,
+    },
+    series: {
+      business: { revenue: revenueSeries, orders: ordersSeries, aov: aovSeries },
+      ads: { spend: spendSeries, roas: roasSeriesShape, attribution: attributionSeries },
+      googleAds: googleAdsSeriesShape,
+      crossPlatform: { cac: cacSeries, netAfterAds: netSeries },
+    },
+    anomalyCount,
+    freshAsOf: latestFetched ?? now.toISOString(),
+  };
+}
 
 // ============================================================
 // Route
@@ -450,337 +1054,22 @@ export async function GET(req: NextRequest) {
   try {
     const now = new Date();
     const window: DateWindow = resolveDateWindow(req.nextUrl.searchParams);
+    const kind = pickSeriesKind(window.preset, window.days);
 
-    // ----- Date set we need from the DB depends on mode --------------
-    // today  → today + 4 same-weekdays prior (existing pacing logic)
-    // range  → [from..to] + [compFrom..compTo] (equal-length prior period)
-    let datesToFetch: string[];
-    let windowDates: string[];
-    let comparisonDates: string[];
-    let todayPriors: string[] = [];
+    // Anomaly count: pending red/amber briefs for today — always reflects
+    // "right now" regardless of window selection.
+    const { count: anomalyRaw } = await supabaseAdmin
+      .from("agent_briefs")
+      .select("*", { count: "exact", head: true })
+      .eq("for_date", sofiaDate(now))
+      .in("severity", ["red", "amber"])
+      .eq("status", "pending");
+    const anomalyCount = anomalyRaw ?? 0;
 
-    if (window.isToday) {
-      const todayIso = window.from; // == sofiaDate(now)
-      todayPriors = [7, 14, 21, 28].map((n) => shiftDate(todayIso, n));
-      windowDates = [todayIso];
-      comparisonDates = todayPriors;
-      datesToFetch = [todayIso, ...todayPriors];
-    } else {
-      windowDates = expandRange(window.from, window.to);
-      comparisonDates = expandRange(window.compFrom, window.compTo);
-      datesToFetch = [...windowDates, ...comparisonDates];
-    }
-
-    // Trailing-14d anchor for the chart strip — independent of selected
-    // preset so chart shape stays a stable visual baseline. Union with the
-    // pacing/comparison dates we already plan to fetch (deduped below).
-    const dates14d = lastNDates(14, window.to);
-    datesToFetch = Array.from(new Set([...datesToFetch, ...dates14d]));
-
-    // Anomaly count: pending red/amber briefs for today — independent of
-    // window selection; the alert pill always reflects "right now".
-    const todayIsoForAnomaly = sofiaDate(now);
-
-    const [{ data, error }, { count: anomalyRaw }, shopifyByDate, googleAdsByDate] =
-      await Promise.all([
-        supabaseAdmin
-          .from("meta_insights_by_store")
-          .select("date, spend, revenue, purchases, fetched_at")
-          .eq("level", "account")
-          .in("date", datesToFetch),
-        supabaseAdmin
-          .from("agent_briefs")
-          .select("*", { count: "exact", head: true })
-          .eq("for_date", todayIsoForAnomaly)
-          .in("severity", ["red", "amber"])
-          .eq("status", "pending"),
-        fetchShopifyByDate(datesToFetch),
-        fetchGoogleAdsByDateAllMarkets(datesToFetch),
-      ]);
-
-    if (error) {
-      logger.error("top-strip query failed", { error: error.message });
-      return NextResponse.json({ error: "Internal error" }, { status: 500 });
-    }
-
-    const rows = (data ?? []) as MetaDayRow[];
-
-    // Sum Meta rows across stores for each unique date.
-    const metaByDate = new Map<
-      string,
-      { spend: number; revenue: number; purchases: number }
-    >();
-    let latestFetched: string | null = null;
-    for (const r of rows) {
-      const bucket =
-        metaByDate.get(r.date) ??
-        (() => {
-          const fresh = { spend: 0, revenue: 0, purchases: 0 };
-          metaByDate.set(r.date, fresh);
-          return fresh;
-        })();
-      bucket.spend += num(r.spend);
-      bucket.revenue += num(r.revenue);
-      bucket.purchases += num(r.purchases);
-      if (r.fetched_at && (!latestFetched || r.fetched_at > latestFetched)) {
-        latestFetched = r.fetched_at;
-      }
-    }
-
-    let response: TopStripResponse;
-
-    if (window.isToday) {
-      // === Today mode — keep pacing pipeline ===========================
-      const todayIso = window.from;
-      const hoursElapsed = sofiaHoursElapsed(now);
-
-      const today = metaByDate.get(todayIso) ?? {
-        spend: 0,
-        revenue: 0,
-        purchases: 0,
-      };
-      const priors = todayPriors
-        .map((d) => metaByDate.get(d))
-        .filter((x): x is NonNullable<typeof x> => !!x);
-
-      const metaRevenue = buildTodayTempo(today.revenue, priors, "revenue", hoursElapsed);
-      const metaSpend = buildTodayTempo(today.spend, priors, "spend", hoursElapsed);
-      const roas = {
-        value:
-          metaSpend.value > 0
-            ? Math.min(99.99, Number((metaRevenue.value / metaSpend.value).toFixed(2)))
-            : 0,
-      };
-
-      const shopifyToday = shopifyByDate.get(todayIso) ?? { revenue: 0, orders: 0 };
-      const shopifyPriors = todayPriors
-        .map((d) => shopifyByDate.get(d))
-        .filter((x): x is NonNullable<typeof x> => !!x);
-
-      const businessRevenue = buildTodayTempo(
-        shopifyToday.revenue,
-        shopifyPriors,
-        "revenue",
-        hoursElapsed
-      );
-      const businessOrders = buildTodayTempo(
-        shopifyToday.orders,
-        shopifyPriors,
-        "orders",
-        hoursElapsed
-      );
-      const aov = {
-        value:
-          businessOrders.value > 0
-            ? Number((businessRevenue.value / businessOrders.value).toFixed(2))
-            : 0,
-      };
-
-      const attributionPct =
-        businessRevenue.value > 0
-          ? Math.min(100, Math.round((metaRevenue.value / businessRevenue.value) * 100))
-          : null;
-
-      // Google Ads — same matched-hour pacing pipeline, but render null
-      // if GA4 returned nothing (not configured / fetch failed). UI hides
-      // the section entirely in that case rather than showing zeros.
-      const gaToday = googleAdsByDate.get(todayIso);
-      const gaPriors = todayPriors
-        .map((d) => googleAdsByDate.get(d))
-        .filter((x): x is NonNullable<typeof x> => !!x);
-
-      const safeGaToday = gaToday ?? { spend: 0, revenue: 0, purchases: 0 };
-      let googleAdsSection: TopStripResponse["googleAds"] = null;
-      if (gaToday || gaPriors.length > 0) {
-        const gaSpend = buildTodayTempo(safeGaToday.spend, gaPriors, "spend", hoursElapsed);
-        const gaPurchases = buildTodayTempo(safeGaToday.purchases, gaPriors, "purchases", hoursElapsed);
-        const gaRoas = {
-          value:
-            safeGaToday.spend > 0
-              ? Math.min(99.99, Number((safeGaToday.revenue / safeGaToday.spend).toFixed(2)))
-              : 0,
-        };
-        googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
-      }
-
-      // Cross-platform composites. We build per-day blended figures for the
-      // matched-hour pacing arithmetic, then run them through the same
-      // buildTodayTempo helper. CAC = total_spend / orders (per day),
-      // netAfterAds = shopify_revenue − total_spend.
-      const totalSpendToday = today.spend + safeGaToday.spend;
-      const totalSpendPriors = todayPriors.map((d) => {
-        const m = metaByDate.get(d);
-        const g = googleAdsByDate.get(d);
-        return { totalSpend: (m?.spend ?? 0) + (g?.spend ?? 0) };
-      });
-      // Pacing CAC needs the per-day CAC values, not aggregate spend.
-      const cacToday = shopifyToday.orders > 0 ? totalSpendToday / shopifyToday.orders : 0;
-      const cacPriors = todayPriors
-        .map((d) => {
-          const sho = shopifyByDate.get(d);
-          const m = metaByDate.get(d);
-          const g = googleAdsByDate.get(d);
-          if (!sho || sho.orders === 0) return null;
-          return { cac: ((m?.spend ?? 0) + (g?.spend ?? 0)) / sho.orders };
-        })
-        .filter((x): x is { cac: number } => !!x);
-      const cacTempo = buildTodayTempo(cacToday, cacPriors, "cac", hoursElapsed);
-
-      const netToday = shopifyToday.revenue - totalSpendToday;
-      const netPriors = todayPriors
-        .map((d) => {
-          const sho = shopifyByDate.get(d);
-          const m = metaByDate.get(d);
-          const g = googleAdsByDate.get(d);
-          if (!sho && !m && !g) return null;
-          return { net: (sho?.revenue ?? 0) - (m?.spend ?? 0) - (g?.spend ?? 0) };
-        })
-        .filter((x): x is { net: number } => !!x);
-      const netTempo = buildTodayTempo(netToday, netPriors, "net", hoursElapsed);
-
-      const channelMix = buildChannelMix(
-        shopifyToday.revenue,
-        today.revenue,
-        safeGaToday.revenue
-      );
-
-      // Unused suppression — we computed totalSpendPriors above for completeness
-      // but the per-day CAC/net priors above already encode the same data.
-      void totalSpendPriors;
-
-      response = {
-        mode: "today",
-        window: {
-          from: window.from,
-          to: window.to,
-          preset: window.preset,
-          days: window.days,
-        },
-        business: { revenue: businessRevenue, orders: businessOrders, aov },
-        ads: {
-          spend: metaSpend,
-          roas,
-          attribution: {
-            pct: attributionPct,
-            metaRevenue: metaRevenue.value,
-            shopifyRevenue: businessRevenue.value,
-          },
-        },
-        googleAds: googleAdsSection,
-        crossPlatform: {
-          cac: cacTempo,
-          netAfterAds: netTempo,
-          channelMix,
-        },
-        series14d: buildSeries14d(
-          dates14d,
-          shopifyByDate,
-          metaByDate,
-          googleAdsByDate,
-          googleAdsSection !== null
-        ),
-        anomalyCount: anomalyRaw ?? 0,
-        freshAsOf: latestFetched ?? now.toISOString(),
-      };
-    } else {
-      // === Range mode — aggregate over window + compare to prior period
-      const metaCurrent = sumMeta(metaByDate, windowDates);
-      const metaPrev = sumMeta(metaByDate, comparisonDates);
-      const shopifyCurrent = sumShopify(shopifyByDate, windowDates);
-      const shopifyPrev = sumShopify(shopifyByDate, comparisonDates);
-
-      const metaSpend = buildRangeTempo(metaCurrent.spend, metaPrev.spend);
-      // metaRevenue isn't shown as its own tile (ROAS and attribution
-      // both encode it); but we still need the sum for attribution.
-      const roas = {
-        value:
-          metaCurrent.spend > 0
-            ? Math.min(99.99, Number((metaCurrent.revenue / metaCurrent.spend).toFixed(2)))
-            : 0,
-      };
-
-      const businessRevenue = buildRangeTempo(shopifyCurrent.revenue, shopifyPrev.revenue);
-      const businessOrders = buildRangeTempo(shopifyCurrent.orders, shopifyPrev.orders);
-      const aov = {
-        value:
-          shopifyCurrent.orders > 0
-            ? Number((shopifyCurrent.revenue / shopifyCurrent.orders).toFixed(2))
-            : 0,
-      };
-
-      const attributionPct =
-        shopifyCurrent.revenue > 0
-          ? Math.min(100, Math.round((metaCurrent.revenue / shopifyCurrent.revenue) * 100))
-          : null;
-
-      // Google Ads range mode — sum + compare to prior equal-length period.
-      // Null when no GA4 data found in either window (UI hides the section).
-      const gaCurrent = sumGoogleAds(googleAdsByDate, windowDates);
-      const gaPrev = sumGoogleAds(googleAdsByDate, comparisonDates);
-      let googleAdsSection: TopStripResponse["googleAds"] = null;
-      if (gaCurrent.spend > 0 || gaPrev.spend > 0) {
-        const gaSpend = buildRangeTempo(gaCurrent.spend, gaPrev.spend);
-        const gaPurchases = buildRangeTempo(gaCurrent.purchases, gaPrev.purchases);
-        const gaRoas = {
-          value:
-            gaCurrent.spend > 0
-              ? Math.min(99.99, Number((gaCurrent.revenue / gaCurrent.spend).toFixed(2)))
-              : 0,
-        };
-        googleAdsSection = { spend: gaSpend, roas: gaRoas, purchases: gaPurchases };
-      }
-
-      // Cross-platform composites for range mode. CAC is aggregate spend
-      // divided by aggregate orders over the window; netAfterAds is
-      // aggregate revenue minus aggregate spend. Comparison vs prior
-      // equal-length period using the same arithmetic.
-      const totalSpendCurrent = metaCurrent.spend + gaCurrent.spend;
-      const totalSpendPrev = metaPrev.spend + gaPrev.spend;
-      const cacCurrent = shopifyCurrent.orders > 0 ? totalSpendCurrent / shopifyCurrent.orders : 0;
-      const cacPrev = shopifyPrev.orders > 0 ? totalSpendPrev / shopifyPrev.orders : 0;
-      const netCurrent = shopifyCurrent.revenue - totalSpendCurrent;
-      const netPrev = shopifyPrev.revenue - totalSpendPrev;
-      const channelMix = buildChannelMix(
-        shopifyCurrent.revenue,
-        metaCurrent.revenue,
-        gaCurrent.revenue
-      );
-
-      response = {
-        mode: "range",
-        window: {
-          from: window.from,
-          to: window.to,
-          preset: window.preset,
-          days: window.days,
-        },
-        business: { revenue: businessRevenue, orders: businessOrders, aov },
-        ads: {
-          spend: metaSpend,
-          roas,
-          attribution: {
-            pct: attributionPct,
-            metaRevenue: metaCurrent.revenue,
-            shopifyRevenue: shopifyCurrent.revenue,
-          },
-        },
-        googleAds: googleAdsSection,
-        crossPlatform: {
-          cac: buildRangeTempo(cacCurrent, cacPrev),
-          netAfterAds: buildRangeTempo(netCurrent, netPrev),
-          channelMix,
-        },
-        series14d: buildSeries14d(
-          dates14d,
-          shopifyByDate,
-          metaByDate,
-          googleAdsByDate,
-          googleAdsSection !== null
-        ),
-        anomalyCount: anomalyRaw ?? 0,
-        freshAsOf: latestFetched ?? now.toISOString(),
-      };
-    }
+    const response: TopStripResponse =
+      kind === "hourly"
+        ? await handleHourly(window, now, anomalyCount)
+        : await handleRange(window, kind, now, anomalyCount);
 
     return NextResponse.json(response, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=30" },

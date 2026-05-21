@@ -779,6 +779,118 @@ export async function fetchDailyInsights(
   return { rows, peakUsage: peak };
 }
 
+// ============================================================
+// Hourly-resolution account-level insights for intraday tempo
+// ============================================================
+//
+// Used by /api/cron/meta-sync-hourly (every 15 min) to populate the
+// `meta_insights_hourly` table, which feeds the home dashboard's "Днес"
+// 0-24h cumulative spend curve. Account level only — per-campaign hourly
+// would 50x the BUC budget and isn't surfaced anywhere yet.
+//
+// Meta API specifics:
+//   - time_increment is omitted (the hourly breakdown drives the rows).
+//   - breakdowns=hourly_stats_aggregated_by_advertiser_time_zone returns
+//     one row per (date × hour) with a "HH:00:00 - HH:59:59" string in the
+//     breakdown column. We parse the leading HH into a 0-23 integer.
+//   - All 6 cvetita ad accounts have advertiser tz = Europe/Sofia, so the
+//     bucket boundary aligns 1:1 with Shopify order timestamps (also Sofia).
+
+export interface HourlyInsightRow {
+  date_start: string;
+  date_stop: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  actions?: MetaAction[];
+  action_values?: MetaAction[];
+  hourly_stats_aggregated_by_advertiser_time_zone?: string;
+}
+
+export interface HourlyInsightsResult {
+  rows: HourlyInsightRow[];
+  peakUsage: BucUsage | null;
+}
+
+const HOURLY_FIELDS =
+  "spend,impressions,clicks,actions,action_values";
+
+/**
+ * Fetches account-level hourly insights for [since..until].
+ *
+ * Parses the leading "HH" from the breakdown string into a 0-23 hour, but
+ * leaves filtering/aggregation to the caller — this stays a thin Graph API
+ * wrapper, symmetric to `fetchDailyInsights`.
+ */
+export async function fetchHourlyInsights(
+  since: string,
+  until: string,
+  integrationAccountId?: string
+): Promise<HourlyInsightsResult> {
+  const client = await getMetaClient(integrationAccountId);
+  const rows: HourlyInsightRow[] = [];
+  let peak: BucUsage | null = null;
+
+  const recordUsage = (res: Response) => {
+    const usageMap = parseBucHeader(res.headers.get("x-business-use-case-usage"));
+    for (const u of usageMap.values()) {
+      if (!peak || u.peakPct > peak.peakPct) peak = u;
+    }
+  };
+
+  // time_increment=1 is REQUIRED here. Without it, Meta collapses the
+  // hourly breakdown across the entire `time_range` into a single 24-row
+  // aggregate (all bucket date_start = `since`), so a 14-day backfill
+  // would still produce 24 rows. With time_increment=1, we get one row
+  // per (date × hour) — N×24 rows for N days, as expected.
+  const params: Record<string, string> = {
+    fields: HOURLY_FIELDS,
+    level: "account",
+    time_range: JSON.stringify({ since, until }),
+    time_increment: "1",
+    breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+    limit: "500",
+    access_token: client.token,
+  };
+
+  let url: string | null =
+    `${BASE}/${client.accountId}/insights?` + new URLSearchParams(params).toString();
+
+  while (url) {
+    const res: Response = await fetchWithTimeout(url, {}, 20_000);
+    recordUsage(res);
+    if (!res.ok) {
+      const body = await res.text();
+      logger.error("Meta hourly fetch failed", {
+        service: "meta-sync-hourly",
+        status: res.status,
+        accountId: client.accountId,
+        body: body.slice(0, 300),
+      });
+      throw new Error(`Meta hourly insights fetch failed: ${res.status}`);
+    }
+    const data: { data?: HourlyInsightRow[]; paging?: { next?: string } } = await res.json();
+    rows.push(...(data.data || []));
+    url = data.paging?.next || null;
+  }
+
+  return { rows, peakUsage: peak };
+}
+
+/**
+ * Extracts the 0-23 hour from a `hourly_stats_aggregated_by_*_time_zone`
+ * breakdown string of the form `"HH:00:00 - HH:59:59"`. Returns null when
+ * the string is missing or malformed (defensive — the breakdown column has
+ * shown up as `00:00 - 00:59` without seconds in some account configs).
+ */
+export function parseMetaHour(s: string | undefined | null): number | null {
+  if (!s) return null;
+  const m = /^(\d{1,2}):/.exec(s);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  return h >= 0 && h <= 23 ? h : null;
+}
+
 // ---- Ad management ----
 
 export async function updateMetaAdStatus(
