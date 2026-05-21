@@ -47,6 +47,24 @@ function daysAgo(days: number): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+/** Today's date as a Sofia-anchored YYYY-MM-DD string. The whole
+ *  platform's "what day is it" answer — components that need to know
+ *  whether a range ends on the current day compare against this. */
+export function sofiaToday(): string {
+  return formatSofiaDate(new Date());
+}
+
+/** Shift a YYYY-MM-DD string by `n` whole days (negative = earlier).
+ *  UTC-midnight arithmetic so it never crosses a DST seam. */
+export function addDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d) + n * 86_400_000);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 export function getDateRange(preset: DatePreset, customFrom?: string, customTo?: string): DateRange {
   const today = formatSofiaDate(new Date());
 

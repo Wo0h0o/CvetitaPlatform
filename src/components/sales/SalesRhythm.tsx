@@ -33,7 +33,12 @@ import {
 } from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
-import { countWeekdaysInRange, daysInRange } from "@/lib/dates";
+import {
+  addDays,
+  countWeekdaysInRange,
+  daysInRange,
+  sofiaToday,
+} from "@/lib/dates";
 import { fmtEur, fmtInt } from "@/lib/format";
 import type { HourWeekdayBucket } from "@/lib/sales-queries";
 
@@ -353,30 +358,44 @@ function buildHourStripPopup(
 // ============================================================
 
 export function SalesRhythm() {
-  const { queryString, compFrom, compTo, from, to } = useDateRange();
+  const { compFrom, compTo, from, to } = useDateRange();
   const { storeParam } = useStoreSelection();
   const c = useChartColors();
   const [metric, setMetric] = useState<Metric>("revenue");
 
+  // Complete-days clamp. "Ритъм" presents typical-weekday averages —
+  // a partial current day, counted as a full occurrence, dilutes
+  // every average it touches (a Thursday viewed at 14:00 lands at
+  // ~70% of a real Thursday but still divides by a whole one). So the
+  // Rhythm window drops today when the range ends on it: BOTH the
+  // numerator (the RPC fetch below) and the divisors (the weekday /
+  // day counts) span only complete days. Today's data still lives in
+  // the hero strip, the trend, and the day-pulse view.
+  const rhythmTo = to === sofiaToday() ? addDays(to, -1) : to;
+
   // Occurrence counts — the divisors that turn period sums into
-  // per-typical-occurrence averages. Recomputed only when the date
-  // window changes.
+  // per-typical-occurrence averages. Recomputed only when the window
+  // changes.
   const weekdayCountsCur = useMemo(
-    () => countWeekdaysInRange(from, to),
-    [from, to]
+    () => countWeekdaysInRange(from, rhythmTo),
+    [from, rhythmTo]
   );
   const weekdayCountsComp = useMemo(
     () => (compFrom && compTo ? countWeekdaysInRange(compFrom, compTo) : new Map<number, number>()),
     [compFrom, compTo]
   );
-  const daysCur = useMemo(() => daysInRange(from, to), [from, to]);
+  const daysCur = useMemo(() => daysInRange(from, rhythmTo), [from, rhythmTo]);
   const daysComp = useMemo(
     () => (compFrom && compTo ? daysInRange(compFrom, compTo) : 0),
     [compFrom, compTo]
   );
 
+  // Explicit custom window so the fetch excludes today in lockstep
+  // with the divisors above — a `preset=30d` key would let the API
+  // resolve `to` back to today and reintroduce the partial day.
+  const rhythmQs = `preset=custom&from=${from}&to=${rhythmTo}`;
   const { data: cur, isLoading, error, mutate } = useAnalyticsSWR<HourWeekdayResponse>(
-    `/api/sales/hour-weekday?${queryString}&${storeParam}`
+    `/api/sales/hour-weekday?${rhythmQs}&${storeParam}`
   );
 
   const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;

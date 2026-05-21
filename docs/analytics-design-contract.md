@@ -205,6 +205,8 @@ const r = 3 + Math.log10(value / max) * 6;
 const r = tier === 1 ? 7 : tier === 2 ? 5 : 4;
 ```
 
+**Изключение (revised 2026-05-22):** когато **clustering-ът сам носи magnitude** — т.е. markers се сливат в clusters и cluster-ът показва count/sum — индивидуалните unclustered dots може да са **uniform size**. Tier-ладдер-ът има смисъл само ако всички markers са видими едновременно на един zoom level и се конкурират за вниманието. При hierarchical zoom (country → city → office), на office-level всеки dot вече е „един обект", magnitude-ът се чете от cluster aggregation на по-нисък zoom. Uniform office dots там са по-чисти от tier-ладдер, който добавя шум. WorldMap (`/sales`) ползва точно този pattern — defended, не violation.
+
 #### 10.4 Hit area decoupled from visible size
 
 Transparent hit-area circle, sized ≥12px на screen (counter-scaled), седи зад visible dot-а. Pointer events live on the hit area, **не** на visible dot.
@@ -227,6 +229,57 @@ Transparent hit-area circle, sized ≥12px на screen (counter-scaled), сед�
 - ❌ Categorical colours на различни марker types — една accent цветова палитра + opacity ladder за hierarchy
 - ❌ Markers които растат с zoom — създава overlap chaos
 - ❌ Hit area = visible dot size — на T3 4px невъзможно за click
+
+### 11. Glass tooltip — един речник за всеки hover/scrub popup
+
+Всеки chart popup на платформата (Recharts hover, mobile scrubber breakdown, map marker detail) ползва **един** визуален речник. Без това правило всяка нова страница импровизира четвърти вариант на „карта с детайли" и dashboard-ът губи кохерентност.
+
+Каноничният glass surface (компонент `GlassTooltip` в `src/components/charts/`):
+
+```
+bg-surface/85 backdrop-blur-xl
+border border-border/60 rounded-xl shadow-xl
+px-3 py-2.5
+text-[11px] leading-tight
+```
+
+Структура: **header** (`text-[11.5px] font-medium`, дата или час) → **hairline divider** (`h-px bg-border/70 my-1.5`) → **label→value grid** (`grid-cols-[1fr_auto] gap-x-3 gap-y-1`, всички числа `tabular-nums`).
+
+Правила:
+- Никога не пиши tooltip JSX inline в chart компонент. Минаваш през `GlassTooltip` + `buildRechartsTooltip()` за Recharts content, или директно `<GlassTooltip {...} />` за mobile scrubber popup.
+- Delta chip-ът в tooltip-а ползва `deltaAccent()` helper-а — еднаква ▲/▼/— glyph логика, еднакъв flat-threshold (<1%).
+- `minWidth` се подава само за floating (hover) popup; inline scrubber popup-ите fill-ват card width-а.
+
+❌ Анти-pattern: локален `function XxxTooltip()` който повтаря същите класове с малки разлики. Това вече се случи 3 пъти на `/sales` преди консолидацията — `SparkTooltip`, `TrendTooltip`, `PulseTooltip` бяха байт-различни. Един източник, иначе drift.
+
+### 12. Per-occurrence averaging — средни, не суми, + само пълни дни
+
+Когато една агрегация сумира през **cross-period buckets** — напр. `read_store_hour_weekday` връща revenue сумиран през всеки occurrence на (weekday, hour) в [from, to] — суровата сума **не се показва като число**. За 30-дневен прозорец „Сряда = €18 140" се чете като „една Сряда" срещу дневния store baseline и операторът заключава, че числата са счупени (това реално се случи — виж `incident`-а в audit `2026-05-21-sales-audit-data.md`).
+
+Правила:
+- Дели сумата на **броя occurrences** → показваш „типична Сряда". Helper-и: `countWeekdaysInRange`, `daysInRange` в `lib/dates.ts`.
+- **Винаги surface-вай делителя** като inline meta (`n=4`). Операторът трябва да види, че това е средно от 4 наблюдения, не single-day число. Без видим `n`, средната пак се чете като единична стойност.
+- Header на колоната/картата е „**Средно**", не „Общо". Двете думи са договор — „Общо" имплицира сума, „Средно" имплицира делене.
+
+**Само пълни дни.** Average-based view-ове (Ритъм, hour×weekday rhythm) изключват **частичния текущ ден**. Днешният ден, гледан в 14:00, носи ~70% от нормален ден, но дели на цяла единица → разводнява всяка средна, която докосва. Прозорецът на average view-а се clamp-ва до complete days (`to === sofiaToday() ? addDays(to,-1) : to`); и числителят (fetch-ът), и делителят (counts) се движат в lockstep. Днешните данни остават видими в hero strip / trend / day-pulse — average view-ът просто не ги смесва в „типичното".
+
+❌ Анти-pattern: показване на cross-bucket сума без делене → магнитудна лъжа. ❌ Делене без видим `n` → операторът не може да sanity-check-не. ❌ Включване на частичен ден в average divisor → тих ~3-7% bias надолу.
+
+### 13. Chart-touch + scrubber synergy на mobile
+
+На touch устройства chart-овете **не reagiрат на директен tap**. Recharts native touch handler-ите се mute-ват глобално (`globals.css`, `@media (max-width: 767px)` → `pointer-events: none` на `.recharts-wrapper`). Причина: директен tap (а) показва tooltip точно под пръста, покривайки данните, и (б) рисува focus rectangle около целия SVG.
+
+Вместо това — **една input абстракция, два входа**:
+- Slider scrubber под chart-а (`MobileScrubber`) — primary touch input.
+- Chart-touch на wrapper-а — `useChartScrubber` hook attach-ва pointer handlers на div-а около chart-а; събитията bubble-ват до него защото recharts вътре е `pointer-events: none`.
+- И двата пишат **същия `activeIdx`** → един popup, две входни точки.
+
+Правила:
+- Chart wrapper-ът получава `touch-pan-y` — вертикален page scroll минава, horizontal finger движение engage-ва scrubber-а.
+- **Gesture intent**: не commit-вай `activeIdx` на `pointerdown`. Изчакай първото движение да премине 6px праг — класифицирай horizontal (scrub) vs vertical (page scroll). Иначе всеки опит за scroll през chart flash-ва tooltip 1 frame.
+- **Persistence**: `activeIdx` НЕ се изчиства на release. Позицията се pin-ва (Apple Health / Robinhood pattern) — inspection gesture има памет. (Ако някога стане объркващо при няколко chart-а — добави видим „● Пинирано" affordance; не премахвай persistence-а.)
+
+❌ Анти-pattern: native Recharts tooltip + scrubber popup едновременно — двоен popup, конкурентни истини. ❌ `touch-action: pan-x` на chart wrapper — заключва вертикалния page scroll. ❌ Commit на `pointerdown` — tooltip flash при scroll.
 
 ---
 

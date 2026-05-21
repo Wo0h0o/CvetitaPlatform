@@ -206,7 +206,7 @@ export function SalesTrend() {
         }`}
       >
         {totalDelta > 0 ? "▲" : totalDelta < 0 ? "▼" : "—"} {Math.abs(totalDelta)}%
-        <span className="text-text-3 ml-1">срв. пр. период</span>
+        <span className="text-text-3 ml-1">спрямо пр. период</span>
       </span>
     ) : null;
 

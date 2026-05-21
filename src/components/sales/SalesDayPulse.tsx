@@ -210,7 +210,7 @@ export function SalesDayPulse() {
       >
         {totalDelta > 0 ? "▲" : totalDelta < 0 ? "▼" : "—"}{" "}
         {Math.abs(totalDelta)}%
-        <span className="text-text-3 ml-1">срв. пр. ден</span>
+        <span className="text-text-3 ml-1">спрямо пр. ден</span>
       </span>
     ) : null;
 
