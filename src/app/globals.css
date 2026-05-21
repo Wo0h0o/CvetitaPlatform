@@ -125,6 +125,35 @@ body {
 }
 
 /* ============================================================
+   WorldMap marker tooltip — mobile docking discipline.
+
+   On desktop the tooltip floats next to the cursor via inline
+   left/top from the touch coordinates. On a phone, a marker tap
+   near the right edge of the map pushed the popup past the
+   container's overflow-hidden boundary, clipping the values
+   ("19 757" became "1…"). On the bottom or left edges it
+   pushed past the bottom card too.
+
+   Solution: on coarse-pointer screens the popup ignores the
+   cursor coords and docks at the bottom-centre of the map card,
+   12px from the edges, width filling the space. The inline
+   left/top from the desktop hover path are forcibly overridden
+   with !important because Tailwind class specificity can't beat
+   inline styles.
+   ============================================================ */
+
+@media (max-width: 767px) {
+  .map-tooltip-shell {
+    left: 0.75rem !important;
+    right: 0.75rem !important;
+    top: auto !important;
+    bottom: 0.75rem !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+}
+
+/* ============================================================
    Recharts — mobile interaction discipline.
 
    On touch devices a direct tap on the chart SVG:

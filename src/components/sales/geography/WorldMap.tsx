@@ -344,6 +344,13 @@ export function WorldMap({
   }, [selectedCountry]);
 
   const [hover, setHover] = useState<HoverState | null>(null);
+  // Fading-state mirror of `hover`. Keeps the last hover rendered for
+  // the fade-out duration after the operator dismisses the popup, so
+  // we get a clean opacity transition out instead of a hard snap.
+  const { rendered: displayHover, visible: tooltipVisible } = useFadingState(
+    hover,
+    160
+  );
 
   const byAlpha2 = useMemo(() => {
     const m = new Map<string, CountrySales>();
@@ -846,55 +853,55 @@ export function WorldMap({
       className="relative w-full h-full bg-surface rounded-xl overflow-hidden border border-border"
       style={{ position: "relative" }}
     >
-      {hover?.kind === "country" && (
-        <TooltipShell x={hover.x} y={hover.y}>
+      {displayHover?.kind === "country" && (
+        <TooltipShell x={displayHover.x} y={displayHover.y} visible={tooltipVisible}>
           <CountryTooltipBody
-            alpha2={hover.alpha2}
-            englishName={hover.englishName}
-            data={hover.alpha2 ? byAlpha2.get(hover.alpha2) : undefined}
+            alpha2={displayHover.alpha2}
+            englishName={displayHover.englishName}
+            data={displayHover.alpha2 ? byAlpha2.get(displayHover.alpha2) : undefined}
             totalRevenue={totalRevenue}
           />
         </TooltipShell>
       )}
-      {hover?.kind === "city" && (
-        <TooltipShell x={hover.x} y={hover.y}>
+      {displayHover?.kind === "city" && (
+        <TooltipShell x={displayHover.x} y={displayHover.y} visible={tooltipVisible}>
           <CityTooltipBody
-            countryCode={hover.countryCode}
-            cityName={hover.cityName}
-            revenue={hover.revenue}
-            orders={hover.orders}
-            customers={hover.customers}
+            countryCode={displayHover.countryCode}
+            cityName={displayHover.cityName}
+            revenue={displayHover.revenue}
+            orders={displayHover.orders}
+            customers={displayHover.customers}
           />
         </TooltipShell>
       )}
-      {hover?.kind === "office" && (
-        <TooltipShell x={hover.x} y={hover.y}>
+      {displayHover?.kind === "office" && (
+        <TooltipShell x={displayHover.x} y={displayHover.y} visible={tooltipVisible}>
           <OfficeTooltipBody
-            countryCode={hover.countryCode}
-            city={hover.city}
-            address1={hover.address1}
-            zip={hover.zip}
-            revenue={hover.revenue}
-            orders={hover.orders}
-            customers={hover.customers}
+            countryCode={displayHover.countryCode}
+            city={displayHover.city}
+            address1={displayHover.address1}
+            zip={displayHover.zip}
+            revenue={displayHover.revenue}
+            orders={displayHover.orders}
+            customers={displayHover.customers}
           />
         </TooltipShell>
       )}
-      {hover?.kind === "country-marker" && (
-        <TooltipShell x={hover.x} y={hover.y}>
+      {displayHover?.kind === "country-marker" && (
+        <TooltipShell x={displayHover.x} y={displayHover.y} visible={tooltipVisible}>
           <CountryMarkerTooltipBody
-            countryCode={hover.countryCode}
-            anchorName={hover.anchorName}
-            revenue={hover.revenue}
-            orders={hover.orders}
-            customers={hover.customers}
+            countryCode={displayHover.countryCode}
+            anchorName={displayHover.anchorName}
+            revenue={displayHover.revenue}
+            orders={displayHover.orders}
+            customers={displayHover.customers}
             totalRevenue={totalRevenue}
           />
         </TooltipShell>
       )}
-      {hover?.kind === "cluster" && (
-        <TooltipShell x={hover.x} y={hover.y}>
-          <ClusterTooltipBody count={hover.count} revenue={hover.revenue} />
+      {displayHover?.kind === "cluster" && (
+        <TooltipShell x={displayHover.x} y={displayHover.y} visible={tooltipVisible}>
+          <ClusterTooltipBody count={displayHover.count} revenue={displayHover.revenue} />
         </TooltipShell>
       )}
     </div>
@@ -909,25 +916,72 @@ function TooltipShell({
   x,
   y,
   children,
+  visible,
 }: {
   x: number;
   y: number;
   children: React.ReactNode;
+  /** Drives the opacity transition. Caller flips this off on dismiss
+   *  while keeping the shell mounted, so the fade-out reads cleanly
+   *  instead of the popup snapping away. */
+  visible: boolean;
 }) {
   return (
     <div
-      className="
+      className={`
+        map-tooltip-shell
         pointer-events-none absolute z-50
         bg-surface/85 backdrop-blur-xl
         border border-border/60 rounded-xl shadow-xl
         px-3 py-2.5 min-w-[200px] max-w-[280px]
         text-[11px] leading-tight
-      "
+        transition-opacity duration-150 ease-out
+        ${visible ? "opacity-100" : "opacity-0"}
+      `}
       style={{ left: `${x + 12}px`, top: `${y + 12}px` }}
     >
       {children}
     </div>
   );
+}
+
+// ============================================================
+// useFadingState — hold the last truthy value through a brief
+// fade-out window so JSX that conditionals on it can render the
+// previous content while the parent's `visible` flag transitions
+// to 0. Without it, setting hover to null tears the popup down
+// instantly and the CSS transition has nothing to animate.
+//
+// `rendered` lags the input value: it adopts a new truthy value
+// immediately, but waits `holdMs` before adopting a transition
+// to null. `visible` flips false the moment the input becomes
+// null, so callers can drive an opacity transition on it.
+// ============================================================
+
+function useFadingState<T>(
+  value: T | null,
+  holdMs: number
+): { rendered: T | null; visible: boolean } {
+  const [rendered, setRendered] = useState<T | null>(value);
+  const [visible, setVisible] = useState<boolean>(value !== null);
+
+  useEffect(() => {
+    if (value !== null) {
+      setRendered(value);
+      // Two-frame deferral so React commits the mount-with-opacity-0
+      // *before* we flip to opacity-100 — otherwise the browser
+      // collapses both writes and the transition is skipped.
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setVisible(true));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    setVisible(false);
+    const t = window.setTimeout(() => setRendered(null), holdMs);
+    return () => window.clearTimeout(t);
+  }, [value, holdMs]);
+
+  return { rendered, visible };
 }
 
 function CountryTooltipBody({
