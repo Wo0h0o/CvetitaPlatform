@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/shared/Skeleton";
 interface HeatmapGridProps {
   rows: {
     label: string;
-    cells: { value: number; label?: string }[];
+    cells: { value: number; label?: string; tooltip?: string }[];
   }[];
   columnLabels: string[];
   title?: string;
@@ -16,6 +16,16 @@ interface HeatmapGridProps {
   minColor?: string;
   maxColor?: string;
   formatCell?: (value: number) => string;
+  /**
+   * Header for the leftmost column ("Кохорта" by default — matches the
+   * customers retention use case). Sales heatmap passes "Ден" or similar.
+   */
+  rowHeader?: string;
+  /**
+   * Empty-state body text. The card title still renders so the section
+   * keeps its visual anchor; only the inner data area swaps to this.
+   */
+  emptyText?: string;
   className?: string;
 }
 
@@ -34,6 +44,8 @@ export function HeatmapGrid({
   action,
   loading,
   formatCell = (v) => `${v.toFixed(0)}%`,
+  rowHeader = "Кохорта",
+  emptyText = "Няма данни",
   className = "",
 }: HeatmapGridProps) {
   if (loading) {
@@ -50,7 +62,7 @@ export function HeatmapGrid({
       <Card className={className}>
         {title && <CardHeader action={action}>{title}</CardHeader>}
         <CardBody>
-          <div className="text-center py-8 text-text-2 text-[13px]">Няма данни</div>
+          <div className="text-center py-8 text-text-2 text-[13px]">{emptyText}</div>
         </CardBody>
       </Card>
     );
@@ -69,7 +81,7 @@ export function HeatmapGrid({
           <thead>
             <tr>
               <th className="text-left text-[11px] font-semibold text-text-2 pb-2 pr-3 sticky left-0 bg-surface z-10">
-                Кохорта
+                {rowHeader}
               </th>
               {columnLabels.map((label) => (
                 <th key={label} className="text-center text-[11px] font-medium text-text-3 pb-2 px-1">
@@ -88,6 +100,7 @@ export function HeatmapGrid({
                   <td key={i} className="px-1 py-1 text-center">
                     <div
                       className="rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors"
+                      title={cell.tooltip}
                       style={{
                         backgroundColor: cell.value > 0 ? getHeatColor(cell.value, min, max) : "var(--surface-2)",
                         color: cell.value > 0 ? "var(--text)" : "var(--text-3)",

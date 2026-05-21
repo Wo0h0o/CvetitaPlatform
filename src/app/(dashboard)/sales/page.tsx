@@ -6,6 +6,7 @@ import { StoreSelector } from "@/components/shared/StoreSelector";
 import { SalesHeroStrip } from "@/components/sales/SalesHeroStrip";
 import { SalesSignalStrip } from "@/components/sales/SalesSignalStrip";
 import { SalesTrend } from "@/components/sales/SalesTrend";
+import { SalesHourHeatmap } from "@/components/sales/SalesHourHeatmap";
 import { StorePerformanceTable } from "@/components/sales/StorePerformanceTable";
 import { TopProductsAggregate } from "@/components/sales/TopProductsAggregate";
 
@@ -53,6 +54,10 @@ export default function SalesPage() {
         <div className="lg:col-span-5">
           <StorePerformanceTable />
         </div>
+      </div>
+
+      <div className="mb-4 md:mb-6">
+        <SalesHourHeatmap />
       </div>
     </>
   );

@@ -540,3 +540,143 @@ export async function fetchStoreConnections(storeId: string) {
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Hour × Weekday rhythm — for the /sales heatmap
+// ---------------------------------------------------------------------------
+
+/** One bucket of the 7×24 = 168 weekday/hour grid. weekday is ISO (1=Mon, 7=Sun). */
+export interface HourWeekdayBucket {
+  weekday: number;
+  hour: number;
+  revenue: number;
+  orders: number;
+}
+
+interface HourWeekdayRpcRow {
+  weekday: number;
+  hour: number;
+  total_revenue: string | number;
+  total_orders: string | number;
+}
+
+/**
+ * Cross-store hour × ISO-weekday aggregation for the period. Calls
+ * read_store_hour_weekday(p_schema, p_from, p_to) per schema and sums
+ * the 168 buckets across stores. Always returns exactly 168 rows.
+ */
+export async function fetchHourWeekday(
+  schemas: StoreSchema[],
+  from: string,
+  to: string
+): Promise<HourWeekdayBucket[]> {
+  const all = await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin.rpc("read_store_hour_weekday", {
+        p_schema: s.schemaName,
+        p_from: from,
+        p_to: to,
+      });
+
+      if (error) {
+        logger.error("Failed read_store_hour_weekday", {
+          schema: s.schemaName,
+          error: error.message,
+        });
+        return [] as HourWeekdayRpcRow[];
+      }
+      return (data ?? []) as HourWeekdayRpcRow[];
+    })
+  );
+
+  // Build a dense 7×24 grid keyed by `${wd}-${h}` so per-store sums
+  // accumulate cleanly even if a store returns no rows for a bucket
+  // (the RPC zero-fills per schema, but the schema-level merge still
+  // needs to handle the empty-schema case).
+  const grid = new Map<string, HourWeekdayBucket>();
+  for (let wd = 1; wd <= 7; wd++) {
+    for (let h = 0; h <= 23; h++) {
+      grid.set(`${wd}-${h}`, { weekday: wd, hour: h, revenue: 0, orders: 0 });
+    }
+  }
+  for (const rows of all) {
+    for (const r of rows) {
+      const key = `${r.weekday}-${r.hour}`;
+      const cell = grid.get(key);
+      if (!cell) continue;
+      cell.revenue += Number(r.total_revenue);
+      cell.orders += Number(r.total_orders);
+    }
+  }
+  return Array.from(grid.values());
+}
+
+// ---------------------------------------------------------------------------
+// Sales by country — for the world-map view
+// ---------------------------------------------------------------------------
+
+/** Aggregated sales for one ISO alpha-2 country across the period. */
+export interface CountrySales {
+  countryCode: string;
+  revenue: number;
+  orders: number;
+  customers: number;
+}
+
+interface CountryRpcRow {
+  country_code: string;
+  total_revenue: string | number;
+  total_orders: string | number;
+  unique_customers: string | number;
+}
+
+/**
+ * Cross-store sales aggregated by shipping country (ISO alpha-2).
+ * Customers are summed cross-schema rather than DISTINCT-ed — same
+ * single-store-exact / multi-store-upper-bound trade-off the unique
+ * customers aggregator already makes.
+ */
+export async function fetchSalesByCountry(
+  schemas: StoreSchema[],
+  from: string,
+  to: string
+): Promise<CountrySales[]> {
+  const all = await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin.rpc("read_store_sales_by_country", {
+        p_schema: s.schemaName,
+        p_from: from,
+        p_to: to,
+      });
+
+      if (error) {
+        logger.error("Failed read_store_sales_by_country", {
+          schema: s.schemaName,
+          error: error.message,
+        });
+        return [] as CountryRpcRow[];
+      }
+      return (data ?? []) as CountryRpcRow[];
+    })
+  );
+
+  const byCountry = new Map<string, CountrySales>();
+  for (const rows of all) {
+    for (const r of rows) {
+      const code = r.country_code;
+      if (!code) continue;
+      const existing = byCountry.get(code) ?? {
+        countryCode: code,
+        revenue: 0,
+        orders: 0,
+        customers: 0,
+      };
+      existing.revenue += Number(r.total_revenue);
+      existing.orders += Number(r.total_orders);
+      existing.customers += Number(r.unique_customers);
+      byCountry.set(code, existing);
+    }
+  }
+
+  return Array.from(byCountry.values()).sort((a, b) => b.revenue - a.revenue);
+}
