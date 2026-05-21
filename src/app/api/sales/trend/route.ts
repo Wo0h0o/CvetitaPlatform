@@ -5,7 +5,7 @@ import { resolveStoreSchemas, fetchSalesTrend } from "@/lib/sales-queries";
 import { getDateRange, type DatePreset } from "@/lib/dates";
 import { logger } from "@/lib/logger";
 
-const VALID_GRANULARITY = new Set(["day", "week", "month"]);
+const VALID_GRANULARITY = new Set(["hour", "day", "week", "month"]);
 
 export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
@@ -18,11 +18,20 @@ export async function GET(req: NextRequest) {
     const customFrom = params.get("from") || undefined;
     const customTo = params.get("to") || undefined;
     const granularityRaw = params.get("granularity") || "day";
-    const granularity = VALID_GRANULARITY.has(granularityRaw)
-      ? (granularityRaw as "day" | "week" | "month")
+    let granularity: "hour" | "day" | "week" | "month" = VALID_GRANULARITY.has(
+      granularityRaw
+    )
+      ? (granularityRaw as "hour" | "day" | "week" | "month")
       : "day";
 
     const { from, to } = getDateRange(preset, customFrom, customTo);
+
+    // Hourly only makes sense for a single Sofia-anchored day. If a
+    // caller asks for hourly over a multi-day window, demote to daily
+    // rather than silently returning only the first day's 24 buckets.
+    if (granularity === "hour" && from !== to) {
+      granularity = "day";
+    }
 
     const schemas = await resolveStoreSchemas(storesParam);
     const series = await fetchSalesTrend(schemas, from, to, granularity);

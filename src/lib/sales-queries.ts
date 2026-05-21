@@ -217,8 +217,19 @@ export async function fetchSalesTrend(
   schemas: StoreSchema[],
   from: string,
   to: string,
-  granularity: "day" | "week" | "month" = "day"
+  granularity: "hour" | "day" | "week" | "month" = "day"
 ): Promise<TrendPoint[]> {
+  // Hourly path — only valid for a single-day window (from === to). The
+  // /sales trend chart switches to this when the user picks Днес/Вчера
+  // because a single daily bucket leaves Recharts with one data point and
+  // nothing to draw. We reuse read_store_hour_weekday (already a Sofia-tz
+  // aware, dedup-by-latest-event RPC used by the heatmap) and filter to
+  // the requested day's ISO weekday — that gives us a dense 24-hour
+  // series with synthetic ISO timestamps the chart can format as HH:00.
+  if (granularity === "hour") {
+    return fetchHourlyTrend(schemas, from);
+  }
+
   // Fetch daily rows from all schemas in parallel
   const allResults = await Promise.all(
     schemas.map(async (s) => {
@@ -283,6 +294,85 @@ function groupTrend(
   return Array.from(grouped.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, vals]) => ({ date, revenue: vals.revenue, orders: vals.orders }));
+}
+
+// ---------------------------------------------------------------------------
+// Hourly trend — 24-bucket series for a single Sofia-anchored day.
+// ---------------------------------------------------------------------------
+
+interface HourWeekdayRpcRowForTrend {
+  weekday: number;
+  hour: number;
+  total_revenue: string | number;
+  total_orders: string | number;
+}
+
+/**
+ * Build a 24-point hourly series for the given day. Reuses the
+ * hour×weekday RPC the heatmap already calls (it dedupes by latest
+ * event per order and respects Sofia tz), then projects the rows for
+ * the requested day's ISO weekday into a dense 0..23 array. Timestamps
+ * are synthetic `YYYY-MM-DDTHH:00:00` strings — the same shape as the
+ * daily series's `date` field, so downstream consumers (Recharts, the
+ * comparison-by-index zip in SalesTrend) don't need a new type.
+ */
+async function fetchHourlyTrend(
+  schemas: StoreSchema[],
+  day: string
+): Promise<TrendPoint[]> {
+  // ISO weekday (1=Mon..7=Sun) of the requested day. The RPC tags each
+  // bucket with the ISODOW of its source orders, so we filter by this
+  // to pick exactly the rows that belong to `day`.
+  const isoWeekday = isoDow(day);
+
+  const all = await Promise.all(
+    schemas.map(async (s) => {
+      const { data, error } = await supabaseAdmin.rpc(
+        "read_store_hour_weekday",
+        { p_schema: s.schemaName, p_from: day, p_to: day }
+      );
+      if (error) {
+        logger.error("Failed read_store_hour_weekday (hourly trend)", {
+          schema: s.schemaName,
+          error: error.message,
+        });
+        return [] as HourWeekdayRpcRowForTrend[];
+      }
+      return (data ?? []) as HourWeekdayRpcRowForTrend[];
+    })
+  );
+
+  // Dense 24-hour grid keyed by hour; cross-store sum.
+  const byHour = new Map<number, { revenue: number; orders: number }>();
+  for (let h = 0; h < 24; h++) byHour.set(h, { revenue: 0, orders: 0 });
+
+  for (const rows of all) {
+    for (const r of rows) {
+      if (Number(r.weekday) !== isoWeekday) continue;
+      const cell = byHour.get(Number(r.hour));
+      if (!cell) continue;
+      cell.revenue += Number(r.total_revenue);
+      cell.orders += Number(r.total_orders);
+    }
+  }
+
+  return Array.from(byHour.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([h, v]) => ({
+      date: `${day}T${String(h).padStart(2, "0")}:00:00`,
+      revenue: v.revenue,
+      orders: v.orders,
+    }));
+}
+
+/** ISO weekday (Mon=1..Sun=7) for a YYYY-MM-DD string, computed in UTC
+ *  so calendar math matches the RPC's `EXTRACT(ISODOW ... AT TIME ZONE
+ *  'Europe/Sofia')`. The date represents a Sofia day, parsed as UTC
+ *  midnight — the weekday is the same regardless of zone shift. */
+function isoDow(yyyymmdd: string): number {
+  const d = new Date(yyyymmdd + "T00:00:00Z");
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  return dow === 0 ? 7 : dow;
 }
 
 function weekKey(dateStr: string): string {

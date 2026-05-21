@@ -20,6 +20,16 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
 import { formatBgDate } from "@/lib/dates";
 
+// For single-day windows (Днес / Вчера) a daily granularity gives one
+// data point and Recharts has nothing to draw — so we switch to hourly
+// and label everything in HH:00. We detect the mode from the resolved
+// range, not the preset name, so a custom from===to range works too.
+function formatHourLabel(iso: string): string {
+  // iso looks like "2026-05-21T14:00:00" — slice instead of new Date()
+  // to avoid the browser interpreting it as local time and shifting.
+  return iso.slice(11, 16);
+}
+
 // ============================================================
 // SalesTrend — daily revenue line, but with two upgrades:
 //
@@ -69,9 +79,11 @@ function fmtEurFull(n: number): string {
 function TrendTooltip({
   active,
   payload,
+  hourly,
 }: {
   active?: boolean;
   payload?: ReadonlyArray<{ payload?: ChartRow }>;
+  hourly?: boolean;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0]?.payload;
@@ -108,7 +120,7 @@ function TrendTooltip({
       "
     >
       <div className="text-text font-medium text-[11.5px]">
-        {formatBgDate(row.date)}
+        {hourly ? `${formatHourLabel(row.date)} ч.` : formatBgDate(row.date)}
       </div>
       <div className="h-px bg-border/70 my-1.5" />
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
@@ -139,12 +151,18 @@ function TrendTooltip({
 // ============================================================
 
 export function SalesTrend() {
-  const { queryString, compFrom, compTo } = useDateRange();
+  const { queryString, compFrom, compTo, from, to } = useDateRange();
   const { storeParam } = useStoreSelection();
   const c = useChartColors();
 
+  // Switch to hourly when the user picks a single day (Днес / Вчера /
+  // custom from===to). Otherwise the trend collapses to one data point
+  // and Recharts renders an empty SVG.
+  const hourly = from === to;
+  const granularitySuffix = hourly ? "&granularity=hour" : "";
+
   const { data: cur, isLoading } = useSWR<TrendResponse>(
-    `/api/sales/trend?${queryString}&${storeParam}`,
+    `/api/sales/trend?${queryString}&${storeParam}${granularitySuffix}`,
     fetcher,
     { refreshInterval: 300_000, revalidateOnFocus: false }
   );
@@ -154,7 +172,7 @@ export function SalesTrend() {
   const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;
   const { data: comp } = useSWR<TrendResponse>(
     compFrom && compTo
-      ? `/api/sales/trend?${compQs}&${storeParam}`
+      ? `/api/sales/trend?${compQs}&${storeParam}${granularitySuffix}`
       : null,
     fetcher,
     { refreshInterval: 300_000, revalidateOnFocus: false }
@@ -205,7 +223,11 @@ export function SalesTrend() {
         className="inline-block w-1.5 h-1.5 rounded-full"
         style={{ background: c.accent }}
       />
-      Пик: {formatBgDate(peak.date)} • {fmtEur(peak.revenue)}
+      Пик:{" "}
+      {hourly
+        ? `${formatHourLabel(peak.date)} ч.`
+        : formatBgDate(peak.date)}{" "}
+      • {fmtEur(peak.revenue)}
     </span>
   ) : null;
 
@@ -263,8 +285,10 @@ export function SalesTrend() {
                 tick={{ fontSize: 11, fill: c.text3 }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(v) => formatBgDate(String(v))}
-                minTickGap={28}
+                tickFormatter={(v) =>
+                  hourly ? formatHourLabel(String(v)) : formatBgDate(String(v))
+                }
+                minTickGap={hourly ? 18 : 28}
               />
               <YAxis
                 tick={{ fontSize: 11, fill: c.text3 }}
@@ -292,7 +316,9 @@ export function SalesTrend() {
                   strokeWidth: 1,
                   strokeDasharray: "2 2",
                 }}
-                content={(props) => <TrendTooltip {...props} />}
+                content={(props) => (
+                  <TrendTooltip {...props} hourly={hourly} />
+                )}
               />
               {/* Comparison line first so the accent area paints on top */}
               <Line
