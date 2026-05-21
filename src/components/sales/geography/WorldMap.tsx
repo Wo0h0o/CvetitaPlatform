@@ -473,7 +473,11 @@ export function WorldMap({
         },
       });
 
-      // Cluster halo — accent at low opacity, size scales with count.
+      // Cluster halo — accent at low opacity, size scales with summed
+      // ORDERS (not feature count) so the visual weight matches the
+      // label number and the side-panel mental model. Step thresholds
+      // chosen for Cvetita's range: foreign clusters (5-70 orders),
+      // single-city centres (~100-400), full БГ aggregate (~1.7k).
       map.addLayer({
         id: "marker-clusters",
         type: "circle",
@@ -484,21 +488,49 @@ export function WorldMap({
           "circle-opacity": 0.22,
           "circle-radius": [
             "step",
-            ["get", "point_count"],
-            14, 5, 18, 15, 22, 50, 28, 200, 34,
+            ["coalesce", ["get", "sum_orders"], ["get", "point_count"]],
+            14,   // <10 orders
+            10, 17,
+            50, 20,
+            200, 24,
+            1000, 30,
           ],
           "circle-stroke-color": "rgb(34, 197, 94)",
           "circle-stroke-width": 1,
           "circle-stroke-opacity": 0.6,
         },
       });
+      // Cluster label shows summed ORDERS, not feature count.
+      // `point_count` (the MapLibre default) is "how many dots merged
+      // here" — useful for clustering diagnostics, but the operator's
+      // mental model is "how many orders" because that's what the side
+      // panel shows. Mismatched numbers ("сайдбар: 1628, карта: 997")
+      // would correctly raise "is something missing?", which is the bug
+      // that triggered this change. Same field as the hover tooltip
+      // count so the two read consistently.
+      //
+      // Format: <1000 → as-is ("847"); ≥1000 → "1.7k" via number-format.
+      // Keeps the label legible inside the 14-34px cluster circles.
       map.addLayer({
         id: "marker-cluster-count",
         type: "symbol",
         source: "markers",
         filter: ["has", "point_count"],
         layout: {
-          "text-field": ["get", "point_count_abbreviated"],
+          "text-field": [
+            "case",
+            [">=", ["coalesce", ["get", "sum_orders"], 0], 1000],
+            [
+              "concat",
+              [
+                "number-format",
+                ["/", ["coalesce", ["get", "sum_orders"], 0], 1000],
+                { "max-fraction-digits": 1 },
+              ],
+              "k",
+            ],
+            ["to-string", ["coalesce", ["get", "sum_orders"], ["get", "point_count"]]],
+          ],
           "text-font": ["Stadia Bold"],
           "text-size": 11,
           "text-allow-overlap": true,
