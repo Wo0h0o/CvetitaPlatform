@@ -15,10 +15,11 @@
 // union ("revenue" | "orders" | "customers", etc.) — no stringly-typed
 // soup, the compiler still checks the switch.
 //
-// NOTE (tap targets): the chips are intentionally compact and at the
-// `sm` size sit under the 44px touch minimum. The tap-target pass is
-// a separate sprint item — when it lands, the fix goes HERE once and
-// every caller inherits it. That is the whole point of the extraction.
+// Tap targets: the chips are visually compact (11–12px text) but on
+// touch viewports each button gets `max-md:min-h-[44px]` so the
+// segmented control is a comfortable 44px-tall touch target per
+// CLAUDE.md principle 2. Desktop keeps the dense look. Fixed once
+// here — every caller inherits it.
 // ============================================================
 
 export interface MetricChipOption<T extends string> {
@@ -69,6 +70,7 @@ export function MetricChips<T extends string>({
             onClick={() => onChange(opt.value)}
             className={`
               ${chipPad} rounded font-medium transition-colors cursor-pointer
+              max-md:min-h-[44px]
               ${
                 active
                   ? "bg-surface text-text shadow-xs"

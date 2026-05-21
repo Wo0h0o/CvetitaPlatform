@@ -56,6 +56,21 @@ export function useChartScrubber({
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Gesture-intent state. A pointerdown inside the chart is ambiguous:
+  // it could be the start of a horizontal scrub OR the start of a
+  // vertical page scroll. Committing activeIdx on pointerdown flashed
+  // the tooltip for one frame every time the operator tried to scroll
+  // the page through the chart. So we withhold judgement: store the
+  // start point, classify on the first move that clears the 6px
+  // threshold, and only commit once the gesture is decided horizontal.
+  // A pointerdown→pointerup with no move past threshold is a TAP and
+  // commits at the tap position on release.
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  const intentRef = useRef<"undecided" | "horizontal" | "vertical">(
+    "undecided"
+  );
+  const INTENT_THRESHOLD_PX = 6;
+
   // Maps a pointer event's clientX to a 0..count-1 data index via the
   // wrapper's bounding box. We deliberately don't try to compensate
   // for axis padding here — visually, "left edge of card → idx 0" is
@@ -83,16 +98,37 @@ export function useChartScrubber({
       // Capture so subsequent moves track even when the finger slides
       // outside the wrapper (e.g. past the card border).
       e.currentTarget.setPointerCapture(e.pointerId);
-      const idx = indexFromEvent(e);
-      if (idx !== null) setActiveIdx(idx);
+      startRef.current = { x: e.clientX, y: e.clientY };
+      intentRef.current = "undecided";
+      // No setActiveIdx here — intent is still ambiguous. A flash-free
+      // pointerdown is the whole point of this gate.
     },
-    [indexFromEvent]
+    []
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === "mouse") return;
       if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+      const start = startRef.current;
+      if (!start) return;
+
+      // Once the gesture is classified vertical, stay out of the way —
+      // the browser owns the page scroll (touch-action: pan-y on the
+      // wrapper) and we never commit.
+      if (intentRef.current === "vertical") return;
+
+      if (intentRef.current === "undecided") {
+        const dx = Math.abs(e.clientX - start.x);
+        const dy = Math.abs(e.clientY - start.y);
+        if (dx < INTENT_THRESHOLD_PX && dy < INTENT_THRESHOLD_PX) {
+          return; // too small to classify yet
+        }
+        intentRef.current = dx > dy ? "horizontal" : "vertical";
+        if (intentRef.current === "vertical") return;
+      }
+
+      // intent === "horizontal"
       const idx = indexFromEvent(e);
       if (idx !== null) setActiveIdx(idx);
     },
@@ -101,6 +137,22 @@ export function useChartScrubber({
 
   const releaseCapture = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === "mouse") return;
+      // A pointerup while still "undecided" means the finger never
+      // travelled past the threshold — that's a TAP. Commit the index
+      // at the tap position so a plain tap still inspects a point.
+      // pointercancel (e.type) is the browser claiming the gesture for
+      // a scroll; never commit on that.
+      if (
+        e.type === "pointerup" &&
+        intentRef.current === "undecided" &&
+        startRef.current
+      ) {
+        const idx = indexFromEvent(e);
+        if (idx !== null) setActiveIdx(idx);
+      }
+      startRef.current = null;
+      intentRef.current = "undecided";
       // Release the capture but DO NOT clear activeIdx — persistence
       // is the contract. The popup and chart cursor stay on the last
       // position the operator picked.
@@ -108,7 +160,7 @@ export function useChartScrubber({
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
     },
-    []
+    [indexFromEvent]
   );
 
   return {

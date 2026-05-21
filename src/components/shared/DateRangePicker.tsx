@@ -56,6 +56,7 @@ export function DateRangePicker({
           className={`
             px-2 py-1 sm:px-3 sm:py-1.5 rounded-full
             text-[11px] sm:text-[12px] font-medium
+            max-md:min-h-[44px]
             transition-all duration-150 cursor-pointer
             ${
               preset === p.id && preset !== "custom"
@@ -76,9 +77,10 @@ export function DateRangePicker({
           onClick={() => setShowCustom(!showCustom)}
           aria-label="Персонализиран период"
           className={`
-            flex items-center gap-1 sm:gap-1.5
+            flex items-center justify-center gap-1 sm:gap-1.5
             px-2 py-1 sm:px-3 sm:py-1.5 rounded-full
             text-[11px] sm:text-[12px] font-medium
+            max-md:min-h-[44px] max-md:min-w-[44px]
             transition-all duration-150 cursor-pointer
             ${
               preset === "custom"

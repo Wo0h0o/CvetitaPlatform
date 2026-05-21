@@ -388,6 +388,17 @@ export function WorldMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    // cooperativeGestures on phone-sized viewports: a single-finger
+    // drag inside the 400px-tall map must scroll the PAGE, not pan the
+    // map — otherwise the operator's scroll halts the moment their
+    // finger crosses the map. With cooperative gestures on, panning
+    // needs two fingers (MapLibre shows a "Use two fingers" hint) and
+    // one-finger drags pass through to the page. On desktop we leave
+    // it off so wheel-zoom stays immediate.
+    const isTouchViewport =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches;
+
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: STADIA_STYLE_URL,
@@ -396,7 +407,7 @@ export function WorldMap({
       minZoom: 1.5,
       maxZoom: 18,
       attributionControl: { compact: true },
-      cooperativeGestures: false,
+      cooperativeGestures: isTouchViewport,
     });
 
     map.addControl(

@@ -156,7 +156,7 @@ export function TopProductsAggregate() {
               <button
                 type="button"
                 onClick={() => setExpanded(true)}
-                className="text-[12px] text-text-2 hover:text-text transition-colors pt-1"
+                className="flex items-center text-[12px] text-text-2 hover:text-text transition-colors pt-1 max-md:min-h-[44px]"
               >
                 Виж всички {products.length} →
               </button>
@@ -165,7 +165,7 @@ export function TopProductsAggregate() {
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
-                className="text-[12px] text-text-2 hover:text-text transition-colors pt-1"
+                className="flex items-center text-[12px] text-text-2 hover:text-text transition-colors pt-1 max-md:min-h-[44px]"
               >
                 Скрий
               </button>
