@@ -41,7 +41,11 @@ export function DateRangePicker({
   }, [showCustom]);
 
   return (
-    <div className="flex items-center gap-1 relative">
+    // Mobile: compact chips, smaller gap, no shrinking past content
+    // width. The PageHeader's flex-wrap takes over if this row plus
+    // the StoreSelector still doesn't fit; otherwise the picker stays
+    // on the same line as the store dropdown.
+    <div className="flex items-center gap-0.5 sm:gap-1 relative">
       {presets.map((p) => (
         <button
           key={p.id}
@@ -50,7 +54,9 @@ export function DateRangePicker({
             setShowCustom(false);
           }}
           className={`
-            px-3 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 cursor-pointer
+            px-2 py-1 sm:px-3 sm:py-1.5 rounded-full
+            text-[11px] sm:text-[12px] font-medium
+            transition-all duration-150 cursor-pointer
             ${
               preset === p.id && preset !== "custom"
                 ? "bg-accent text-white shadow-sm"
@@ -62,12 +68,18 @@ export function DateRangePicker({
         </button>
       ))}
 
-      {/* Custom range button */}
+      {/* Custom range button — icon-only on mobile when idle, label
+          shows only once a custom window is active or from sm+. Keeps
+          the row inside the mobile viewport width. */}
       <div className="relative" ref={popoverRef}>
         <button
           onClick={() => setShowCustom(!showCustom)}
+          aria-label="Персонализиран период"
           className={`
-            flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 cursor-pointer
+            flex items-center gap-1 sm:gap-1.5
+            px-2 py-1 sm:px-3 sm:py-1.5 rounded-full
+            text-[11px] sm:text-[12px] font-medium
+            transition-all duration-150 cursor-pointer
             ${
               preset === "custom"
                 ? "bg-accent text-white shadow-sm"
@@ -76,7 +88,15 @@ export function DateRangePicker({
           `}
         >
           <Calendar size={12} />
-          {preset === "custom" ? `${formatBgDate(from)} — ${formatBgDate(to)}` : "Период"}
+          <span
+            className={
+              preset === "custom" ? "inline" : "hidden sm:inline"
+            }
+          >
+            {preset === "custom"
+              ? `${formatBgDate(from)} — ${formatBgDate(to)}`
+              : "Период"}
+          </span>
         </button>
 
         {showCustom && (

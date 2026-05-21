@@ -59,6 +59,7 @@ export function Shell({ children }: { children: ReactNode }) {
           pt-[var(--topbar-height)] min-h-screen
           transition-all duration-300 ease-out
           pl-0 ${collapsed ? "md:pl-[72px]" : "md:pl-[var(--sidebar-width)]"}
+          overflow-x-hidden
         `}
       >
         <div className="p-4 md:p-6 max-w-[1400px]">{children}</div>
