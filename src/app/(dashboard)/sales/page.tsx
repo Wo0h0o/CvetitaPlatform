@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/shared/Skeleton";
 import { SalesHeroStrip } from "@/components/sales/SalesHeroStrip";
 import { SalesSignalStrip } from "@/components/sales/SalesSignalStrip";
 import { SalesTrend } from "@/components/sales/SalesTrend";
-import { SalesHourHeatmap } from "@/components/sales/SalesHourHeatmap";
+import { SalesRhythmPanel } from "@/components/sales/SalesRhythmPanel";
 import { TopProductsAggregate } from "@/components/sales/TopProductsAggregate";
 import { CountryListPanel } from "@/components/sales/geography/CountryListPanel";
 import { useDateRange } from "@/hooks/useDateRange";
@@ -40,7 +40,13 @@ import type { Metric } from "@/components/sales/geography/WorldMap";
 //                        of the same markets read as duplication.
 //   5. Топ продукти    — full-width (gets to breathe now that its
 //                        former row companion is gone).
-//   6. Hour heatmap    — when in the week orders land.
+//   6. Ритъм / Пулс    — adaptive "when do customers buy?":
+//                          • single-day window → 24h combo (Пулс)
+//                          • multi-day window  → 7 weekday small
+//                            multiples + 24h aggregate strip (Ритъм)
+//                        Replaces the prior 7×24 heatmap — that view
+//                        now lives on /sales/store/[id] as the
+//                        drill-down "full matrix" surface.
 //
 // The metric chip (Приходи/Поръчки/Клиенти) lives inside the География
 // section header — it only changes what the map and the Countries
@@ -181,7 +187,7 @@ export default function SalesPage() {
       </div>
 
       <div className="mb-4 md:mb-6">
-        <SalesHourHeatmap />
+        <SalesRhythmPanel />
       </div>
     </>
   );

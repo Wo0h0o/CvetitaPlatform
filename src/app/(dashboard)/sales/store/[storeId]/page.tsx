@@ -9,6 +9,7 @@ import { StoreTrend } from "@/components/sales/StoreTrend";
 import { StoreTopProducts } from "@/components/sales/StoreTopProducts";
 import { StoreOrdersTable } from "@/components/sales/StoreOrdersTable";
 import { StoreInfo } from "@/components/sales/StoreInfo";
+import { SalesHourHeatmap } from "@/components/sales/SalesHourHeatmap";
 import { ArrowLeft } from "lucide-react";
 
 export default function StoreDetailPage({
@@ -45,6 +46,15 @@ export default function StoreDetailPage({
           <StoreOrdersTable storeId={storeId} />
         </div>
         <StoreTopProducts storeId={storeId} />
+      </div>
+
+      {/* Hour × weekday matrix. The /sales overview switched to the
+          Ритъм/Пулс panel for its less-dense, comparison-aware view —
+          here on the per-store drill-down the data is concentrated
+          enough that the 168-cell grid reads as a useful "full
+          matrix" surface for power users. */}
+      <div className="mb-6">
+        <SalesHourHeatmap storeId={storeId} />
       </div>
     </>
   );

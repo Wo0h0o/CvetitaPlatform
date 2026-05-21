@@ -8,6 +8,21 @@ import { useStoreSelection } from "@/hooks/useStoreSelection";
 import type { HourWeekdayBucket } from "@/lib/sales-queries";
 
 // ============================================================
+// SalesHourHeatmap — the 7×24 matrix view.
+//
+// Lives on the store drill-down (`/sales/store/[id]`) as the "give me
+// the full matrix" power-user view. The main /sales page replaced
+// this with the SalesRhythmPanel (Ритъм + Пулс) which presents the
+// same data in a less dense, comparison-aware layout — but for a
+// single store the grid is dense enough to be readable, so we keep
+// it for the drill-down's "drill into one shop" context.
+//
+// When `storeId` is passed, the heatmap scopes itself to that store.
+// Otherwise it honours useStoreSelection (legacy /sales path —
+// retained so older code paths don't break during migration).
+// ============================================================
+
+// ============================================================
 // SalesHourHeatmap — "когато купуват" rhythm view.
 //
 // 7 weekdays (rows, ISO Mon-first) × 24 hours (columns) coloured by
@@ -89,9 +104,18 @@ function findPeak(buckets: HourWeekdayBucket[], key: "revenue" | "orders"): Peak
   return peak;
 }
 
-export function SalesHourHeatmap() {
+interface SalesHourHeatmapProps {
+  /** Scope to a single store. When omitted, defers to URL-driven store
+   *  selection (multi-store / "all" mode). */
+  storeId?: string;
+}
+
+export function SalesHourHeatmap({ storeId }: SalesHourHeatmapProps = {}) {
   const { queryString } = useDateRange();
-  const { storeParam } = useStoreSelection();
+  const { storeParam: urlStoreParam } = useStoreSelection();
+  // When invoked with an explicit storeId we always force that store —
+  // the drill-down page never shows "all" via this widget.
+  const storeParam = storeId ? `stores=${storeId}` : urlStoreParam;
   const [metric, setMetric] = useState<Metric>("revenue");
 
   const { data, isLoading } = useSWR<HourWeekdayResponse>(
@@ -100,7 +124,7 @@ export function SalesHourHeatmap() {
     { refreshInterval: 300_000, revalidateOnFocus: false }
   );
 
-  const buckets = data?.buckets ?? [];
+  const buckets = useMemo(() => data?.buckets ?? [], [data?.buckets]);
 
   // Build 7 rows × 24 cells. ISO weekday is 1-7, we index our label
   // array 0-6, so wd-1 is the row index.
