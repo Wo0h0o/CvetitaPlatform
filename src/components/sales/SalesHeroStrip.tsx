@@ -1,9 +1,10 @@
 "use client";
 
 import useSWR from "swr";
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import {
   Area,
+  Bar,
   Line,
   ComposedChart,
   ResponsiveContainer,
@@ -63,7 +64,10 @@ interface TrendResponse {
 
 interface ChartRow {
   date: string;
-  current: number;
+  // `current` is nullable for state-change metrics (AOV) on empty days —
+  // forcing a 0 floor would draw a misleading dip when really there were
+  // simply no orders that day to compute an average from.
+  current: number | null;
   comparison: number | null;
   compDate: string | null;
 }
@@ -131,7 +135,7 @@ function SparkTooltip({
   const cmp = row.comparison;
 
   let delta: { text: string; tone: "good" | "bad" | "flat" } | null = null;
-  if (cmp !== null && cmp > 0) {
+  if (cur !== null && cmp !== null && cmp > 0) {
     const pct = Math.round(((cur - cmp) / cmp) * 100);
     const isFlat = Math.abs(pct) < 1;
     const arrow = isFlat ? "—" : pct > 0 ? "▲" : "▼";
@@ -164,7 +168,7 @@ function SparkTooltip({
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
         <span className="text-text-3">{metricLabel}</span>
         <span className="text-text font-semibold tabular-nums text-right">
-          {formatValue(cur)}
+          {cur === null ? "—" : formatValue(cur)}
         </span>
         {cmp !== null && (
           <>
@@ -187,38 +191,61 @@ function SparkTooltip({
 // ============================================================
 // MiniSpark — inline ComposedChart for a KPI tile.
 //
-// Two traces:
-//   * accent Area = current values
-//   * dashed grey Line = comparison values (only drawn when ≥1 non-null)
+// Chart type is chosen per metric per analytics-design-contract §9:
+//   * "area"  → smooth area (continuous flow: revenue, GMV, sessions)
+//   * "bars"  → vertical bars (discrete counts: orders, signups). Smooth
+//                line for counts is §9.5 anti-pattern — interpolation
+//                says "47.3 orders between Mon and Tue", which is false.
+//   * "step"  → stepAfter line (state-change metrics: AOV, MRR, price).
+//                Between events the value holds, it doesn't "flow".
 //
-// Recharts' Tooltip is wired to render the glass SparkTooltip — same
-// glass treatment the home dashboard already uses.
+// All three modes draw the same dashed grey comparison line on top (when
+// prior-period data exists) and share the glass SparkTooltip so the
+// tile-to-tile language stays consistent — only the chart shape changes.
 // ============================================================
+
+type SparkKind = "area" | "bars" | "step";
 
 interface MiniSparkProps {
   rows: ChartRow[];
   metricLabel: string;
   formatValue: (n: number) => string;
   height?: number;
+  kind?: SparkKind;
 }
 
-function MiniSpark({ rows, metricLabel, formatValue, height = 40 }: MiniSparkProps) {
-  if (rows.length < 2) return null;
+function MiniSpark({
+  rows,
+  metricLabel,
+  formatValue,
+  height = 40,
+  kind = "area",
+}: MiniSparkProps) {
+  // useId — Recharts <defs> live in a global SVG scope inside the page;
+  // two charts with the same gradient id visually clash. The earlier
+  // `${height}` heuristic only held until two tiles shared a height.
+  const reactId = useId();
+  const gradId = `salesHeroSpark-${reactId.replace(/:/g, "")}`;
+
   const hasComparison = rows.some((r) => r.comparison !== null);
-  // Unique gradient id per tile-size — defs nodes share globally inside
-  // Recharts so two charts with the same id would visually clash.
-  const gradId = `salesHeroSpark${height}`;
+  // Bars require ≥1 row; the smooth/step paths still need ≥2 to draw a
+  // segment. Single-point fallback is uncommon (date pickers always
+  // produce ≥2 daily buckets on multi-day presets), but it costs nothing
+  // to guard.
+  if (rows.length < (kind === "bars" ? 1 : 2)) return null;
 
   return (
     <div className="w-full" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
+          {kind === "area" && (
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+          )}
           <Tooltip
             // Strip Recharts' default wrapper — the glass card is the
             // only painted layer.
@@ -231,11 +258,15 @@ function MiniSpark({ rows, metricLabel, formatValue, height = 40 }: MiniSparkPro
               outline: "none",
             }}
             wrapperStyle={{ outline: "none", zIndex: 50 }}
-            cursor={{
-              stroke: "var(--text-3)",
-              strokeWidth: 1,
-              strokeDasharray: "2 2",
-            }}
+            cursor={
+              kind === "bars"
+                ? { fill: "var(--surface-2)", opacity: 0.6 }
+                : {
+                    stroke: "var(--text-3)",
+                    strokeWidth: 1,
+                    strokeDasharray: "2 2",
+                  }
+            }
             content={(props) => (
               <SparkTooltip
                 {...props}
@@ -246,7 +277,7 @@ function MiniSpark({ rows, metricLabel, formatValue, height = 40 }: MiniSparkPro
           />
           {hasComparison && (
             <Line
-              type="monotone"
+              type={kind === "step" ? "stepAfter" : "monotone"}
               dataKey="comparison"
               stroke="var(--text-3)"
               strokeWidth={1}
@@ -256,21 +287,48 @@ function MiniSpark({ rows, metricLabel, formatValue, height = 40 }: MiniSparkPro
               connectNulls
             />
           )}
-          <Area
-            type="monotone"
-            dataKey="current"
-            stroke="var(--accent)"
-            strokeWidth={1.5}
-            fill={`url(#${gradId})`}
-            dot={false}
-            isAnimationActive={false}
-            activeDot={{
-              r: 3,
-              stroke: "var(--accent)",
-              strokeWidth: 2,
-              fill: "var(--surface)",
-            }}
-          />
+          {kind === "area" && (
+            <Area
+              type="monotone"
+              dataKey="current"
+              stroke="var(--accent)"
+              strokeWidth={1.5}
+              fill={`url(#${gradId})`}
+              dot={false}
+              isAnimationActive={false}
+              activeDot={{
+                r: 3,
+                stroke: "var(--accent)",
+                strokeWidth: 2,
+                fill: "var(--surface)",
+              }}
+            />
+          )}
+          {kind === "bars" && (
+            <Bar
+              dataKey="current"
+              fill="var(--accent)"
+              radius={[2, 2, 0, 0]}
+              isAnimationActive={false}
+              maxBarSize={14}
+            />
+          )}
+          {kind === "step" && (
+            <Line
+              type="stepAfter"
+              dataKey="current"
+              stroke="var(--accent)"
+              strokeWidth={1.75}
+              dot={false}
+              isAnimationActive={false}
+              activeDot={{
+                r: 3,
+                stroke: "var(--accent)",
+                strokeWidth: 2,
+                fill: "var(--surface)",
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -288,9 +346,18 @@ interface HeroTileProps {
   sub?: string;
   rows: ChartRow[];
   formatValue: (n: number) => string;
+  kind?: SparkKind;
 }
 
-function HeroTile({ label, value, pct, sub, rows, formatValue }: HeroTileProps) {
+function HeroTile({
+  label,
+  value,
+  pct,
+  sub,
+  rows,
+  formatValue,
+  kind = "area",
+}: HeroTileProps) {
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 md:p-6 flex flex-col h-full min-h-[180px]">
       <div className="text-[13px] font-semibold text-text-2 mb-2">{label}</div>
@@ -307,6 +374,7 @@ function HeroTile({ label, value, pct, sub, rows, formatValue }: HeroTileProps) 
           metricLabel={label}
           formatValue={formatValue}
           height={70}
+          kind={kind}
         />
       </div>
     </div>
@@ -323,9 +391,17 @@ interface SubTileProps {
   pct: number | null;
   rows: ChartRow[];
   formatValue: (n: number) => string;
+  kind?: SparkKind;
 }
 
-function SubTile({ label, value, pct, rows, formatValue }: SubTileProps) {
+function SubTile({
+  label,
+  value,
+  pct,
+  rows,
+  formatValue,
+  kind = "area",
+}: SubTileProps) {
   return (
     <div className="bg-surface rounded-xl shadow-sm p-4 md:p-5 flex flex-col h-full min-h-[180px]">
       <div className="text-[12px] font-semibold text-text-2 mb-1.5">{label}</div>
@@ -339,6 +415,7 @@ function SubTile({ label, value, pct, rows, formatValue }: SubTileProps) {
           metricLabel={label}
           formatValue={formatValue}
           height={48}
+          kind={kind}
         />
       </div>
     </div>
@@ -427,7 +504,9 @@ export function SalesHeroStrip() {
       })),
       aov: cur.map<ChartRow>((d, i) => ({
         date: d.date,
-        current: aovOf(d) ?? 0,
+        // null on empty days — a stepped line for a state-change metric
+        // should bridge gaps via connectNulls, not pretend AOV was zero.
+        current: aovOf(d),
         comparison: aovOf(prev[i]),
         compDate: prev[i]?.date ?? null,
       })),
@@ -470,6 +549,9 @@ export function SalesHeroStrip() {
           sub={peakSub}
           rows={tileRows.revenue}
           formatValue={fmtEurFull}
+          // Continuous flow — revenue can land at any value, smooth area
+          // is the honest reading.
+          kind="area"
         />
       </div>
       <div className="col-span-1 lg:col-span-3">
@@ -479,6 +561,9 @@ export function SalesHeroStrip() {
           pct={kpis.orders.change}
           rows={tileRows.orders}
           formatValue={fmtInt}
+          // Discrete events — bars per day. Smooth line would imply
+          // fractional orders interpolated between buckets (§9.5).
+          kind="bars"
         />
       </div>
       <div className="col-span-1 lg:col-span-3">
@@ -488,6 +573,10 @@ export function SalesHeroStrip() {
           pct={kpis.aov.change}
           rows={tileRows.aov}
           formatValue={fmtEurFull}
+          // State-change metric — AOV holds at the prior value until the
+          // next order changes it. Stepped line is the honest reading
+          // (§9.3); smooth area would imply continuous drift.
+          kind="step"
         />
       </div>
     </div>
