@@ -132,7 +132,18 @@ function TooltipShell({
 }
 
 // ============================================================
-// Country tooltip body
+// Country tooltip body — three states:
+//
+//   1. Has sales       → flag + name + full breakdown (revenue, orders,
+//                        customers, share %).
+//   2. Mapped, no data → "Няма продажби в периода." That's it. No
+//                        editorial "потенциален пазар" hint — the
+//                        dashboard reports reality, it doesn't suggest
+//                        expansion strategies.
+//   3. Unmapped        → "Извън ISO модела. Поръчки от тук се отчитат
+//                        към съседна държава." Honest about why we
+//                        can't show numbers (no ISO code → can't
+//                        attribute).
 // ============================================================
 
 interface CountryTooltipProps {
@@ -140,8 +151,6 @@ interface CountryTooltipProps {
   englishName: string;
   data: CountrySales | undefined;
   totalRevenue: number;
-  totalOrders: number;
-  totalCustomers: number;
 }
 
 function CountryTooltipBody({
@@ -149,10 +158,9 @@ function CountryTooltipBody({
   englishName,
   data,
   totalRevenue,
-  totalOrders,
-  totalCustomers,
 }: CountryTooltipProps) {
   const displayName = countryDisplayName(alpha2, englishName);
+  const isUnmapped = alpha2 === null;
   const sharePct = data && totalRevenue > 0
     ? Math.round((data.revenue / totalRevenue) * 100)
     : null;
@@ -187,13 +195,12 @@ function CountryTooltipBody({
             </>
           )}
         </div>
-      ) : (
-        <div className="text-text-3 italic">няма продажби за периода</div>
-      )}
-      {!data && (totalOrders > 0 || totalCustomers > 0) && (
-        <div className="mt-1.5 pt-1.5 border-t border-border/70 text-[10px] text-text-3">
-          потенциален пазар
+      ) : isUnmapped ? (
+        <div className="text-text-3 text-[11px] leading-snug max-w-[220px]">
+          Извън ISO модела. Поръчки от тук се отчитат към съседна държава.
         </div>
+      ) : (
+        <div className="text-text-3 italic">Няма продажби в периода</div>
       )}
     </>
   );
@@ -344,17 +351,14 @@ export function WorldMap({
     return map;
   }, [data]);
 
-  // Aggregate totals for tooltip share-% and overall narrative.
+  // Total revenue across the active dataset — sole purpose is the
+  // share-% line in the country tooltip. Orders / customers totals
+  // were dropped along with the "потенциален пазар" footer (editorial
+  // commentary, not data).
   const totals = useMemo(() => {
     let revenue = 0;
-    let orders = 0;
-    let customers = 0;
-    for (const c of data) {
-      revenue += c.revenue;
-      orders += c.orders;
-      customers += c.customers;
-    }
-    return { revenue, orders, customers };
+    for (const c of data) revenue += c.revenue;
+    return { revenue };
   }, [data]);
 
   // Log-percentile color scale. Cvetita's distribution is "94% BG, 4% GR,
@@ -374,7 +378,11 @@ export function WorldMap({
     const range = max - min || 1;
 
     return (alpha2: string | null): string => {
-      if (!alpha2) return "var(--surface-2)";
+      // alpha2 === null → territory has no ISO code in our model
+      // (Kosovo, N. Cyprus, disputed enclaves). These get a diagonal
+      // hatch via the <pattern> defined inline below, so they read
+      // visually as "outside the model" rather than as "zero sales".
+      if (!alpha2) return "url(#worldMapUnmapped)";
       const sale = byAlpha2.get(alpha2);
       if (!sale || sale[metric] <= 0) return "var(--surface-2)";
       const v = Math.log10(sale[metric] + 1);
@@ -488,6 +496,29 @@ export function WorldMap({
         projectionConfig={{ scale: 140 }}
         style={{ width: "100%", height: "100%" }}
       >
+        {/* Hatch pattern for territories without an ISO code (Kosovo,
+            N. Cyprus, etc.) — reads visually as "outside the model"
+            rather than as zero-sales grey. Lines are deliberately
+            subtle (border-strong at 1px) so it doesn't shout. */}
+        <defs>
+          <pattern
+            id="worldMapUnmapped"
+            patternUnits="userSpaceOnUse"
+            width="6"
+            height="6"
+            patternTransform="rotate(45)"
+          >
+            <rect width="6" height="6" fill="var(--surface-2)" />
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="6"
+              stroke="var(--border-strong)"
+              strokeWidth="1"
+            />
+          </pattern>
+        </defs>
         <ZoomableGroup
           center={zoom.coordinates}
           zoom={zoom.zoom}
@@ -499,7 +530,26 @@ export function WorldMap({
             {({ geographies }: { geographies: GeoFeature[] }) =>
               geographies.map((geo) => {
                 const alpha2 = numericToAlpha2(geo.id);
-                const isSelected = alpha2 === selectedCountry;
+                const isSelected = alpha2 !== null && alpha2 === selectedCountry;
+                const isUnmapped = alpha2 === null;
+                const hasSales = alpha2 !== null && (byAlpha2.get(alpha2)?.[metric] ?? 0) > 0;
+
+                // Three-state stroke palette:
+                //   * sales country, selected → accent (strong)
+                //   * sales country, hover → accent
+                //   * mapped, no sales → border-strong (neutral, no
+                //     "this is a target market" connotation)
+                //   * unmapped → border (faintest) — hover stays muted
+                //     so disputed territories don't appear actionable
+                const defaultStroke = isSelected
+                  ? "var(--accent)"
+                  : isUnmapped
+                    ? "var(--border)"
+                    : "var(--border-strong)";
+                const hoverStroke = isUnmapped
+                  ? "var(--border-strong)"
+                  : "var(--accent)";
+                const fill = colorFor(alpha2);
                 return (
                   <Geography
                     key={geo.rsmKey}
@@ -508,26 +558,34 @@ export function WorldMap({
                       handleCountryMouseMove(e, geo)
                     }
                     onMouseLeave={handleMouseLeave}
-                    onClick={() => handleCountryClick(geo)}
+                    // Click only flips selection for mapped countries —
+                    // selecting an unmapped territory has nothing in
+                    // byAlpha2 to highlight in the side list, so the
+                    // click would be a no-op surfaced as a UI change.
+                    onClick={() =>
+                      isUnmapped ? undefined : handleCountryClick(geo)
+                    }
                     style={{
                       default: {
-                        fill: colorFor(alpha2),
-                        stroke: isSelected
-                          ? "var(--accent)"
-                          : "var(--border-strong)",
+                        fill,
+                        stroke: defaultStroke,
                         strokeWidth: isSelected ? 1.5 : 0.5,
                         outline: "none",
-                        cursor: alpha2 ? "pointer" : "default",
+                        cursor: isUnmapped
+                          ? "help"
+                          : hasSales
+                            ? "pointer"
+                            : "default",
                         transition: "fill 150ms, stroke 150ms",
                       },
                       hover: {
-                        fill: colorFor(alpha2),
-                        stroke: "var(--accent)",
-                        strokeWidth: 1.2,
+                        fill,
+                        stroke: hoverStroke,
+                        strokeWidth: isUnmapped ? 0.8 : 1.2,
                         outline: "none",
                       },
                       pressed: {
-                        fill: colorFor(alpha2),
+                        fill,
                         outline: "none",
                       },
                     }}
@@ -610,8 +668,6 @@ export function WorldMap({
             englishName={hover.englishName}
             data={hover.alpha2 ? byAlpha2.get(hover.alpha2) : undefined}
             totalRevenue={totals.revenue}
-            totalOrders={totals.orders}
-            totalCustomers={totals.customers}
           />
         </TooltipShell>
       )}
