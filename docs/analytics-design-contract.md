@@ -93,6 +93,73 @@ Tooltip-ите винаги ползват `--surface` фон + `--border` гр�
 
 Сравнителното състояние се пази в URL през `useDateRange` хук (вече прави това за preset).
 
+### 9. Visualization vocabulary — въпрос → чарт тип
+
+Не избирай чарт от настроение. Всеки въпрос на оператора има 1-2 правилни визуализации; всичко друго е стилистика, която замъглява смисъла.
+
+Това е каталогът. Ако нямаш въпрос, който се mapва тук — спри и преговори, преди да правиш нов чарт.
+
+| Въпрос | Чарт тип | Защо | Recharts примитив |
+|---|---|---|---|
+| Как е оформен този **непрекъснат** метрик във времето? (приходи, sessions, CAC) | **Smooth area** + dashed comparison | Покупки/visits се случват постоянно — интерполация е честна | `<Area type="monotone">` |
+| Колко **дискретни събития** имаше в всеки bucket? (поръчки, signups, отворени имейли) | **Vertical bars** | Bucket = брой; smooth линия имплицира „между дните имаше 47.3 поръчки" | `<Bar>` |
+| Какво е **състоянието** на метрик, който се променя на дискретни моменти? (MRR, цена, AOV) | **Stepped line** (`stepAfter`) | Стойността държи между събития; smooth внушава поток, който няма | `<Line type="stepAfter">` |
+| Две метрики на **обща ос** (spend × ROAS, разход × CPA) | **Combo: bars + line** | Едната обяснява другата; различни Y-оси за различни единици | `<ComposedChart>` с `<Bar>` + `<Line yAxisId="right">` |
+| Какъв е **съставът** на 100%? (channel mix, статус) | **Single stacked bar** | Композицията е въпросът; pie e лош защото е без контекст | див с flex деца с % width |
+| **Top X** в категория? (продукти, кампании, страници) | **Horizontal bars + share %** | Видимият ред = ранкинг; share % дава контекст | див с flex bars (виж TopProductsAggregate) |
+| **Кога** през деня/седмицата се случва X? | **Hour × weekday heatmap** | Двумерна плътност; линия скрива wd-pattern, bars — h-pattern | `HeatmapGrid` |
+| **Конверсия** от стъпка към стъпка? | **Funnel** | Декларира drop-off като форма; не като %-разлика | `FunnelChart` |
+| **Разпределение** на стойности? (AOV buckets, time-to-purchase) | **Histogram** | Bell shape, long tail, bimodality — невидими в средната стойност | `<Bar>` с pre-bucketed данни |
+| **Pacing към цел** / месечен таргет? | **Progress arc** или target reference line | Цел = смислена нулева точка; bar е fine, но arc чете „докъде" | `DonutChart` с 2 сегмента или `<ReferenceLine>` |
+| **Outliers / „извън нормата"** | **Range band** (μ±σ envelope) + accent line | Контекст за „това спадане необичайно ли е" | `<Area>` за band + `<Line>` за current |
+| **Композиция във времето** (channel mix по дни) | **Stacked area** или **stacked bars** | Само ако total-ът също е метрик; иначе normalized=100% | `<Bar stackId="a">` или `<Area stackId="a">` |
+| **Един метрик за много обекта** (CPA per campaign, AOV per market) | **Dot plot** (хоризонтално) | Когато нулата НЕ е смислена baseline; bars лъжат за proportion | див с flex точки или `<Scatter>` |
+
+#### 9.1 Smooth area (`type="monotone"`) — кога
+
+- ✅ Приходи / GMV / sessions / CAC — метрики, които технически могат да са на всяка стойност между бакетите
+- ✅ Когато bucket-ът е час или ден и want-ваш да видиш ритъма
+- ❌ Никога за counts (поръчки, signups). Те не „flow-ват" — те се случват и спират.
+- ❌ Никога за дискретно state (MRR, цена) — interpolation внушава continuous плъзгане.
+
+#### 9.2 Vertical bars — кога
+
+- ✅ Брой събития в bucket (поръчки/ден, имейли/седмица)
+- ✅ Когато операторът ще иска да види „кой ден беше peak" чрез височина
+- ✅ Mobile — всеки bar е tap target
+- ❌ Не за continuous метрики ако имаш 30+ bucket-а — bar-овете стават thin и нечетими; смятай линия
+
+#### 9.3 Stepped line — кога
+
+- ✅ Дискретно state-change метрики: MRR, активни абонати, AOV, цена
+- ✅ Cumulative прогрес (revenue от началото на месеца)
+- ❌ Не за поток (revenue per day) — стъпки внушават evenly-spaced events, които не съществуват
+
+#### 9.4 Combo (bars + line) — кога
+
+- ✅ Когато две метрики са **механично свързани** (spend bars + ROAS line: едната директно обяснява другата)
+- ✅ Различни единици на различни Y-оси (EUR vs ratio, count vs %)
+- ❌ Не свързвай две независими метрики на dual-axis. Visual correlation ≠ causal correlation.
+- ❌ На mobile — преминавай към tab toggle (един метрик в момента), не cram-вай и двата
+
+#### 9.5 Anti-patterns (никога)
+
+- ❌ **Smooth area за counts** — поръчки, signups, имейли. Interpolation на нищо.
+- ❌ **Stepped line за continuous поток** — приходи, sessions. Стъпки внушават еventness която няма.
+- ❌ **Bars когато нулата не е смислена baseline** — за AOV, ROAS, CTR, bounce rate. Dot plot е по-честен.
+- ❌ **Dual Y-axis за две независими метрики** — revenue + sessions без causal линк. Изглежда корелирано, не е.
+- ❌ **Категорийни цветове в donut/stacked** — само accent ladder (виж §1). Никога 6 цвята „за разлика".
+- ❌ **Gridlines / axes на sparkline** — sparkline = форма, не таблица. (Виж §7.)
+- ❌ **Pie chart с 5+ резена** — нечетимо. Преминавай към horizontal bars или дай реално dashboard.
+- ❌ **3D / shadow / gradient декорации** — Edward Tufte plays sad violin.
+
+#### 9.6 Mobile rules
+
+- **Bars** > линии на 375px (всеки bar = tap target за tooltip)
+- **Heatmap** колапсва до weekday summary под `md:`, не cram 7×24 = 168 клетки
+- **Combo charts** — на mobile показвай само едната метрика с tab toggle
+- **Stepped line** работи изненадващо добре на mobile — „тактилен" вид
+
 ---
 
 ## Typography scale (cheat sheet)
@@ -213,8 +280,10 @@ Tooltip-ите винаги ползват `--surface` фон + `--border` гр�
 - [ ] Delta под стойността, същият формат навсякъде.
 - [ ] Една карта = един въпрос.
 - [ ] Чартът без излишни оси/grids.
+- [ ] **Chart типът е честен** — sm-area за continuous, bars за counts, steps за state, combo за mech-linked (§9). Никакво „избрах smooth защото е красиво".
+- [ ] **Dual Y-axis само за causally linked метрики** (§9.4–9.5).
 - [ ] `tabular-nums` на всички числа в таблици.
-- [ ] Mobile тест: 375px viewport, grid колапсва правилно.
+- [ ] Mobile тест: 375px viewport, grid колапсва правилно. Combo charts collapsing към tab toggle (§9.6).
 - [ ] Skeleton, error, empty — и трите състояния са дизайнирани.
 
 ---
