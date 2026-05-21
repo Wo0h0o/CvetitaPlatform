@@ -101,6 +101,13 @@ function formatBucketHeader(dateStr: string): string {
   return `${cap}, ${formatBgDate(dateStr)}`;
 }
 
+// Hourly mode header — ISO timestamps from the trend API look like
+// "2026-05-21T14:00:00" (no timezone suffix). Slice the HH:MM rather
+// than parsing via Date(), which would shift to the browser local tz.
+function formatHourHeader(iso: string): string {
+  return `${iso.slice(11, 16)} ч.`;
+}
+
 // ============================================================
 // SparkTooltip — glass hover card on the spark.
 //
@@ -119,6 +126,7 @@ interface SparkTooltipProps {
   payload?: ReadonlyArray<{ payload?: ChartRow }>;
   metricLabel: string;
   formatValue: (n: number) => string;
+  hourly?: boolean;
 }
 
 function SparkTooltip({
@@ -126,6 +134,7 @@ function SparkTooltip({
   payload,
   metricLabel,
   formatValue,
+  hourly,
 }: SparkTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0]?.payload;
@@ -162,7 +171,7 @@ function SparkTooltip({
       "
     >
       <div className="text-text font-medium text-[11.5px]">
-        {formatBucketHeader(row.date)}
+        {hourly ? formatHourHeader(row.date) : formatBucketHeader(row.date)}
       </div>
       <div className="h-px bg-border/70 my-1.5" />
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
@@ -212,6 +221,7 @@ interface MiniSparkProps {
   formatValue: (n: number) => string;
   height?: number;
   kind?: SparkKind;
+  hourly?: boolean;
 }
 
 function MiniSpark({
@@ -220,6 +230,7 @@ function MiniSpark({
   formatValue,
   height = 40,
   kind = "area",
+  hourly,
 }: MiniSparkProps) {
   // useId — Recharts <defs> live in a global SVG scope inside the page;
   // two charts with the same gradient id visually clash. The earlier
@@ -272,6 +283,7 @@ function MiniSpark({
                 {...props}
                 metricLabel={metricLabel}
                 formatValue={formatValue}
+                hourly={hourly}
               />
             )}
           />
@@ -347,6 +359,7 @@ interface HeroTileProps {
   rows: ChartRow[];
   formatValue: (n: number) => string;
   kind?: SparkKind;
+  hourly?: boolean;
 }
 
 function HeroTile({
@@ -357,6 +370,7 @@ function HeroTile({
   rows,
   formatValue,
   kind = "area",
+  hourly,
 }: HeroTileProps) {
   return (
     <div className="bg-surface rounded-xl shadow-sm p-5 md:p-6 flex flex-col h-full min-h-[180px]">
@@ -375,6 +389,7 @@ function HeroTile({
           formatValue={formatValue}
           height={70}
           kind={kind}
+          hourly={hourly}
         />
       </div>
     </div>
@@ -392,6 +407,7 @@ interface SubTileProps {
   rows: ChartRow[];
   formatValue: (n: number) => string;
   kind?: SparkKind;
+  hourly?: boolean;
 }
 
 function SubTile({
@@ -401,6 +417,7 @@ function SubTile({
   rows,
   formatValue,
   kind = "area",
+  hourly,
 }: SubTileProps) {
   return (
     <div className="bg-surface rounded-xl shadow-sm p-4 md:p-5 flex flex-col h-full min-h-[180px]">
@@ -416,6 +433,7 @@ function SubTile({
           formatValue={formatValue}
           height={48}
           kind={kind}
+          hourly={hourly}
         />
       </div>
     </div>
@@ -455,8 +473,18 @@ function HeroStripSkeleton() {
 // ============================================================
 
 export function SalesHeroStrip() {
-  const { queryString, compFrom, compTo } = useDateRange();
+  const { queryString, compFrom, compTo, from, to } = useDateRange();
   const { storeParam } = useStoreSelection();
+
+  // Single-day windows (Днес / Вчера / custom from===to) collapse the
+  // daily trend to one data point, which leaves the sparklines empty —
+  // area has no segment, the step has no chord, even the bars render
+  // as one isolated stub mid-axis. Switch to hourly granularity in
+  // that case, exactly like SalesTrend does. SWR keys match the
+  // SalesTrend / SalesRhythmPanel keys so we don't pay for a second
+  // fetch on the same page.
+  const hourly = from === to;
+  const granularitySuffix = hourly ? "&granularity=hour" : "";
 
   const { data: kpis, isLoading: kpisLoading, error: kpisError } = useSWR<KpisResponse>(
     `/api/sales/kpis?${queryString}&${storeParam}`,
@@ -465,13 +493,13 @@ export function SalesHeroStrip() {
   );
 
   const { data: trend, isLoading: trendLoading } = useSWR<TrendResponse>(
-    `/api/sales/trend?${queryString}&${storeParam}`,
+    `/api/sales/trend?${queryString}&${storeParam}${granularitySuffix}`,
     fetcher,
     { refreshInterval: 300_000, revalidateOnFocus: false }
   );
 
   // Same SWR key as SalesTrend — cache shared, no extra network call.
-  const compQs = `preset=custom&from=${compFrom}&to=${compTo}`;
+  const compQs = `preset=custom&from=${compFrom}&to=${compTo}${granularitySuffix}`;
   const { data: comp } = useSWR<TrendResponse>(
     compFrom && compTo
       ? `/api/sales/trend?${compQs}&${storeParam}`
@@ -535,8 +563,14 @@ export function SalesHeroStrip() {
     );
   }
 
+  // Headline callout under the Revenue tile. In hourly mode we use the
+  // peak HOUR — "Най-силен ден" on a single-day window would self-refer
+  // (the day is the day) and read as filler. In multi-day mode we keep
+  // the original peak-day label.
   const peakSub = peakDay
-    ? `Най-силен ден: ${formatBgDate(peakDay.date)} • ${fmtEur(peakDay.revenue)}`
+    ? hourly
+      ? `Пик час: ${formatHourHeader(peakDay.date)} • ${fmtEur(peakDay.revenue)}`
+      : `Най-силен ден: ${formatBgDate(peakDay.date)} • ${fmtEur(peakDay.revenue)}`
     : undefined;
 
   return (
@@ -552,6 +586,7 @@ export function SalesHeroStrip() {
           // Continuous flow — revenue can land at any value, smooth area
           // is the honest reading.
           kind="area"
+          hourly={hourly}
         />
       </div>
       <div className="col-span-1 lg:col-span-3">
@@ -564,6 +599,7 @@ export function SalesHeroStrip() {
           // Discrete events — bars per day. Smooth line would imply
           // fractional orders interpolated between buckets (§9.5).
           kind="bars"
+          hourly={hourly}
         />
       </div>
       <div className="col-span-1 lg:col-span-3">
@@ -577,6 +613,7 @@ export function SalesHeroStrip() {
           // next order changes it. Stepped line is the honest reading
           // (§9.3); smooth area would imply continuous drift.
           kind="step"
+          hourly={hourly}
         />
       </div>
     </div>
