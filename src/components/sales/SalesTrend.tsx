@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Area,
   Line,
@@ -12,10 +12,21 @@ import {
   ResponsiveContainer,
   ComposedChart,
   ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { useChartColors } from "@/components/charts/ChartContainer";
+import {
+  MobileScrubber,
+  MobileScrubberRow,
+} from "@/components/charts/MobileScrubber";
+import {
+  GlassTooltip,
+  buildRechartsTooltip,
+  deltaAccent,
+  type GlassTooltipRow,
+} from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
 import { formatBgDate } from "@/lib/dates";
@@ -73,77 +84,31 @@ function fmtEurFull(n: number): string {
 }
 
 // ============================================================
-// Tooltip — glass surface, same vocabulary as KpiStrip's TempoTooltip
+// Tooltip data — one builder, two callsites. Recharts' hover tooltip
+// (desktop) wraps this via buildRechartsTooltip(); the mobile scrubber
+// flow renders <GlassTooltip {...buildTrendPopup(row, hourly)} /> as
+// an inline card above the slider.
 // ============================================================
 
-function TrendTooltip({
-  active,
-  payload,
-  hourly,
-}: {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload?: ChartRow }>;
-  hourly?: boolean;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const row = payload[0]?.payload;
-  if (!row) return null;
-
-  const cur = row.revenue;
-  const cmp = row.compRevenue;
-
-  let delta: { text: string; tone: "good" | "bad" | "flat" } | null = null;
-  if (cmp !== null && cmp > 0) {
-    const pct = Math.round(((cur - cmp) / cmp) * 100);
-    const isFlat = Math.abs(pct) < 1;
-    const arrow = isFlat ? "—" : pct > 0 ? "▲" : "▼";
-    delta = {
-      text: `${arrow} ${Math.abs(pct)}%`,
-      tone: isFlat ? "flat" : pct > 0 ? "good" : "bad",
-    };
+function buildTrendPopup(
+  row: ChartRow,
+  hourly: boolean
+): { header: string; rows: GlassTooltipRow[]; minWidth: number } {
+  const baseRows: GlassTooltipRow[] = [
+    { label: "Приходи", value: fmtEurFull(row.revenue) },
+  ];
+  if (row.compRevenue !== null) {
+    baseRows.push({
+      label: "Пр. период",
+      value: fmtEur(row.compRevenue),
+      accent: deltaAccent(row.revenue, row.compRevenue),
+    });
   }
-
-  const toneColor =
-    delta?.tone === "good"
-      ? "text-accent"
-      : delta?.tone === "bad"
-        ? "text-red"
-        : "text-text-3";
-
-  return (
-    <div
-      className="
-        bg-surface/85 backdrop-blur-xl
-        border border-border/60 rounded-xl shadow-xl
-        px-3 py-2.5 min-w-[200px]
-        text-[11px] leading-tight
-      "
-    >
-      <div className="text-text font-medium text-[11.5px]">
-        {hourly ? `${formatHourLabel(row.date)} ч.` : formatBgDate(row.date)}
-      </div>
-      <div className="h-px bg-border/70 my-1.5" />
-      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
-        <span className="text-text-3">Приходи</span>
-        <span className="text-text font-semibold tabular-nums text-right">
-          {fmtEurFull(cur)}
-        </span>
-        {cmp !== null && (
-          <>
-            <span className="text-text-3">Пр. период</span>
-            <span className="text-text-2 tabular-nums text-right">
-              <span>{fmtEur(cmp)}</span>
-              {delta && (
-                <span className={`${toneColor} ml-2 tabular-nums`}>
-                  {delta.text}
-                </span>
-              )}
-            </span>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  return {
+    header: hourly ? `${formatHourLabel(row.date)} ч.` : formatBgDate(row.date),
+    rows: baseRows,
+    minWidth: 200,
+  };
 }
 
 // ============================================================
@@ -154,6 +119,13 @@ export function SalesTrend() {
   const { queryString, compFrom, compTo, from, to } = useDateRange();
   const { storeParam } = useStoreSelection();
   const c = useChartColors();
+
+  // Mobile scrubber state — non-null while the operator is dragging the
+  // slider below the chart. Drives a ReferenceLine + ReferenceDot that
+  // mark the active point inside the chart, and renders the same glass
+  // tooltip card the desktop hover flow uses, just inline above the
+  // slider. Cleared on touch / pointer release (see MobileScrubber).
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   // Switch to hourly when the user picks a single day (Днес / Вчера /
   // custom from===to). Otherwise the trend collapses to one data point
@@ -316,8 +288,8 @@ export function SalesTrend() {
                   strokeWidth: 1,
                   strokeDasharray: "2 2",
                 }}
-                content={(props) => (
-                  <TrendTooltip {...props} hourly={hourly} />
+                content={buildRechartsTooltip<ChartRow>((row) =>
+                  buildTrendPopup(row, hourly)
                 )}
               />
               {/* Comparison line first so the accent area paints on top */}
@@ -356,9 +328,47 @@ export function SalesTrend() {
                   strokeWidth={2}
                 />
               )}
+              {/* Mobile scrubber cursor — renders only while the
+                  operator is dragging the slider below the chart. A
+                  dashed vertical line + accent dot give the chart a
+                  visible "you are here" marker that mirrors the
+                  desktop hover cursor. */}
+              {activeIdx !== null && rows[activeIdx] && (
+                <>
+                  <ReferenceLine
+                    x={rows[activeIdx].date}
+                    stroke={c.text3}
+                    strokeWidth={1}
+                    strokeDasharray="2 2"
+                  />
+                  <ReferenceDot
+                    x={rows[activeIdx].date}
+                    y={rows[activeIdx].revenue}
+                    r={4}
+                    fill={c.accent}
+                    stroke="var(--surface)"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        <MobileScrubberRow
+          visible={activeIdx !== null}
+          popup={
+            activeIdx !== null && rows[activeIdx] ? (
+              <GlassTooltip {...buildTrendPopup(rows[activeIdx], hourly)} />
+            ) : null
+          }
+        >
+          <MobileScrubber
+            count={rows.length}
+            value={activeIdx}
+            onChange={setActiveIdx}
+            onRelease={() => setActiveIdx(null)}
+          />
+        </MobileScrubberRow>
       </CardBody>
     </Card>
   );

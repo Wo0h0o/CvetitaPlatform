@@ -7,6 +7,8 @@ import {
   Bar,
   Line,
   ComposedChart,
+  ReferenceDot,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,6 +18,16 @@ import {
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { useChartColors } from "@/components/charts/ChartContainer";
+import {
+  MobileScrubber,
+  MobileScrubberRow,
+} from "@/components/charts/MobileScrubber";
+import {
+  GlassTooltip,
+  buildRechartsTooltip,
+  deltaAccent,
+  type GlassTooltipRow,
+} from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
 import type { HourWeekdayBucket } from "@/lib/sales-queries";
@@ -273,73 +285,32 @@ function WeekdayRow({ series, metric, scale, isPeak }: WeekdayRowProps) {
 }
 
 // ============================================================
-// HourStripTooltip — glass card, same vocabulary as the rest of /sales.
+// Hour-strip tooltip data — shared between Recharts hover (desktop)
+// and the mobile scrubber popup.
 // ============================================================
 
-interface HourTooltipProps {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload?: HourStripRow }>;
-  metric: Metric;
-}
-
-function HourStripTooltip({ active, payload, metric }: HourTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null;
-  const row = payload[0]?.payload;
-  if (!row) return null;
+function buildHourStripPopup(
+  row: HourStripRow,
+  metric: Metric
+): { header: string; rows: GlassTooltipRow[] } {
   const fmt = metric === "revenue" ? fmtEur : fmtInt;
-  const cmp = row.comparison;
-  let delta: { text: string; tone: "good" | "bad" | "flat" } | null = null;
-  if (cmp !== null && cmp > 0) {
-    const pct = Math.round(((row.current - cmp) / cmp) * 100);
-    const isFlat = Math.abs(pct) < 1;
-    const arrow = isFlat ? "—" : pct > 0 ? "▲" : "▼";
-    delta = {
-      text: `${arrow} ${Math.abs(pct)}%`,
-      tone: isFlat ? "flat" : pct > 0 ? "good" : "bad",
-    };
+  const baseRows: GlassTooltipRow[] = [
+    {
+      label: metric === "revenue" ? "Приходи" : "Поръчки",
+      value: fmt(row.current),
+    },
+  ];
+  if (row.comparison !== null) {
+    baseRows.push({
+      label: "Пр. период",
+      value: fmt(row.comparison),
+      accent: deltaAccent(row.current, row.comparison),
+    });
   }
-  const toneColor =
-    delta?.tone === "good"
-      ? "text-accent"
-      : delta?.tone === "bad"
-        ? "text-red"
-        : "text-text-3";
-  return (
-    <div
-      className="
-        bg-surface/85 backdrop-blur-xl
-        border border-border/60 rounded-xl shadow-xl
-        px-3 py-2.5 min-w-[180px]
-        text-[11px] leading-tight
-      "
-    >
-      <div className="text-text font-medium text-[11.5px]">
-        {String(row.hour).padStart(2, "0")}:00 ч.
-      </div>
-      <div className="h-px bg-border/70 my-1.5" />
-      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
-        <span className="text-text-3">
-          {metric === "revenue" ? "Приходи" : "Поръчки"}
-        </span>
-        <span className="text-text font-semibold tabular-nums text-right">
-          {fmt(row.current)}
-        </span>
-        {cmp !== null && (
-          <>
-            <span className="text-text-3">Пр. период</span>
-            <span className="text-text-2 tabular-nums text-right">
-              <span>{fmt(cmp)}</span>
-              {delta && (
-                <span className={`${toneColor} ml-2 tabular-nums`}>
-                  {delta.text}
-                </span>
-              )}
-            </span>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  return {
+    header: `${String(row.hour).padStart(2, "0")}:00 ч.`,
+    rows: baseRows,
+  };
 }
 
 // ============================================================
@@ -351,6 +322,11 @@ export function SalesRhythm() {
   const { storeParam } = useStoreSelection();
   const c = useChartColors();
   const [metric, setMetric] = useState<Metric>("revenue");
+  // Mobile scrubber state for the bottom 24-hour aggregate strip.
+  // Weekday small multiples don't get their own scrubbers (they're
+  // each <40px tall and chronically too small for a slider) — touch
+  // tooltips on them are muted globally by the recharts media query.
+  const [hourActiveIdx, setHourActiveIdx] = useState<number | null>(null);
 
   const { data: cur, isLoading } = useSWR<HourWeekdayResponse>(
     `/api/sales/hour-weekday?${queryString}&${storeParam}`,
@@ -563,9 +539,10 @@ export function SalesRhythm() {
                   }}
                   wrapperStyle={{ outline: "none", zIndex: 50 }}
                   cursor={{ fill: "var(--surface-2)", opacity: 0.5 }}
-                  content={(props) => (
-                    <HourStripTooltip {...props} metric={metric} />
-                  )}
+                  content={buildRechartsTooltip<HourStripRow>((row) => ({
+                    ...buildHourStripPopup(row, metric),
+                    minWidth: 180,
+                  }))}
                 />
                 <Bar
                   dataKey="current"
@@ -584,9 +561,51 @@ export function SalesRhythm() {
                   isAnimationActive={false}
                   connectNulls
                 />
+                {/* Mobile scrubber cursor — see SalesTrend for the
+                    rationale. */}
+                {hourActiveIdx !== null && hourStrip[hourActiveIdx] && (
+                  <>
+                    <ReferenceLine
+                      x={hourStrip[hourActiveIdx].hour}
+                      stroke={c.text3}
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                    />
+                    <ReferenceDot
+                      x={hourStrip[hourActiveIdx].hour}
+                      y={hourStrip[hourActiveIdx].current}
+                      r={4}
+                      fill={c.accent}
+                      stroke="var(--surface)"
+                      strokeWidth={2}
+                    />
+                  </>
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          {/* Mobile scrubber for the hour strip. The weekday small
+              multiples above do not get their own scrubbers — at <40px
+              tall each, a slider is overkill and the per-day total +
+              delta already lives in the right rail of each row. */}
+          <MobileScrubberRow
+            visible={hourActiveIdx !== null}
+            popup={
+              hourActiveIdx !== null && hourStrip[hourActiveIdx] ? (
+                <GlassTooltip
+                  {...buildHourStripPopup(hourStrip[hourActiveIdx], metric)}
+                />
+              ) : null
+            }
+          >
+            <MobileScrubber
+              count={hourStrip.length}
+              value={hourActiveIdx}
+              onChange={setHourActiveIdx}
+              onRelease={() => setHourActiveIdx(null)}
+              ariaLabel="Преглед на часовете"
+            />
+          </MobileScrubberRow>
         </div>
       </CardBody>
     </Card>

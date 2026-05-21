@@ -123,3 +123,97 @@ body {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ============================================================
+   Recharts — mobile interaction discipline.
+
+   On touch devices a direct tap on the chart SVG:
+   (a) triggers a Recharts tooltip that covers the data the operator
+       is trying to read, and
+   (b) leaves the SVG with the global :focus-visible accent outline
+       painted around the whole chart area (the white rectangle the
+       user reported).
+
+   We replace finger-on-chart input with a per-card scrubber slider
+   below the chart, so on mobile we mute the chart's own touch
+   interactivity entirely: no tooltip wrapper, no cursor, no focus
+   ring. The chart becomes a read-only visual; the slider drives all
+   data inspection.
+   ============================================================ */
+
+@media (hover: none) and (pointer: coarse) {
+  .recharts-wrapper { pointer-events: none; }
+  .recharts-tooltip-wrapper { display: none !important; }
+  .recharts-wrapper:focus,
+  .recharts-surface:focus,
+  .recharts-wrapper :focus,
+  .recharts-surface :focus,
+  .recharts-wrapper :focus-visible,
+  .recharts-surface :focus-visible {
+    outline: none !important;
+  }
+}
+
+/* ============================================================
+   Chart scrubber — the mobile-only slider that drives tooltip
+   activation. Range input restyled with an accent thumb on a
+   surface-2 track. Touch-action pan-x lets the page scroll
+   vertically while the thumb tracks horizontally.
+   ============================================================ */
+
+.chart-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  outline: none;
+  margin: 0;
+  touch-action: pan-x;
+  cursor: pointer;
+}
+
+.chart-scrubber::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  border: none;
+}
+.chart-scrubber::-moz-range-track {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  border: none;
+}
+
+.chart-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--surface);
+  margin-top: -8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+}
+.chart-scrubber::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+}
+.chart-scrubber:active::-webkit-slider-thumb { cursor: grabbing; }
+.chart-scrubber:active::-moz-range-thumb { cursor: grabbing; }
+
+.chart-scrubber:focus { outline: none; }
+.chart-scrubber:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--accent-soft-2);
+}
+.chart-scrubber:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px var(--accent-soft-2);
+}

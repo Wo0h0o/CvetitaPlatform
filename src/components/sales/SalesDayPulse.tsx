@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Bar,
   Line,
@@ -12,10 +12,21 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
 import { useChartColors } from "@/components/charts/ChartContainer";
+import {
+  MobileScrubber,
+  MobileScrubberRow,
+} from "@/components/charts/MobileScrubber";
+import {
+  GlassTooltip,
+  buildRechartsTooltip,
+  deltaAccent,
+  type GlassTooltipRow,
+} from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
 
@@ -77,79 +88,28 @@ function hourLabel(iso: string): string {
 }
 
 // ============================================================
-// PulseTooltip — glass card. Same vocabulary as SalesTrend / hero
-// strip: bg-surface/85 backdrop-blur, hairline divider, label→value
-// grid with tabular-nums. Shows hour, orders, revenue, prior-day
-// revenue + delta.
+// Tooltip data — one builder, two callsites. Recharts' hover tooltip
+// (desktop) wraps this via buildRechartsTooltip(); the mobile scrubber
+// flow renders <GlassTooltip {...buildPulsePopup(row)} /> as an inline
+// card above the slider.
 // ============================================================
 
-interface PulseTooltipProps {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload?: PulseRow }>;
-}
-
-function PulseTooltip({ active, payload }: PulseTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null;
-  const row = payload[0]?.payload;
-  if (!row) return null;
-
-  const cmp = row.compRevenue;
-  let delta: { text: string; tone: "good" | "bad" | "flat" } | null = null;
-  if (cmp !== null && cmp > 0) {
-    const pct = Math.round(((row.revenue - cmp) / cmp) * 100);
-    const isFlat = Math.abs(pct) < 1;
-    const arrow = isFlat ? "—" : pct > 0 ? "▲" : "▼";
-    delta = {
-      text: `${arrow} ${Math.abs(pct)}%`,
-      tone: isFlat ? "flat" : pct > 0 ? "good" : "bad",
-    };
+function buildPulsePopup(row: PulseRow): {
+  header: string;
+  rows: GlassTooltipRow[];
+} {
+  const baseRows: GlassTooltipRow[] = [
+    { label: "Поръчки", value: fmtInt(row.orders) },
+    { label: "Приходи", value: fmtEur(row.revenue, 2) },
+  ];
+  if (row.compRevenue !== null) {
+    baseRows.push({
+      label: "Пр. ден",
+      value: fmtEur(row.compRevenue),
+      accent: deltaAccent(row.revenue, row.compRevenue),
+    });
   }
-
-  const toneColor =
-    delta?.tone === "good"
-      ? "text-accent"
-      : delta?.tone === "bad"
-        ? "text-red"
-        : "text-text-3";
-
-  return (
-    <div
-      className="
-        bg-surface/85 backdrop-blur-xl
-        border border-border/60 rounded-xl shadow-xl
-        px-3 py-2.5 min-w-[200px]
-        text-[11px] leading-tight
-      "
-    >
-      <div className="text-text font-medium text-[11.5px]">
-        {hourLabel(row.iso)} ч.
-      </div>
-      <div className="h-px bg-border/70 my-1.5" />
-      <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-baseline">
-        <span className="text-text-3">Поръчки</span>
-        <span className="text-text font-semibold tabular-nums text-right">
-          {fmtInt(row.orders)}
-        </span>
-        <span className="text-text-3">Приходи</span>
-        <span className="text-text font-semibold tabular-nums text-right">
-          {fmtEur(row.revenue, 2)}
-        </span>
-        {cmp !== null && (
-          <>
-            <span className="text-text-3">Пр. ден</span>
-            <span className="text-text-2 tabular-nums text-right">
-              <span>{fmtEur(cmp)}</span>
-              {delta && (
-                <span className={`${toneColor} ml-2 tabular-nums`}>
-                  {delta.text}
-                </span>
-              )}
-            </span>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  return { header: `${hourLabel(row.iso)} ч.`, rows: baseRows };
 }
 
 // ============================================================
@@ -163,6 +123,9 @@ export function SalesDayPulse() {
   // useId — Recharts <defs> share an SVG-global namespace; a static id
   // would collide if another chart on the page used the same name.
   const gradId = `dayPulse-${useId().replace(/:/g, "")}`;
+
+  // Mobile scrubber state — see SalesTrend for the rationale.
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   const { data: cur, isLoading } = useSWR<TrendResponse>(
     `/api/sales/trend?${queryString}&${storeParam}&granularity=hour`,
@@ -349,7 +312,10 @@ export function SalesDayPulse() {
                 }}
                 wrapperStyle={{ outline: "none", zIndex: 50 }}
                 cursor={{ fill: "var(--surface-2)", opacity: 0.5 }}
-                content={(props) => <PulseTooltip {...props} />}
+                content={buildRechartsTooltip<PulseRow>((row) => ({
+                  ...buildPulsePopup(row),
+                  minWidth: 200,
+                }))}
               />
               {/* Bars first — they live in the back; the line draws on top
                   so peaks read clearly above the bars. */}
@@ -400,9 +366,47 @@ export function SalesDayPulse() {
                   strokeWidth={2}
                 />
               )}
+              {/* Mobile scrubber cursor — see SalesTrend for the
+                  rationale. The reference line lives on the revenue
+                  axis so it draws full-height across both axes. */}
+              {activeIdx !== null && rows[activeIdx] && (
+                <>
+                  <ReferenceLine
+                    yAxisId="revenue"
+                    x={rows[activeIdx].iso}
+                    stroke={c.text3}
+                    strokeWidth={1}
+                    strokeDasharray="2 2"
+                  />
+                  <ReferenceDot
+                    yAxisId="revenue"
+                    x={rows[activeIdx].iso}
+                    y={rows[activeIdx].revenue}
+                    r={4}
+                    fill={c.accent}
+                    stroke="var(--surface)"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        <MobileScrubberRow
+          visible={activeIdx !== null}
+          popup={
+            activeIdx !== null && rows[activeIdx] ? (
+              <GlassTooltip {...buildPulsePopup(rows[activeIdx])} />
+            ) : null
+          }
+        >
+          <MobileScrubber
+            count={rows.length}
+            value={activeIdx}
+            onChange={setActiveIdx}
+            onRelease={() => setActiveIdx(null)}
+          />
+        </MobileScrubberRow>
       </CardBody>
     </Card>
   );
