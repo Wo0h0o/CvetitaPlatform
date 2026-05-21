@@ -15,6 +15,7 @@ import {
 } from "./store-state";
 import { ArrowRight } from "lucide-react";
 import type { DatePreset } from "@/lib/dates";
+import { SourceIcon, type DataSource } from "@/components/shared/SourceIcon";
 
 // ============================================================
 // Types — payload shape mirrors /api/dashboard/home/stores response.
@@ -186,6 +187,32 @@ export function StoresTable({ queryString, preset, rangeLabel }: StoresTableProp
   );
 }
 
+// ============================================================
+// Source-annotated header / label — visual anchors for which platform
+// each column belongs to. The icon inherits text colour, so the existing
+// muted header palette stays unchanged. Same component renders both
+// the desktop table header (inline-flex, right-aligned via parent) and
+// the mobile stacked-card field label (left-aligned by default).
+// ============================================================
+
+function SourceHeader({ source, label }: { source: DataSource; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <SourceIcon source={source} size={13} className="text-text-3 flex-shrink-0" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function SourceLabel({ source, label }: { source: DataSource; label: string }) {
+  return (
+    <div className="text-[11px] text-text-3 flex items-center gap-1">
+      <SourceIcon source={source} size={12} className="flex-shrink-0" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 interface StoresTableBodyProps {
   rows: RowData[];
   onRowClick: (storeId: string) => void;
@@ -201,14 +228,20 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
             <tr>
               <th className="text-left px-4 py-2.5 font-medium">Магазин</th>
               <th className="text-right px-4 py-2.5 font-medium">
-                Shopify приходи
+                <SourceHeader source="shopify" label="Shopify приходи" />
               </th>
               <th className="text-right px-4 py-2.5 font-medium">
-                Meta attribution
+                <SourceHeader source="meta" label="Meta attribution" />
               </th>
-              <th className="text-right px-4 py-2.5 font-medium">Meta разход</th>
-              <th className="text-right px-4 py-2.5 font-medium">Meta ROAS</th>
-              <th className="text-right px-4 py-2.5 font-medium">Google Ads</th>
+              <th className="text-right px-4 py-2.5 font-medium">
+                <SourceHeader source="meta" label="Meta разход" />
+              </th>
+              <th className="text-right px-4 py-2.5 font-medium">
+                <SourceHeader source="meta" label="Meta ROAS" />
+              </th>
+              <th className="text-right px-4 py-2.5 font-medium">
+                <SourceHeader source="google_ads" label="Google Ads" />
+              </th>
               <th className="text-left px-4 py-2.5 font-medium">Статус</th>
               <th className="text-right px-4 py-2.5 font-medium"></th>
             </tr>
@@ -317,7 +350,7 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
 
             <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px]">
               <div>
-                <div className="text-[11px] text-text-3">Shopify приходи</div>
+                <SourceLabel source="shopify" label="Shopify приходи" />
                 <div className="font-medium text-text tabular-nums">
                   {fmtEur(store.shopifyTodayRevenue)}
                 </div>
@@ -326,7 +359,7 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-text-3">Meta attribution</div>
+                <SourceLabel source="meta" label="Meta attribution" />
                 <div className="font-medium text-text tabular-nums">
                   {fmtEur(store.todayRevenue)}
                 </div>
@@ -336,13 +369,13 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-text-3">Meta разход</div>
+                <SourceLabel source="meta" label="Meta разход" />
                 <div className="font-medium text-text tabular-nums">
                   {fmtEur(store.todaySpend)}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-text-3">Meta ROAS</div>
+                <SourceLabel source="meta" label="Meta ROAS" />
                 <div className="font-medium text-text tabular-nums">
                   {fmtRoas(store.roasLast24h)}
                 </div>
@@ -351,7 +384,7 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
                 </div>
               </div>
               <div className="col-span-2">
-                <div className="text-[11px] text-text-3">Google Ads</div>
+                <SourceLabel source="google_ads" label="Google Ads" />
                 {store.googleAds ? (
                   <>
                     <div className="font-medium text-text tabular-nums">

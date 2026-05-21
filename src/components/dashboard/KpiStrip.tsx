@@ -16,6 +16,7 @@ import { FreshnessDot } from "@/components/shared/FreshnessDot";
 import { fmtBgDate } from "@/lib/format";
 import type { DatePreset } from "@/lib/dates";
 import type { SeriesShape, SeriesKind } from "@/lib/series";
+import { SourceIcon, type DataSource } from "@/components/shared/SourceIcon";
 
 // ============================================================
 // Types — mirror /api/dashboard/home/top-strip response shape.
@@ -598,15 +599,33 @@ function TileSkeleton({ hourly = false }: { hourly?: boolean }) {
 interface SectionShellProps {
   title: string;
   description: string;
+  /**
+   * Optional data-source anchor — renders a monochrome brand icon to the
+   * LEFT of the title. The icon inherits the title's text colour
+   * (`text-text-3` → matches sibling headers without splashing brand
+   * colours into our greyscale + accent palette). null/undefined for the
+   * cross-platform "Общо" section, which doesn't belong to any one
+   * source.
+   */
+  source?: DataSource | null;
   right?: React.ReactNode;
   children: React.ReactNode;
 }
 
-function SectionShell({ title, description, right, children }: SectionShellProps) {
+function SectionShell({ title, description, source, right, children }: SectionShellProps) {
   return (
     <section className="mb-6">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-[15px] font-semibold text-text">{title}</h2>
+        <h2 className="text-[15px] font-semibold text-text flex items-center gap-2">
+          {source && (
+            <SourceIcon
+              source={source}
+              size={18}
+              className="text-text-3 flex-shrink-0"
+            />
+          )}
+          <span>{title}</span>
+        </h2>
         {right && <div className="flex items-center gap-3">{right}</div>}
       </div>
       <p className="text-[12px] text-text-3 mb-3">{description}</p>
@@ -618,14 +637,16 @@ function SectionShell({ title, description, right, children }: SectionShellProps
 function LoadingStrip({
   title,
   description,
+  source,
   hourly,
 }: {
   title: string;
   description: string;
+  source?: DataSource | null;
   hourly: boolean;
 }) {
   return (
-    <SectionShell title={title} description={description}>
+    <SectionShell title={title} description={description} source={source}>
       {Array.from({ length: 3 }).map((_, i) => (
         <TileSkeleton key={i} hourly={hourly} />
       ))}
@@ -705,8 +726,18 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
     return (
       <>
         <LoadingStrip title={overallTitle} description={OVERALL_DESC} hourly={isHourly} />
-        <LoadingStrip title={businessTitle} description={BUSINESS_DESC} hourly={isHourly} />
-        <LoadingStrip title={adsTitle} description={ADS_DESC} hourly={isHourly} />
+        <LoadingStrip
+          title={businessTitle}
+          description={BUSINESS_DESC}
+          source="shopify"
+          hourly={isHourly}
+        />
+        <LoadingStrip
+          title={adsTitle}
+          description={ADS_DESC}
+          source="meta"
+          hourly={isHourly}
+        />
       </>
     );
   }
@@ -798,7 +829,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
         />
       </SectionShell>
 
-      <SectionShell title={businessTitle} description={BUSINESS_DESC}>
+      <SectionShell title={businessTitle} description={BUSINESS_DESC} source="shopify">
         <HeroCard
           label="Приходи"
           value={fmtEur(business.revenue.value)}
@@ -834,6 +865,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
       <SectionShell
         title={adsTitle}
         description={ADS_DESC}
+        source="meta"
         right={
           <>
             {showAnomalyPill && (
@@ -885,7 +917,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
       </SectionShell>
 
       {googleAds && (
-        <SectionShell title={googleAdsTitle} description={GOOGLE_ADS_DESC}>
+        <SectionShell title={googleAdsTitle} description={GOOGLE_ADS_DESC} source="google_ads">
           <HeroCard
             label="Разход"
             value={fmtEur(googleAds.spend.value)}
