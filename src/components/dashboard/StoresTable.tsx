@@ -198,7 +198,7 @@ export function StoresTable({ queryString, preset, rangeLabel }: StoresTableProp
 function SourceHeader({ source, label }: { source: DataSource; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <SourceIcon source={source} size={13} className="text-text-3 flex-shrink-0" />
+      <SourceIcon source={source} size={13} className="flex-shrink-0" />
       <span>{label}</span>
     </span>
   );

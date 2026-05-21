@@ -618,11 +618,7 @@ function SectionShell({ title, description, source, right, children }: SectionSh
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-[15px] font-semibold text-text flex items-center gap-2">
           {source && (
-            <SourceIcon
-              source={source}
-              size={18}
-              className="text-text-3 flex-shrink-0"
-            />
+            <SourceIcon source={source} size={18} className="flex-shrink-0" />
           )}
           <span>{title}</span>
         </h2>
