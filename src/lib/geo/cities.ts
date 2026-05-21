@@ -103,17 +103,24 @@ const CITIES_BG: CityEntry[] = [
 // ============================================================
 
 const CITIES_OTHER: CityEntry[] = [
-  // Greece
-  { name: "Атина", aliases: ["athens", "athina", " athenes", "athènes"], country: "GR", lat: 37.9838, lng: 23.7275 },
-  { name: "Солун", aliases: ["thessaloniki", "salonika", "saloniki", "thessalonique"], country: "GR", lat: 40.6401, lng: 22.9444 },
-  { name: "Патра", aliases: ["patra", "patras", "patrai"], country: "GR", lat: 38.2466, lng: 21.7346 },
-  { name: "Ираклион", aliases: ["heraklion", "iraklion", "heraklio"], country: "GR", lat: 35.3387, lng: 25.1442 },
-  { name: "Лариса", aliases: ["larissa", "larisa"], country: "GR", lat: 39.6390, lng: 22.4192 },
-  { name: "Волос", aliases: ["volos"], country: "GR", lat: 39.3666, lng: 22.9420 },
-  { name: "Йоанина", aliases: ["ioannina", "yannina", "janina"], country: "GR", lat: 39.6650, lng: 20.8537 },
-  { name: "Кавала", aliases: ["kavala", "kavalla"], country: "GR", lat: 40.9396, lng: 24.4019 },
+  // Greece — Shopify often returns Greek-script city names from native
+  // checkout (Αθήνα, Θεσσαλονίκη...) AND Latinised forms from the
+  // English storefront. Both must resolve, hence the dual-script alias
+  // lists. Also added province-suffixed variants ("athens, attica")
+  // that Shopify sometimes emits when the user pastes a full address.
+  { name: "Атина", aliases: ["athens", "athina", "athenes", "athènes", "αθήνα", "αθηνα", "athens, attica"], country: "GR", lat: 37.9838, lng: 23.7275 },
+  { name: "Солун", aliases: ["thessaloniki", "salonika", "saloniki", "thessalonique", "θεσσαλονίκη", "θεσσαλονικη"], country: "GR", lat: 40.6401, lng: 22.9444 },
+  { name: "Патра", aliases: ["patra", "patras", "patrai", "πάτρα", "πατρα"], country: "GR", lat: 38.2466, lng: 21.7346 },
+  { name: "Ираклион", aliases: ["heraklion", "iraklion", "heraklio", "ηράκλειο", "ηρακλειο"], country: "GR", lat: 35.3387, lng: 25.1442 },
+  { name: "Лариса", aliases: ["larissa", "larisa", "λάρισα", "λαρισα"], country: "GR", lat: 39.6390, lng: 22.4192 },
+  { name: "Волос", aliases: ["volos", "βόλος", "βολος"], country: "GR", lat: 39.3666, lng: 22.9420 },
+  { name: "Йоанина", aliases: ["ioannina", "yannina", "janina", "ιωάννινα", "ιωαννινα"], country: "GR", lat: 39.6650, lng: 20.8537 },
+  { name: "Кавала", aliases: ["kavala", "kavalla", "καβάλα", "καβαλα"], country: "GR", lat: 40.9396, lng: 24.4019 },
+  { name: "Халкида", aliases: ["chalcis", "chalkida", "halkida", "χαλκίδα", "χαλκιδα"], country: "GR", lat: 38.4636, lng: 23.5933 },
+  { name: "Серес", aliases: ["serres", "σέρρες", "σερρες"], country: "GR", lat: 41.0853, lng: 23.5483 },
+  { name: "Александруполи", aliases: ["alexandroupoli", "alexandroupolis", "αλεξανδρούπολη", "αλεξανδρουπολη"], country: "GR", lat: 40.8458, lng: 25.8742 },
   // Romania
-  { name: "Букурещ", aliases: ["bucharest", "bucuresti", "bucurești"], country: "RO", lat: 44.4268, lng: 26.1025 },
+  { name: "Букурещ", aliases: ["bucharest", "bucuresti", "bucurești", "bucuresti, sector 1", "bucuresti, sector 2", "bucuresti, sector 3", "bucuresti, sector 4", "bucuresti, sector 5", "bucuresti, sector 6"], country: "RO", lat: 44.4268, lng: 26.1025 },
   { name: "Клуж-Напока", aliases: ["cluj-napoca", "cluj napoca", "cluj"], country: "RO", lat: 46.7712, lng: 23.6236 },
   { name: "Тимишоара", aliases: ["timisoara", "timișoara"], country: "RO", lat: 45.7489, lng: 21.2087 },
   { name: "Яш", aliases: ["iasi", "iași"], country: "RO", lat: 47.1585, lng: 27.6014 },
@@ -122,6 +129,9 @@ const CITIES_OTHER: CityEntry[] = [
   { name: "Крайова", aliases: ["craiova"], country: "RO", lat: 44.3302, lng: 23.7949 },
   { name: "Галац", aliases: ["galati", "galați"], country: "RO", lat: 45.4353, lng: 28.0080 },
   { name: "Плоещ", aliases: ["ploiesti", "ploiești"], country: "RO", lat: 44.9469, lng: 26.0274 },
+  { name: "Орадя", aliases: ["oradea"], country: "RO", lat: 47.0722, lng: 21.9217 },
+  { name: "Сибиу", aliases: ["sibiu", "hermannstadt"], country: "RO", lat: 45.7983, lng: 24.1256 },
+  { name: "Арад", aliases: ["arad"], country: "RO", lat: 46.1866, lng: 21.3123 },
   // Germany
   { name: "Berlin", aliases: ["berlin", "берлин"], country: "DE", lat: 52.5200, lng: 13.4050 },
   { name: "Hamburg", aliases: ["hamburg", "хамбург"], country: "DE", lat: 53.5511, lng: 9.9937 },
@@ -188,32 +198,47 @@ const ALL_CITIES = [...CITIES_BG, ...CITIES_OTHER];
 // Greece vs Libya, etc.).
 // ============================================================
 
+// NFD-fold + strip combining marks. Turns "Iași" → "iasi", "Köln" →
+// "koln", "Αθήνα" → "αθηνα". Cheaper than maintaining a per-alias
+// pre/post pair, and the false-positive risk is minimal — combining
+// marks only collapse cases that already share a Latin/Greek base
+// letter.
+function normalise(s: string): string {
+  return s
+    .normalize("NFD")
+    // U+0300..U+036F is the Unicode "Combining Diacritical Marks" block.
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 const CITY_INDEX = new Map<string, CityEntry>();
 for (const city of ALL_CITIES) {
   for (const alias of city.aliases) {
-    CITY_INDEX.set(`${city.country}|${alias.toLowerCase().trim()}`, city);
+    CITY_INDEX.set(`${city.country}|${normalise(alias)}`, city);
   }
-  // Also index the canonical name lowercased — in case Shopify returns
+  // Also index the canonical name normalised — in case Shopify returns
   // the canonical form directly.
-  CITY_INDEX.set(`${city.country}|${city.name.toLowerCase().trim()}`, city);
+  CITY_INDEX.set(`${city.country}|${normalise(city.name)}`, city);
 }
 
 /**
  * Resolve a (countryCode, raw city string) to a CityEntry with lat/lng,
  * or null if the city isn't in our lookup table.
  *
- * Normalisation: lowercase + trim. We deliberately do NOT strip
- * diacritics or attempt fuzzy matching — false positives ("Plovdiv" vs
- * "Plodiv") would put markers in the wrong place. Better to miss the
- * marker (the country choropleth still counts it) than show it in Sofia
- * when the order shipped to Plovdiv.
+ * Normalisation: lowercase + trim + NFD fold (strips combining marks
+ * so "Iași" and "Iasi", "Köln" and "Koln", "Αθήνα" and "αθηνα" collapse
+ * to the same key). We do NOT attempt fuzzy substring matching —
+ * false positives like "Plovdiv" matching "Plovdivsko" would put
+ * markers in the wrong place. Miss-then-fall-back-to-choropleth is the
+ * safer failure mode.
  */
 export function lookupCity(
   countryCode: string,
   rawCity: string
 ): CityEntry | null {
   if (!countryCode || !rawCity) return null;
-  const key = `${countryCode.toUpperCase()}|${rawCity.toLowerCase().trim()}`;
+  const key = `${countryCode.toUpperCase()}|${normalise(rawCity)}`;
   return CITY_INDEX.get(key) ?? null;
 }
 

@@ -19,12 +19,18 @@ import type { Metric } from "@/components/sales/geography/WorldMap";
 // ============================================================
 // /sales/geography — branded world map of where customers buy from.
 //
-// The WorldMap component pulls in the 106kb world-110m topojson plus
-// react-simple-maps runtime — heavy enough that we lazy-load it via
-// next/dynamic so the rest of the page can render its skeleton + side
-// list while the map streams in. The geography page is a drill-down
-// (not landing), so this matches Progressive Disclosure (§7 in the
-// platform principles): summary first, details on demand.
+// The WorldMap component pulls in MapLibre GL (~200kb gzipped) plus the
+// world-110m topojson (~106kb) for the country choropleth source. Heavy
+// enough that we lazy-load it via next/dynamic so the rest of the page
+// can render its skeleton + side list while the map streams in. The
+// geography page is a drill-down (not landing), so this matches
+// Progressive Disclosure (§7 in the platform principles): summary first,
+// details on demand.
+//
+// MapLibre also pulls Stadia Alidade Smooth Dark vector tiles at runtime
+// (auth = domain whitelist in the Stadia dashboard; `localhost` works
+// out of the box, `cvetita-platform.vercel.app` must be added once for
+// production).
 //
 // Layout:
 //

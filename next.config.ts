@@ -1,12 +1,18 @@
 import type { NextConfig } from "next";
 
+// MapLibre GL spins workers from blob: URLs (worker-src 'self' blob:) and
+// fetches Stadia Maps style.json + vector tiles + glyphs + sprites
+// (tiles.stadiamaps.com). Raster sprites/icons hit the same host, hence
+// the img-src entry. Domain authentication is configured in the Stadia
+// dashboard — no API key in client code.
 const ContentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://cdn.shopify.com https://*.shopify.com https://*.shopifycdn.com https://*.fbcdn.net https://*.facebook.com",
-  "font-src 'self'",
-  "connect-src 'self' https://qggrlwfphxyoslrqkajw.supabase.co",
+  "img-src 'self' data: blob: https://cdn.shopify.com https://*.shopify.com https://*.shopifycdn.com https://*.fbcdn.net https://*.facebook.com https://tiles.stadiamaps.com",
+  "font-src 'self' data:",
+  "connect-src 'self' https://qggrlwfphxyoslrqkajw.supabase.co https://tiles.stadiamaps.com",
+  "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "form-action 'self'",
   "base-uri 'self'",
