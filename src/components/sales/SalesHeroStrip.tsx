@@ -219,7 +219,6 @@ interface MiniSparkProps {
   rows: ChartRow[];
   metricLabel: string;
   formatValue: (n: number) => string;
-  height?: number;
   kind?: SparkKind;
   hourly?: boolean;
 }
@@ -228,7 +227,6 @@ function MiniSpark({
   rows,
   metricLabel,
   formatValue,
-  height = 40,
   kind = "area",
   hourly,
 }: MiniSparkProps) {
@@ -246,10 +244,14 @@ function MiniSpark({
   if (rows.length < (kind === "bars" ? 1 : 2)) return null;
 
   return (
-    <div className="w-full" style={{ height }}>
+    // h-full so the chart fills its flex-1 parent in HeroTile / SubTile.
+    // The previous fixed pixel height left bars and step tiles with
+    // empty space below the visual content because the wrapper was
+    // taller than the chart.
+    <div className="w-full h-full">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
-          {kind === "area" && (
+          {(kind === "area" || kind === "step") && (
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
@@ -326,13 +328,21 @@ function MiniSpark({
             />
           )}
           {kind === "step" && (
-            <Line
+            // stepAfter Area, not Line — same §9.3 vocabulary (state
+            // holds between events) but with a fill that anchors the
+            // visual to the chart floor. Otherwise a mid-range AOV
+            // (€54 in a 0–60 domain) draws the line near the top and
+            // the tile reads as half-empty next to the smooth-area
+            // Revenue tile.
+            <Area
               type="stepAfter"
               dataKey="current"
               stroke="var(--accent)"
               strokeWidth={1.75}
+              fill={`url(#${gradId})`}
               dot={false}
               isAnimationActive={false}
+              connectNulls
               activeDot={{
                 r: 3,
                 stroke: "var(--accent)",
@@ -382,12 +392,11 @@ function HeroTile({
       {sub && (
         <div className="text-[12px] text-text-3 mt-1.5 truncate">{sub}</div>
       )}
-      <div className="flex-1 min-h-[60px] -mx-2 mt-4">
+      <div className="flex-1 min-h-[70px] -mx-2 mt-4">
         <MiniSpark
           rows={rows}
           metricLabel={label}
           formatValue={formatValue}
-          height={70}
           kind={kind}
           hourly={hourly}
         />
@@ -426,12 +435,11 @@ function SubTile({
         {value}
       </div>
       <Delta pct={pct} className="mt-1.5" />
-      <div className="flex-1 min-h-[36px] -mx-2 mt-3">
+      <div className="flex-1 min-h-[48px] -mx-2 mt-3">
         <MiniSpark
           rows={rows}
           metricLabel={label}
           formatValue={formatValue}
-          height={48}
           kind={kind}
           hourly={hourly}
         />
