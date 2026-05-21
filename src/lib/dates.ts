@@ -118,3 +118,51 @@ export function formatBgDate(dateStr: string): string {
     month: "short",
   });
 }
+
+// ============================================================
+// Range arithmetic helpers
+//
+// Aggregations that come back as sums across the period (e.g.
+// read_store_hour_weekday returns total revenue summed across every
+// occurrence of weekday=W, hour=H in [from, to]) need a divisor
+// before they can be presented as "typical Wednesday" or "typical
+// 11am hour" — otherwise a 30-day window shows €18k for "Wednesday"
+// where the operator reads it as "one Wednesday" and rightly
+// concludes the numbers are off.
+//
+// Both helpers parse the YYYY-MM-DD strings as UTC midnight and do
+// integer-day arithmetic. This is safe in any tz because each input
+// already names a Sofia-anchored civil date — we never cross DST.
+// ============================================================
+
+/** Inclusive day count in [from, to]. */
+export function daysInRange(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const fromTs = Date.UTC(fy, fm - 1, fd);
+  const toTs = Date.UTC(ty, tm - 1, td);
+  return Math.round((toTs - fromTs) / 86_400_000) + 1;
+}
+
+/** Count of each ISO weekday (1=Mon .. 7=Sun) within [from, to]
+ *  inclusive. Returns a dense 7-key Map so callers can look up by
+ *  weekday without missing-key guards. */
+export function countWeekdaysInRange(
+  from: string,
+  to: string
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (let wd = 1; wd <= 7; wd++) counts.set(wd, 0);
+
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const fromTs = Date.UTC(fy, fm - 1, fd);
+  const total = daysInRange(from, to);
+
+  for (let i = 0; i < total; i++) {
+    const d = new Date(fromTs + i * 86_400_000);
+    const jsDay = d.getUTCDay(); // 0=Sun .. 6=Sat
+    const iso = jsDay === 0 ? 7 : jsDay; // 1=Mon .. 7=Sun
+    counts.set(iso, (counts.get(iso) ?? 0) + 1);
+  }
+  return counts;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 import {
   Bar,
   Line,
@@ -21,6 +21,7 @@ import {
   MobileScrubber,
   MobileScrubberRow,
 } from "@/components/charts/MobileScrubber";
+import { useChartScrubber } from "@/components/charts/useChartScrubber";
 import {
   GlassTooltip,
   buildRechartsTooltip,
@@ -124,8 +125,6 @@ export function SalesDayPulse() {
   // would collide if another chart on the page used the same name.
   const gradId = `dayPulse-${useId().replace(/:/g, "")}`;
 
-  // Mobile scrubber state — see SalesTrend for the rationale.
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   const { data: cur, isLoading } = useSWR<TrendResponse>(
     `/api/sales/trend?${queryString}&${storeParam}&granularity=hour`,
@@ -171,6 +170,10 @@ export function SalesDayPulse() {
     totalComp > 0
       ? Math.round(((totalRevenue - totalComp) / totalComp) * 100)
       : null;
+
+  // Mobile scrubber — chart-touch + slider into one activeIdx.
+  const { activeIdx, setActiveIdx, wrapperRef, pointerHandlers } =
+    useChartScrubber({ count: rows.length });
 
   if (isLoading) {
     return (
@@ -252,7 +255,14 @@ export function SalesDayPulse() {
             Пр. ден
           </span>
         </div>
-        <div className="h-[260px] -mx-2">
+        {/* Chart wrapper hosts useChartScrubber pointer handlers —
+            recharts-wrapper pointer events are CSS-muted on mobile so
+            taps land here, not on the chart's own tooltip handler. */}
+        <div
+          ref={wrapperRef}
+          {...pointerHandlers}
+          className="h-[260px] -mx-2 touch-pan-y"
+        >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={rows}
@@ -404,7 +414,6 @@ export function SalesDayPulse() {
             count={rows.length}
             value={activeIdx}
             onChange={setActiveIdx}
-            onRelease={() => setActiveIdx(null)}
           />
         </MobileScrubberRow>
       </CardBody>

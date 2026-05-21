@@ -154,32 +154,44 @@ body {
 }
 
 /* ============================================================
-   Recharts — mobile interaction discipline.
+   Recharts — touch-device interaction discipline.
 
-   On touch devices a direct tap on the chart SVG:
-   (a) triggers a Recharts tooltip that covers the data the operator
-       is trying to read, and
-   (b) leaves the SVG with the global :focus-visible accent outline
-       painted around the whole chart area (the white rectangle the
-       user reported).
+   Charts are non-interactive visuals: nothing about an axis tick or
+   a data point benefits from being focusable. The first revision of
+   this block used (hover: none) + (pointer: coarse) media queries,
+   but Android Brave reports `hover: hover` on phones, so the mute
+   never applied and the operator got both the Recharts hover tooltip
+   AND the per-card scrubber popup on touch — plus a focus rectangle
+   painted around the SVG by the global :focus-visible rule above.
 
-   We replace finger-on-chart input with a per-card scrubber slider
-   below the chart, so on mobile we mute the chart's own touch
-   interactivity entirely: no tooltip wrapper, no cursor, no focus
-   ring. The chart becomes a read-only visual; the slider drives all
-   data inspection.
+   Two layers:
+   (A) Universal — never paint a focus indicator on a chart SVG. The
+       chart is decorative, not an interactive control. Also clears
+       the iOS Safari blue tap flash.
+   (B) Mobile-only — mute pointer events on the .recharts-wrapper
+       entirely, hide the tooltip wrapper, hide the cursor element.
+       Touch events on the chart bubble through to the surrounding
+       div, where useChartScrubber owns the active-index state. A
+       single popup, two input paths (slider + chart touch).
    ============================================================ */
 
-@media (hover: none) and (pointer: coarse) {
-  .recharts-wrapper { pointer-events: none; }
-  .recharts-tooltip-wrapper { display: none !important; }
-  .recharts-wrapper:focus,
-  .recharts-surface:focus,
-  .recharts-wrapper :focus,
-  .recharts-surface :focus,
-  .recharts-wrapper :focus-visible,
-  .recharts-surface :focus-visible {
-    outline: none !important;
+/* (A) Universal — no focus ring, no iOS tap flash */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-surface * {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* (B) Mobile-only — mute the chart's own touch interactivity */
+@media (max-width: 767px) {
+  .recharts-wrapper {
+    pointer-events: none !important;
+  }
+  .recharts-tooltip-wrapper,
+  .recharts-tooltip-cursor {
+    display: none !important;
   }
 }
 

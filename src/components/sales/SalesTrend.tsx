@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Area,
   Line,
@@ -21,6 +21,7 @@ import {
   MobileScrubber,
   MobileScrubberRow,
 } from "@/components/charts/MobileScrubber";
+import { useChartScrubber } from "@/components/charts/useChartScrubber";
 import {
   GlassTooltip,
   buildRechartsTooltip,
@@ -120,13 +121,6 @@ export function SalesTrend() {
   const { storeParam } = useStoreSelection();
   const c = useChartColors();
 
-  // Mobile scrubber state — non-null while the operator is dragging the
-  // slider below the chart. Drives a ReferenceLine + ReferenceDot that
-  // mark the active point inside the chart, and renders the same glass
-  // tooltip card the desktop hover flow uses, just inline above the
-  // slider. Cleared on touch / pointer release (see MobileScrubber).
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
-
   // Switch to hourly when the user picks a single day (Днес / Вчера /
   // custom from===to). Otherwise the trend collapses to one data point
   // and Recharts renders an empty SVG.
@@ -177,6 +171,11 @@ export function SalesTrend() {
   const totalComp = rows.reduce((s, r) => s + (r.compRevenue ?? 0), 0);
   const totalDelta =
     totalComp > 0 ? Math.round(((totalRevenue - totalComp) / totalComp) * 100) : null;
+
+  // Mobile scrubber — slider input + chart-touch input share the same
+  // activeIdx; persistence on release is the hook's contract.
+  const { activeIdx, setActiveIdx, wrapperRef, pointerHandlers } =
+    useChartScrubber({ count: rows.length });
 
   if (isLoading) {
     return (
@@ -235,7 +234,15 @@ export function SalesTrend() {
       </CardHeader>
       <CardBody>
         {peakBadge && <div className="mb-2">{peakBadge}</div>}
-        <div className="h-[240px] -mx-2">
+        {/* Chart wrapper owns the touch scrubber: pointer-events on
+            .recharts-wrapper are muted by globals.css on mobile, so
+            finger taps land on this div and drive useChartScrubber.
+            touch-pan-y leaves vertical page scrolling intact. */}
+        <div
+          ref={wrapperRef}
+          {...pointerHandlers}
+          className="h-[240px] -mx-2 touch-pan-y"
+        >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={rows}
@@ -366,7 +373,6 @@ export function SalesTrend() {
             count={rows.length}
             value={activeIdx}
             onChange={setActiveIdx}
-            onRelease={() => setActiveIdx(null)}
           />
         </MobileScrubberRow>
       </CardBody>

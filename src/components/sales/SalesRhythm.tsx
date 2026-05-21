@@ -22,6 +22,7 @@ import {
   MobileScrubber,
   MobileScrubberRow,
 } from "@/components/charts/MobileScrubber";
+import { useChartScrubber } from "@/components/charts/useChartScrubber";
 import {
   GlassTooltip,
   buildRechartsTooltip,
@@ -30,6 +31,7 @@ import {
 } from "@/components/charts/GlassTooltip";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useStoreSelection } from "@/hooks/useStoreSelection";
+import { countWeekdaysInRange, daysInRange } from "@/lib/dates";
 import type { HourWeekdayBucket } from "@/lib/sales-queries";
 
 // ============================================================
@@ -93,6 +95,19 @@ function fmtCompactEur(n: number): string {
 
 // ============================================================
 // Helpers — fold the 168 buckets into the two shapes we render.
+//
+// Critical detail: the RPC returns SUMS across every occurrence of
+// (weekday, hour) within [from, to]. For a 30-day window with 4-5
+// Wednesdays, weekday=3 buckets carry the sum of ALL Wednesdays.
+// Presenting those raw is what made the operator report "Ср €18k"
+// as obviously wrong — it reads as a single-day revenue figure
+// against a daily store baseline.
+//
+// We divide by the count of each weekday in the period to recover
+// a typical-occurrence value. Same for the hour strip: per-hour
+// sum across all weekdays / total days in period = a typical day's
+// hour. Sparkline shape is unchanged (it's proportional); only the
+// y-scale becomes intuitive.
 // ============================================================
 
 interface HourCell {
@@ -106,6 +121,11 @@ interface WeekdaySeries {
   cells: HourCell[];
   total: number;
   totalComp: number | null;
+  /** How many occurrences of this weekday lived in [from, to].
+   *  Surfaced into the tooltip header so the operator can sanity-check
+   *  "avg of 4 Wednesdays". */
+  occurrencesCur: number;
+  occurrencesComp: number;
 }
 
 interface HourStripRow {
@@ -118,13 +138,21 @@ function pickMetric(b: HourWeekdayBucket, metric: Metric): number {
   return metric === "revenue" ? b.revenue : b.orders;
 }
 
+function divSafe(sum: number, count: number): number {
+  return count > 0 ? sum / count : 0;
+}
+
 function foldByWeekday(
   cur: HourWeekdayBucket[],
   cmp: HourWeekdayBucket[],
-  metric: Metric
+  metric: Metric,
+  countsCur: Map<number, number>,
+  countsComp: Map<number, number>
 ): WeekdaySeries[] {
   const out: WeekdaySeries[] = [];
   for (let wd = 1; wd <= 7; wd++) {
+    const occCur = countsCur.get(wd) ?? 0;
+    const occComp = countsComp.get(wd) ?? 0;
     const cells: HourCell[] = [];
     let total = 0;
     let totalComp = 0;
@@ -132,21 +160,23 @@ function foldByWeekday(
     for (let h = 0; h <= 23; h++) {
       const curB = cur.find((x) => x.weekday === wd && x.hour === h);
       const cmpB = cmp.find((x) => x.weekday === wd && x.hour === h);
-      const cVal = curB ? pickMetric(curB, metric) : 0;
-      total += cVal;
-      let compVal: number | null = null;
-      if (cmpB) {
-        compVal = pickMetric(cmpB, metric);
-        totalComp += compVal;
+      const cAvg = divSafe(curB ? pickMetric(curB, metric) : 0, occCur);
+      total += cAvg;
+      let compAvg: number | null = null;
+      if (cmpB && occComp > 0) {
+        compAvg = divSafe(pickMetric(cmpB, metric), occComp);
+        totalComp += compAvg;
         anyComp = true;
       }
-      cells.push({ hour: h, current: cVal, comparison: compVal });
+      cells.push({ hour: h, current: cAvg, comparison: compAvg });
     }
     out.push({
       weekday: wd,
       cells,
       total,
       totalComp: anyComp ? totalComp : null,
+      occurrencesCur: occCur,
+      occurrencesComp: occComp,
     });
   }
   return out;
@@ -155,7 +185,9 @@ function foldByWeekday(
 function foldByHour(
   cur: HourWeekdayBucket[],
   cmp: HourWeekdayBucket[],
-  metric: Metric
+  metric: Metric,
+  daysCur: number,
+  daysComp: number
 ): HourStripRow[] {
   const out: HourStripRow[] = [];
   for (let h = 0; h <= 23; h++) {
@@ -171,7 +203,11 @@ function foldByHour(
         anyCmp = true;
       }
     }
-    out.push({ hour: h, current: curSum, comparison: anyCmp ? cmpSum : null });
+    out.push({
+      hour: h,
+      current: divSafe(curSum, daysCur),
+      comparison: anyCmp ? divSafe(cmpSum, daysComp) : null,
+    });
   }
   return out;
 }
@@ -265,16 +301,25 @@ function WeekdayRow({ series, metric, scale, isPeak }: WeekdayRowProps) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {/* Total + occurrence count. The value is "average per typical
+          [weekday]"; the small "n=4" suffix surfaces how many of that
+          weekday lived in the period so the operator can sanity-check
+          the average and never reads it as a single-day figure. */}
       <div className="w-20 flex-shrink-0 text-right">
         <div className="text-[12px] font-semibold text-text tabular-nums">
-          {series.total > 0 ? fmtTotal(series.total) : "—"}
+          {series.total > 0 ? fmtTotal(Math.round(series.total)) : "—"}
         </div>
+        {series.occurrencesCur > 0 && (
+          <div className="text-[10px] text-text-3 tabular-nums leading-tight">
+            n={series.occurrencesCur}
+          </div>
+        )}
       </div>
       <div
         className={`w-14 flex-shrink-0 text-right text-[11px] tabular-nums ${deltaTone}`}
         title={
           series.totalComp !== null
-            ? `Спрямо ${WEEKDAY_FULL[series.weekday - 1].toLowerCase()} в пр. период`
+            ? `Средно ${WEEKDAY_FULL[series.weekday - 1].toLowerCase()} (n=${series.occurrencesCur}) спрямо предходен период (n=${series.occurrencesComp})`
             : undefined
         }
       >
@@ -318,15 +363,27 @@ function buildHourStripPopup(
 // ============================================================
 
 export function SalesRhythm() {
-  const { queryString, compFrom, compTo } = useDateRange();
+  const { queryString, compFrom, compTo, from, to } = useDateRange();
   const { storeParam } = useStoreSelection();
   const c = useChartColors();
   const [metric, setMetric] = useState<Metric>("revenue");
-  // Mobile scrubber state for the bottom 24-hour aggregate strip.
-  // Weekday small multiples don't get their own scrubbers (they're
-  // each <40px tall and chronically too small for a slider) — touch
-  // tooltips on them are muted globally by the recharts media query.
-  const [hourActiveIdx, setHourActiveIdx] = useState<number | null>(null);
+
+  // Occurrence counts — the divisors that turn period sums into
+  // per-typical-occurrence averages. Recomputed only when the date
+  // window changes.
+  const weekdayCountsCur = useMemo(
+    () => countWeekdaysInRange(from, to),
+    [from, to]
+  );
+  const weekdayCountsComp = useMemo(
+    () => (compFrom && compTo ? countWeekdaysInRange(compFrom, compTo) : new Map<number, number>()),
+    [compFrom, compTo]
+  );
+  const daysCur = useMemo(() => daysInRange(from, to), [from, to]);
+  const daysComp = useMemo(
+    () => (compFrom && compTo ? daysInRange(compFrom, compTo) : 0),
+    [compFrom, compTo]
+  );
 
   const { data: cur, isLoading } = useSWR<HourWeekdayResponse>(
     `/api/sales/hour-weekday?${queryString}&${storeParam}`,
@@ -347,14 +404,31 @@ export function SalesRhythm() {
   const cmpBuckets = useMemo(() => comp?.buckets ?? [], [comp?.buckets]);
 
   const weekdaySeries = useMemo(
-    () => foldByWeekday(curBuckets, cmpBuckets, metric),
-    [curBuckets, cmpBuckets, metric]
+    () =>
+      foldByWeekday(
+        curBuckets,
+        cmpBuckets,
+        metric,
+        weekdayCountsCur,
+        weekdayCountsComp
+      ),
+    [curBuckets, cmpBuckets, metric, weekdayCountsCur, weekdayCountsComp]
   );
 
   const hourStrip = useMemo(
-    () => foldByHour(curBuckets, cmpBuckets, metric),
-    [curBuckets, cmpBuckets, metric]
+    () => foldByHour(curBuckets, cmpBuckets, metric, daysCur, daysComp),
+    [curBuckets, cmpBuckets, metric, daysCur, daysComp]
   );
+
+  // Hook for the hour strip scrubber. Weekday small-multiples don't
+  // need one (each row is <40px tall, slider is overkill; touch
+  // tooltips are CSS-muted globally).
+  const {
+    activeIdx: hourActiveIdx,
+    setActiveIdx: setHourActiveIdx,
+    wrapperRef: hourWrapperRef,
+    pointerHandlers: hourPointerHandlers,
+  } = useChartScrubber({ count: hourStrip.length });
 
   // Shared y-domain so the 7 mini-charts are visually comparable. We
   // also use it as the comparison series' ceiling — without a shared
@@ -372,16 +446,22 @@ export function SalesRhythm() {
     return m > 0 ? m * 1.1 : 1;
   }, [weekdaySeries]);
 
+  // Peak hits the bucket with the highest PER-OCCURRENCE value, not
+  // the highest raw sum. Otherwise a "typical Wednesday 18:00" peak
+  // is biased toward whichever weekday has the most occurrences in
+  // the period (week-of-month effects on 30d windows).
   const peak = useMemo(() => {
     if (curBuckets.length === 0) return null;
-    let pBucket: HourWeekdayBucket | null = null;
+    let best: { weekday: number; hour: number; value: number } | null = null;
     for (const b of curBuckets) {
-      const v = pickMetric(b, metric);
+      const occ = weekdayCountsCur.get(b.weekday) ?? 0;
+      if (occ <= 0) continue;
+      const v = pickMetric(b, metric) / occ;
       if (v <= 0) continue;
-      if (!pBucket || v > pickMetric(pBucket, metric)) pBucket = b;
+      if (!best || v > best.value) best = { weekday: b.weekday, hour: b.hour, value: v };
     }
-    return pBucket;
-  }, [curBuckets, metric]);
+    return best;
+  }, [curBuckets, metric, weekdayCountsCur]);
 
   const peakWeekday = useMemo(() => {
     let pw: WeekdaySeries | null = null;
@@ -411,7 +491,10 @@ export function SalesRhythm() {
       />
       Пик: {WEEKDAY_FULL[peak.weekday - 1]}{" "}
       {String(peak.hour).padStart(2, "0")}:00 •{" "}
-      {metric === "revenue" ? fmtEur(peak.revenue) : `${fmtInt(peak.orders)} поръчки`}
+      {metric === "revenue"
+        ? fmtEur(peak.value)
+        : `${fmtInt(Math.round(peak.value))} поръчки`}{" "}
+      <span className="text-text-3/80">(средно)</span>
     </span>
   ) : null;
 
@@ -465,7 +548,7 @@ export function SalesRhythm() {
               0 ─ 6 ─ 12 ─ 18 ─ 23 ч.
             </div>
             <div className="w-20 text-right text-[10px] uppercase tracking-wider text-text-3 flex-shrink-0">
-              Общо
+              Средно
             </div>
             <div className="w-14 text-right text-[10px] uppercase tracking-wider text-text-3 flex-shrink-0">
               Δ
@@ -498,7 +581,15 @@ export function SalesRhythm() {
               пр. период
             </span>
           </div>
-          <div className="h-[120px] -mx-2">
+          {/* Chart wrapper drives the same scrubber as the slider
+              below — finger taps land here (recharts pointer-events
+              are CSS-muted on mobile), so chart-touch and slider are
+              two input paths into one activeIdx. */}
+          <div
+            ref={hourWrapperRef}
+            {...hourPointerHandlers}
+            className="h-[120px] -mx-2 touch-pan-y"
+          >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={hourStrip}
@@ -602,7 +693,6 @@ export function SalesRhythm() {
               count={hourStrip.length}
               value={hourActiveIdx}
               onChange={setHourActiveIdx}
-              onRelease={() => setHourActiveIdx(null)}
               ariaLabel="Преглед на часовете"
             />
           </MobileScrubberRow>

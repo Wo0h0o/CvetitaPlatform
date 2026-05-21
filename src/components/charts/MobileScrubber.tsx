@@ -32,8 +32,11 @@ export interface MobileScrubberProps {
   value: number | null;
   /** Fired as the user drags the thumb. */
   onChange: (idx: number) => void;
-  /** Fired when the user lifts their finger / releases the mouse. */
-  onRelease: () => void;
+  /** Optional release callback. By default the active state persists
+   *  after release — operators wanted consistency, so the popup and
+   *  cursor stay on the last position. Pass a callback only if a card
+   *  has a real reason to clear (e.g. a "back to overview" reset). */
+  onRelease?: () => void;
   /** Optional aria label override (defaults to a Bulgarian generic). */
   ariaLabel?: string;
   className?: string;
@@ -47,6 +50,9 @@ export function MobileScrubber({
   ariaLabel = "Преглед на стойностите по точки",
   className,
 }: MobileScrubberProps) {
+  // No-op when the caller doesn't pass a release handler — persistence
+  // is the default behaviour.
+  const handleRelease = onRelease ?? (() => {});
   // A single-point series has nothing to scrub across; render nothing
   // so the card doesn't carry a non-functional slider on data-thin
   // periods (e.g. a custom 1-bucket window).
@@ -65,11 +71,11 @@ export function MobileScrubber({
       // covers older Android WebViews, Blur covers keyboard tabbing
       // out, MouseUp covers desktop pointer just in case the layout
       // ever leaks past the md breakpoint.
-      onPointerUp={onRelease}
-      onPointerCancel={onRelease}
-      onTouchEnd={onRelease}
-      onMouseUp={onRelease}
-      onBlur={onRelease}
+      onPointerUp={handleRelease}
+      onPointerCancel={handleRelease}
+      onTouchEnd={handleRelease}
+      onMouseUp={handleRelease}
+      onBlur={handleRelease}
       className={`chart-scrubber ${className ?? ""}`}
       aria-label={ariaLabel}
     />
