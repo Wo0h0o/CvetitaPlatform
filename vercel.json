@@ -18,6 +18,10 @@
       "schedule": "*/20 * * * *"
     },
     {
+      "path": "/api/cron/meta-sync-hourly?daysBack=30",
+      "schedule": "15 3 * * *"
+    },
+    {
       "path": "/api/cron/agent-briefs",
       "schedule": "30 4 * * *"
     },

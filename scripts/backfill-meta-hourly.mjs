@@ -5,8 +5,12 @@
  * can seed the table before the cron's first natural tick (and not wait
  * 28 days for the typical-baseline window to fill in).
  *
+ * Default 30 days — matches the cron's retention horizon and covers all
+ * 4 priors that the home dashboard's "Днес"/"Вчера" typical baseline
+ * averages (oldest = 28 days back).
+ *
  * Usage:
- *   node scripts/backfill-meta-hourly.mjs                 # last 14 days
+ *   node scripts/backfill-meta-hourly.mjs                 # last 30 days
  *   node scripts/backfill-meta-hourly.mjs --days 7        # last 7 days
  *   node scripts/backfill-meta-hourly.mjs --dry-run       # no DB writes
  *
@@ -31,7 +35,9 @@ for (const line of readFileSync(envPath, 'utf8').split('\n')) {
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const daysArg = args.indexOf('--days');
-const days = daysArg >= 0 ? Math.min(14, Math.max(1, parseInt(args[daysArg + 1], 10) || 14)) : 14;
+// Cap matches RETENTION_DAYS in /api/cron/meta-sync-hourly — writing rows
+// older than retention is wasteful because the next cron tick deletes them.
+const days = daysArg >= 0 ? Math.min(30, Math.max(1, parseInt(args[daysArg + 1], 10) || 30)) : 30;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,

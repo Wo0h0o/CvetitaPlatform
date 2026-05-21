@@ -257,9 +257,23 @@ async function fetchShopifyHourlyByDates(
 }
 
 /**
- * Pivot a (date|hour) keyed map into one 24-element array per date. The
- * array index IS the hour 0-23. Missing slots are 0. Returned map only
- * contains the dates the caller asked for, regardless of source data.
+ * Pivot a (date|hour) keyed map into one 24-element array per date.
+ *
+ * CRITICAL: dates with ZERO source records are EXCLUDED from the output.
+ * The downstream `averageHourly` averages by `priors.length` — without
+ * this guard, a missing prior day (e.g. before our backfill horizon)
+ * becomes a 24-array of zeros and silently drags the typical baseline
+ * DOWN, because the averager treats "no data" as "real day with zero
+ * activity". For Meta especially, those are different stories: zero
+ * spend means we DID look and there was no ad activity; zero rows means
+ * we DID NOT look (date is outside the sync window).
+ *
+ * Shopify is asymmetric: its hourly RPC zero-fills via generate_series,
+ * so EVERY (date, hour) requested comes back with a row. Zero orders
+ * on a Shopify prior is real data. The guard below uses `byKey.has(...)`,
+ * not the row's values — so Shopify priors with all-zero activity STILL
+ * pass (`has` returns true; the row is just `{revenue: 0, orders: 0}`).
+ * Only Meta priors with literally no entries are dropped.
  */
 function buildHourlyArrayMap<T extends Record<string, number>>(
   byKey: Map<string, T>,
@@ -268,6 +282,15 @@ function buildHourlyArrayMap<T extends Record<string, number>>(
 ): Map<string, Record<string, number[]>> {
   const out = new Map<string, Record<string, number[]>>();
   for (const date of dates) {
+    let hasAny = false;
+    for (let h = 0; h < 24; h++) {
+      if (byKey.has(`${date}|${h}`)) {
+        hasAny = true;
+        break;
+      }
+    }
+    if (!hasAny) continue;
+
     const perField: Record<string, number[]> = {};
     for (const f of fields) perField[f as string] = new Array(24).fill(0);
     for (let h = 0; h < 24; h++) {

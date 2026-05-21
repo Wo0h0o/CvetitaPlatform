@@ -18,16 +18,23 @@ export const maxDuration = 60;
 // Sync window: today + yesterday for the intraday cron. Catches late-attributed
 // purchases that flip from "0" to "1" on prior-day hours after the conversion
 // window closes. Backfill mode (`?daysBack=N`) widens the window for one-off
-// historical fills (clamped to 14d, matching the table's retention horizon).
+// historical fills + the nightly catch-up tick (clamped to the retention
+// horizon so we never write rows the prune step is about to delete).
 const SYNC_DAYS_BACK_INTRADAY = 2;
-const MAX_BACKFILL_DAYS = 14;
+const MAX_BACKFILL_DAYS = 30;
 
-// Retention: prune rows older than 14 days. The hourly table only feeds the
-// home tempo chart (which never looks back further than the typical-day
-// baseline window = 4 same-weekdays prior = 28 days max). 14 days keeps the
-// table small (≈ 6 accounts × 24 × 14 = 2k rows) without losing anything
-// surfaced in the UI. Daily aggregates remain the long-tail source of truth.
-const RETENTION_DAYS = 14;
+// Retention: prune rows older than 30 days.
+//
+// Why 30, not the earlier 14: the home dashboard's typical-day baseline
+// for "Днес"/"Вчера" averages 4 same-weekdays prior, which lands the
+// oldest needed date 28 days back (7+14+21+28). A 14-day retention left
+// 3 of the 4 priors empty → averageHourly was dividing by 4 anyway and
+// silently dragging the typical baseline to ~25% of real (the source
+// of the "20% типична атрибуция vs 58% днес" false alarm). 30 days
+// covers the baseline window with a 2-day buffer.
+//
+// Cost: 30 × 24 × 6 active accounts ≈ 4.3k rows. Still tiny.
+const RETENTION_DAYS = 30;
 
 interface IntegrationAccountRow {
   id: string;
