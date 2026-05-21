@@ -160,6 +160,74 @@ Tooltip-ите винаги ползват `--surface` фон + `--border` гр�
 - **Combo charts** — на mobile показвай само едната метрика с tab toggle
 - **Stepped line** работи изненадващо добре на mobile — „тактилен" вид
 
+### 10. Map markers — intelligence-hub дисциплина
+
+Maps са специфична категория визуализация — те имат **географска геометрия** (страни, граници, водни маси) И **annotation layer** (markers, labels, heatmap overlays). Двете не са едно и също нещо и не се третират еднакво. Когато ги смесиш, получаваш marketing pulse splash вместо intelligence hub.
+
+Договорът, изведен от refactor-а на `/sales/geography`:
+
+#### 10.1 Markers са UI, не geometry
+
+- **Geographic features** (countries, regions) живеят в SVG world-space — scale-ват с ZoomableGroup, разтягат се при zoom. Очаквано.
+- **Markers** (city pins, location dots) живеят в **screen-coordinate space** — counter-scale-вани с `1/currentZoom` за всички dimensions (radius, stroke, hit area, pulse expansion target). При zoom 1×, 4×, 8× — маркерът остава точно същия pixel size на екрана.
+
+Защо: markers са annotations върху картата, не части от нея. Mapbox / Google Maps / Palantir Gotham — всички ги третират така. Когато markerите растат с zoom, получаваш fury-of-dots при висок zoom + слаба видимост при overview.
+
+```tsx
+// ❌ Грешно — radius е fixed SVG units, scale-ва се с ZoomableGroup
+<circle r={7} fill="..." />
+
+// ✅ Правилно — counter-scale by currentZoom
+<circle r={7 / currentZoom} fill="..." />
+```
+
+#### 10.2 Calm by default, alive on interaction
+
+- **Idle state** — markerите са спокойни. Без animation, без pulse. Solid dot + (опционално) статичен halo за top performers.
+- **Hovered** — само ТОЗИ marker оживява. Един elegant pulse ring (1.6s cycle, 2.2× expansion). Subtle, не лежи.
+- **Selected** — accent border на dot-а. **Без pulse** — selection вече е комуникирана чрез country fill / side list. Двойно state-ване е визуален шум.
+
+Защо: при 80+ markers, постоянният ambient pulse губи signal value. „Винаги пулсиращо" = „никога не пулсиращо" — eye filter-ва го като noise. Резервирай pulse за активното engagement.
+
+#### 10.3 Discrete tiers, не continuous gradient
+
+- **T1** — топ entity (top 1 per cohort) → по-голям dot + статичен halo
+- **T2** — supporting entities (next 4) → среден dot, без halo
+- **T3** — rest → най-малък dot
+
+Eye разпознава 3 tiers моментално. Continuous log-gradient (3-9px) върху 30 markers се чете като „всички еднакви" защото 3× разлика е визуално subtle, особено при clustering.
+
+```typescript
+// ❌ Грешно — continuous gradient
+const r = 3 + Math.log10(value / max) * 6;
+
+// ✅ Правилно — discrete tiers
+const r = tier === 1 ? 7 : tier === 2 ? 5 : 4;
+```
+
+#### 10.4 Hit area decoupled from visible size
+
+Transparent hit-area circle, sized ≥12px на screen (counter-scaled), седи зад visible dot-а. Pointer events live on the hit area, **не** на visible dot.
+
+Защо: при T3 4px dot — стандартен mouse target ще е трудно clickable, mobile touch почти невъзможно. Decoupling запазва visual cleanliness + comfortable interaction:
+
+```tsx
+<circle r={12 / zoom} fill="transparent" pointerEvents="all" onClick={...} />
+<circle r={4 / zoom} fill="var(--accent)" pointerEvents="none" />
+```
+
+#### 10.5 Visual hierarchy via presence, not motion
+
+Статичен halo > pulsing animation за персистентна важност. Когато T1 marker има static outer ring at rest, eye го разпознава като „anchor" без да го асоциира с urgency или alert. Pulsing е резервирано за **състояние** (хover, alert, anomaly) не за **rank**.
+
+#### 10.6 Анти-pattern: ambient theatre
+
+- ❌ Pulsing на всички markers по дефолт — фурия от точки, signal loss
+- ❌ Concentric rings (3+ rings expanding в стагерnut sequence) — изглежда AI-генерирано dashboard, не intelligence hub
+- ❌ Categorical colours на различни марker types — една accent цветова палитра + opacity ladder за hierarchy
+- ❌ Markers които растат с zoom — създава overlap chaos
+- ❌ Hit area = visible dot size — на T3 4px невъзможно за click
+
 ---
 
 ## Typography scale (cheat sheet)
@@ -282,6 +350,7 @@ Tooltip-ите винаги ползват `--surface` фон + `--border` гр�
 - [ ] Чартът без излишни оси/grids.
 - [ ] **Chart типът е честен** — sm-area за continuous, bars за counts, steps за state, combo за mech-linked (§9). Никакво „избрах smooth защото е красиво".
 - [ ] **Dual Y-axis само за causally linked метрики** (§9.4–9.5).
+- [ ] **Map markers — counter-scaled и calm** — constant pixel size при всеки zoom; pulse само на hover, не ambient; discrete tiers, не gradient (§10).
 - [ ] `tabular-nums` на всички числа в таблици.
 - [ ] Mobile тест: 375px viewport, grid колапсва правилно. Combo charts collapsing към tab toggle (§9.6).
 - [ ] Skeleton, error, empty — и трите състояния са дизайнирани.
