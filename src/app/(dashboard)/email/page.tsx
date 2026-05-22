@@ -131,6 +131,28 @@ export default function EmailPage() {
     return data.topFlows;
   }, [data?.topFlows, flowFilter]);
 
+  // Campaign revenue by send date — campaigns are discrete send events,
+  // so the trend is bars per day (§9.2), not a smooth line. Flows are
+  // always-on background and have no send date, so they're excluded
+  // here; the "Flows по Revenue" card below carries them.
+  const campaignTrend = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const c of data?.campaigns ?? []) {
+      if (!c.sendTime || c.revenue <= 0) continue;
+      const iso = c.sendTime.slice(0, 10);
+      byDate.set(iso, (byDate.get(iso) ?? 0) + c.revenue);
+    }
+    return [...byDate.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([iso, revenue]) => ({
+        date: new Date(`${iso}T00:00:00`).toLocaleDateString("bg-BG", {
+          day: "numeric",
+          month: "short",
+        }),
+        revenue,
+      }));
+  }, [data?.campaigns]);
+
   if (isLoading) {
     return (
       <>
@@ -246,6 +268,20 @@ export default function EmailPage() {
         {data?.activeFlows || 0} от {data?.totalFlows || 0} активни flows ·{" "}
         приходи: кампании {fmt(data?.campaignRevenue || 0)} / flows {fmt(data?.flowRevenue || 0)} EUR
       </p>
+
+      {/* Campaign revenue trend — discrete sends → bars (§9.2) */}
+      {campaignTrend.length > 1 && (
+        <BarChartCard
+          data={campaignTrend}
+          xKey="date"
+          yKey="revenue"
+          title="Приходи от кампании по дни"
+          height={200}
+          formatValue={(v) => `${fmt(v)} EUR`}
+          valueLabel="Приходи"
+          className="mb-4"
+        />
+      )}
 
       {/* Flow Revenue Chart */}
       {filteredFlows.length > 0 && (
