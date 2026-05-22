@@ -1,13 +1,60 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Sunrise, Loader2, RefreshCw } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { Markdown } from "@/components/shared/Markdown";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { MiniKpi } from "@/components/shared/MiniKpi";
+
+// Minimal slice of the BusinessContext snapshot the KPI strip reads.
+interface MorningSnapshot {
+  shopify: { salesToday: number; ordersToday: number } | null;
+  ga4: { overview: { sessions: number } } | null;
+  klaviyo: { totalRevenue: number } | null;
+  meta: { overview: { roas: number } } | null;
+}
+
+function fmtEur(n: number): string {
+  return `€${n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function fmtInt(n: number): string {
+  return Math.round(n).toLocaleString("bg-BG");
+}
+
+/**
+ * The figures, lifted out of the prose. Five hero KPIs read straight from
+ * the structured snapshot (never parsed from the AI markdown), each a
+ * deep-link to the page that explains it — the briefing → drill-down chain.
+ */
+function MorningKpiStrip({ snapshot }: { snapshot: MorningSnapshot }) {
+  const s = snapshot;
+  const kpis: { href: string; label: string; value: string }[] = [
+    { href: "/sales", label: "Приход вчера", value: s.shopify ? fmtEur(s.shopify.salesToday) : "—" },
+    { href: "/sales", label: "Поръчки вчера", value: s.shopify ? fmtInt(s.shopify.ordersToday) : "—" },
+    { href: "/ads", label: "ROAS · 7д", value: s.meta ? `${s.meta.overview.roas.toFixed(2)}x` : "—" },
+    { href: "/traffic", label: "Трафик · сесии 30д", value: s.ga4 ? fmtInt(s.ga4.overview.sessions) : "—" },
+    { href: "/email", label: "Имейл приход · 30д", value: s.klaviyo ? fmtEur(s.klaviyo.totalRevenue) : "—" },
+  ];
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      {kpis.map((k) => (
+        <Link
+          key={k.label}
+          href={k.href}
+          className="block transition-transform hover:-translate-y-0.5"
+        >
+          <MiniKpi hero label={k.label} value={k.value} />
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 export default function MorningReportPage() {
   const [content, setContent] = useState("");
+  const [snapshot, setSnapshot] = useState<MorningSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +91,7 @@ export default function MorningReportPage() {
           try {
             const evt = JSON.parse(line.slice(6));
             if (evt.t === "status") setStatus(evt.msg);
+            if (evt.t === "snapshot") setSnapshot(evt.d);
             if (evt.t === "text") {
               setStatus(null);
               setContent((prev) => prev + evt.d);
@@ -73,6 +121,7 @@ export default function MorningReportPage() {
         const json = await res.json();
         if (json.report?.content) {
           setContent(json.report.content);
+          setSnapshot(json.report.data_snapshot ?? null);
           setGeneratedAt(json.report.created_at ?? null);
           setLoading(false);
           return;
@@ -120,6 +169,9 @@ export default function MorningReportPage() {
       <p className="text-text-2 text-[13px] mb-4 capitalize">{today}</p>
 
       <div className="max-w-4xl" ref={contentRef}>
+        {/* The figures, before the narrative */}
+        {snapshot && <MorningKpiStrip snapshot={snapshot} />}
+
         {/* Status indicator */}
         {status && (
           <div className="flex items-center gap-2 mb-4 text-text-3">

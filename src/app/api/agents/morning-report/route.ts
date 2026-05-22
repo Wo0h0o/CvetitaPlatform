@@ -104,6 +104,10 @@ export async function POST(req: NextRequest) {
         const businessContext = formatContextForPrompt(ctx, { shopifyLabel: "продажби вчера" });
         const prompt = buildPrompt(businessContext);
 
+        // Ship the structured snapshot before the prose — the KPI strip
+        // renders from this, deterministically, never parsed from the
+        // markdown. Cached opens get the same shape from data_snapshot.
+        send({ t: "snapshot", d: ctx });
         send({ t: "status", msg: "Генерирам сутрешния доклад..." });
 
         const anthropicRes = await fetch(
