@@ -2,21 +2,28 @@
 
 import { useMemo } from "react";
 import { HeatmapGrid } from "@/components/charts/HeatmapGrid";
+import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { fmtInt } from "@/lib/format";
 
 // ============================================================
-// TrafficRhythm — "кога идва трафикът" 7×24 heatmap.
+// TrafficRhythm — "кога идва трафикът".
 //
-// 7 ISO weekdays (rows, Mon-first) × 24 hours coloured by the
-// AVERAGE sessions per occurrence of that (weekday, hour) cell.
-// Design contract §9: "кога през деня/седмицата" → hour×weekday
-// heatmap. §12: averaged view — the API already divided each
-// bucket by how many of that weekday lived in the (complete-days)
-// window, and hands us that divisor as `weekdayCounts` so the
-// tooltip can surface "средно от N" — never a raw cross-bucket sum.
+// Two layouts, one dataset (design contract §9.6 — a heatmap must
+// NOT cram 7×24 = 168 cells into a horizontally-scrolled strip on
+// a phone):
 //
-// Purely presentational: the /traffic page owns the single GA4
-// fetch and passes the rhythm slice down (mirrors KpiStrip on Home).
+//   * Desktop (md+) — the full 7×24 HeatmapGrid. Sessions per
+//     (weekday, hour), averaged per occurrence.
+//   * Mobile (<md)  — collapses to a weekday summary: 7 bars of
+//     average sessions/day. No horizontal scroll, so no sticky-
+//     column bleed.
+//
+// §12: the API already divided each bucket by how many of that
+// weekday the (complete-days) window held, and hands us that
+// divisor as `weekdayCounts` for the tooltip's "средно от N".
+//
+// Purely presentational — the /traffic page owns the single GA4
+// fetch and passes the rhythm slice down.
 // ============================================================
 
 interface RhythmBucket {
@@ -56,6 +63,7 @@ export function TrafficRhythm({
   /** ISO-weekday → occurrence count in the rhythm window (the §12 divisor). */
   weekdayCounts: Record<string, number>;
 }) {
+  // --- Desktop: full 7×24 grid ---
   const rows = useMemo<HeatRow[]>(() => {
     if (rhythm.length === 0) return [];
     const grid: HeatRow[] = [];
@@ -80,8 +88,29 @@ export function TrafficRhythm({
     return grid;
   }, [rhythm, weekdayCounts]);
 
-  // Peak = highest per-occurrence average, so it isn't biased toward
-  // whichever weekday simply had more occurrences in the window.
+  // --- Mobile: per-weekday daily average. Summing the per-occurrence
+  // hourly averages over 24h yields the average sessions of a typical
+  // [weekday] — see §12. ---
+  const weekdayTotals = useMemo(() => {
+    const totals = WEEKDAY_SHORT.map((label, i) => ({
+      weekday: i + 1,
+      label,
+      avg: 0,
+    }));
+    for (const b of rhythm) {
+      const t = totals[b.weekday - 1];
+      if (t) t.avg += b.avgSessions;
+    }
+    return totals;
+  }, [rhythm]);
+  const maxWeekday = Math.max(...weekdayTotals.map((w) => w.avg), 1);
+  const topWeekday = weekdayTotals.reduce(
+    (a, b) => (b.avg > a.avg ? b : a),
+    weekdayTotals[0]
+  );
+
+  // Peak = highest per-occurrence hourly average, so it isn't biased
+  // toward whichever weekday simply had more occurrences in the window.
   const peak = useMemo(() => {
     let best: RhythmBucket | null = null;
     for (const b of rhythm) {
@@ -98,21 +127,76 @@ export function TrafficRhythm({
       )}:00 • средно ${fmtInt(Math.round(peak.avgSessions))} сесии`
     : null;
 
+  const peakBadge = peakCallout ? (
+    <span className="text-[11px] text-text-3 tabular-nums hidden sm:inline">
+      {peakCallout}
+    </span>
+  ) : undefined;
+
   return (
-    <HeatmapGrid
-      title="Кога идва трафикът"
-      rowHeader="Ден"
-      rows={rows}
-      columnLabels={HOUR_LABELS}
-      formatCell={(v) => fmtInt(v)}
-      emptyText="Недостатъчно пълни дни за ритъм"
-      action={
-        peakCallout ? (
-          <span className="text-[11px] text-text-3 tabular-nums hidden sm:inline">
-            {peakCallout}
-          </span>
-        ) : undefined
-      }
-    />
+    <>
+      {/* Desktop — full 7×24 heatmap */}
+      <div className="hidden md:block">
+        <HeatmapGrid
+          title="Кога идва трафикът"
+          rowHeader="Ден"
+          rows={rows}
+          columnLabels={HOUR_LABELS}
+          formatCell={(v) => fmtInt(v)}
+          emptyText="Недостатъчно пълни дни за ритъм"
+          action={peakBadge}
+        />
+      </div>
+
+      {/* Mobile — weekday summary, no horizontal scroll (§9.6) */}
+      <div className="md:hidden">
+        <Card>
+          <CardHeader>Кога идва трафикът</CardHeader>
+          <CardBody>
+            {rhythm.length === 0 ? (
+              <p className="text-center py-8 text-[13px] text-text-2">
+                Недостатъчно пълни дни за ритъм
+              </p>
+            ) : (
+              <>
+                <div className="text-[12px] text-text-3 mb-3">
+                  Средно сесии на ден
+                </div>
+                <div className="space-y-3">
+                  {weekdayTotals.map((w) => {
+                    const isTop = w.avg > 0 && w.weekday === topWeekday.weekday;
+                    return (
+                      <div key={w.weekday}>
+                        <div className="flex items-center justify-between gap-2 text-[13px] mb-1">
+                          <span className="text-text">
+                            {WEEKDAY_FULL[w.weekday - 1]}
+                          </span>
+                          <span className="text-text-2 tabular-nums flex-shrink-0">
+                            {fmtInt(Math.round(w.avg))}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              isTop ? "bg-accent" : "bg-text-3"
+                            }`}
+                            style={{ width: `${(w.avg / maxWeekday) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {peakCallout && (
+                  <p className="text-[11px] text-text-3 tabular-nums mt-4 pt-3 border-t border-border">
+                    {peakCallout}
+                  </p>
+                )}
+              </>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+    </>
   );
 }
