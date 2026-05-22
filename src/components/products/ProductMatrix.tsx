@@ -10,21 +10,18 @@ import { useChartColors } from "@/components/charts/ChartContainer";
 //
 // Design contract §9.7 (bubble quadrant). Two metrics position a
 // product in one of four quadrants — attention (GA4 sessions) ×
-// conversion — and a third (revenue) is the bubble size. The big
-// products dominate; the long tail is a calm cloud. The whole
-// catalogue fits on one chart because size, not pagination, carries
-// the scale.
+// conversion — and a third (revenue) is the bubble size.
 //
-// Renderer: hand-rolled SVG, not Recharts. A static ~90-point
-// scatter with sized markers needs scale control Recharts won't give
-// — its plot clipPath slices any bubble whose centre nears a domain
-// edge, and ZAxis/log domains fought every tweak. Here the data
-// scales map to the plot rect and bubbles simply overflow into the
-// margins; nothing is ever clipped.
+// Renderer: hand-rolled SVG, not Recharts. A static sized-marker
+// scatter needs scale control Recharts won't give — its plot
+// clipPath slices bubbles near a domain edge. Here data scales map
+// to the plot rect and bubbles overflow into margins; never clipped.
 //
-// Desktop: the scatter beside the diagnosis list (lg 2-col, the
-// list is the drill-down companion). Mobile: scatter + hover don't
-// work on touch (§13) — the list alone carries the diagnosis.
+// Layout (desktop lg): the square bubble chart + a rule-based
+// "Приоритетни действия" card side by side; the quadrant-grouped
+// diagnosis list runs full-width below as the drill-down. Mobile:
+// scatter + hover don't work on touch (§13) — action card + list
+// carry the diagnosis.
 // ============================================================
 
 type Quadrant = "star" | "leaking" | "gem" | "dormant" | "insufficient";
@@ -145,7 +142,7 @@ function HoverCard({ p }: { p: ScatterPoint }) {
           <div className="text-[10px] text-text-3">приходи</div>
         </div>
       </div>
-      <p className="text-[11px] text-text-2 leading-relaxed border-t border-border/70 pt-2">{q.hint}</p>
+      <p className="text-[11px] text-text-2 leading-relaxed border-t border-border/70 pt-2">{QUADRANTS[p.quadrant].hint}</p>
     </div>
   );
 }
@@ -213,27 +210,31 @@ function BubbleQuadrant({
       maxZ = Math.max(maxZ, z);
     }
     // Symmetric log domain around the median → vertical divider centred.
-    // ×1.12 breathing room so the extreme bubble sits inside the plot.
     const spread = Math.max(hiX / medX, medX / loX, 1.2) * 1.12;
     const xLo = medX / spread;
     const xHi = medX * spread;
 
-    // Polylinear Y: [0, median, max] → [bottom, centre, top]. The median
-    // sits dead-centre (clean 2×2) AND the true max is shown — no clamp.
-    // medY*1.4 floor keeps the top half from collapsing when the highest
-    // converter barely clears the median.
-    const maxYTop = Math.max(maxYData, medY * 1.4, 1);
-    const maxYDomain = maxYTop * 1.05;
+    // Polylinear Y: [0, median, top] → [bottom, centre, top]. The top
+    // stop is the 95th percentile, NOT the raw max — a single freak
+    // converter (e.g. 1 sale on 2 sessions) would otherwise compress
+    // the whole real cloud into a thin band near the median. Outliers
+    // clamp to the top edge; the hover card still shows their true %.
+    const sortedConv = plottable.map((p) => p.conversionRate * 100).sort((a, b) => a - b);
+    const p95 = sortedConv[Math.min(sortedConv.length - 1, Math.floor(sortedConv.length * 0.95))];
+    const maxYTop = Math.max(p95, medY * 1.8, 1);
+    const maxYDomain = maxYTop * 1.04;
+    const hasYOutliers = maxYData > maxYTop + 0.05;
 
-    return { plottable, medX, medY, xLo, xHi, minZ, maxZ, maxYData: maxYTop, maxYDomain };
+    return { plottable, medX, medY, xLo, xHi, minZ, maxZ, maxYTop, maxYDomain, hasYOutliers };
   }, [products, meta]);
 
   // ---- Pixel geometry ----
   const geom = useMemo(() => {
     if (!model || W <= 0) return null;
     const mT = 24, mR = 20, mB = 40, mL = 58;
-    // Square plot regardless of container width; cap so it stays compact.
-    const plot = Math.min(W - mL - mR, 540);
+    // Square plot regardless of container width; cap so it stays sane
+    // on ultra-wide monitors.
+    const plot = Math.min(W - mL - mR, 680);
     if (plot <= 80) return null;
     const offsetX = (W - mL - mR - plot) / 2;
     const left = mL + offsetX;
@@ -242,7 +243,7 @@ function BubbleQuadrant({
     const bottom = top + plot;
     const height = plot + mT + mB;
 
-    const { medX, medY, xLo, xHi, maxYData, maxYDomain } = model;
+    const { medY, xLo, xHi, maxYDomain } = model;
     const logLo = Math.log(xLo);
     const logHi = Math.log(xHi);
     const midY = (top + bottom) / 2;
@@ -262,7 +263,7 @@ function BubbleQuadrant({
       return 5 + Math.sqrt(Math.max(t, 0)) * 15;
     };
 
-    return { left, top, right, bottom, midY, plot, height, xPix, yPix, rScale, medX, medY, maxYData };
+    return { left, top, right, bottom, midY, plot, height, xPix, yPix, rScale };
   }, [model, W]);
 
   // ---- Points (sorted big→small so small bubbles draw on top) ----
@@ -273,13 +274,42 @@ function BubbleQuadrant({
       .map((p) => ({
         ...p,
         cx: geom.xPix(p.ga4Views),
-        cy: geom.yPix(p.conversionRate * 100),
+        // Clamp to the domain top so outliers pile at the top edge
+        // instead of flying off-scale.
+        cy: geom.yPix(Math.min(p.conversionRate * 100, model.maxYDomain)),
         r: geom.rScale(Math.max(p.revenue, 1)),
       }));
   }, [model, geom]);
 
-  // Top ~6 by revenue get a direct label — magic-quadrant style (§9.7).
-  const labelled = useMemo(() => new Set(points.slice(0, 6).map((p) => p.productId ?? p.title)), [points]);
+  // ---- Direct labels — top by revenue, greedy collision skip (§9.7) ----
+  // Magic-quadrant style, but a label that would overlap another is
+  // dropped rather than stacked into an unreadable pile.
+  const labels = useMemo(() => {
+    if (!geom) return [];
+    const placed: { x: number; y: number; text: string }[] = [];
+    const boxes: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (const p of points.slice(0, 8)) {
+      const text = p.title.length > 20 ? p.title.slice(0, 19) + "…" : p.title;
+      const w = text.length * 5.6;
+      const lowerHalf = p.cy > geom.midY;
+      for (const side of lowerHalf ? ["above", "below"] : ["below", "above"]) {
+        const y = side === "above" ? p.cy - p.r - 6 : p.cy + p.r + 12;
+        const box = { x1: p.cx - w / 2, y1: y - 9, x2: p.cx + w / 2, y2: y + 2 };
+        const fitsX = box.x1 > 2 && box.x2 < W - 2;
+        const fitsY = y > geom.top + 4 && y < geom.bottom - 2;
+        const clear = !boxes.some(
+          (b) => !(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)
+        );
+        if (fitsX && fitsY && clear) {
+          placed.push({ x: p.cx, y, text });
+          boxes.push(box);
+          break;
+        }
+      }
+      if (placed.length >= 6) break;
+    }
+    return placed;
+  }, [points, geom, W]);
 
   if (!model) {
     return (
@@ -290,28 +320,26 @@ function BubbleQuadrant({
   }
 
   const xTicks = geom ? logTicks(model.xLo, model.xHi) : [];
-  const yTicks = geom
-    ? [0, model.medY / 2, model.medY, (model.medY + geom.maxYData) / 2, geom.maxYData]
-    : [];
+  const yTickVals = [0, model.medY / 2, model.medY, (model.medY + model.maxYTop) / 2, model.maxYTop];
 
   return (
     <div ref={ref} className="relative w-full">
       {geom && (
         <svg width={W} height={geom.height} className="block">
           {/* Quadrant tints — four equal rects, median dividers at centre */}
-          <rect x={geom.left} y={geom.top} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+          <rect x={geom.left} y={geom.top} width={geom.plot / 2} height={geom.plot / 2}
             fill={c.accent} fillOpacity={0.03} />
-          <rect x={(geom.left + geom.right) / 2} y={geom.top} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+          <rect x={geom.left + geom.plot / 2} y={geom.top} width={geom.plot / 2} height={geom.plot / 2}
             fill={c.accent} fillOpacity={0.07} />
-          <rect x={geom.left} y={geom.midY} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+          <rect x={geom.left} y={geom.midY} width={geom.plot / 2} height={geom.plot / 2}
             fill={c.text3} fillOpacity={0.04} />
-          <rect x={(geom.left + geom.right) / 2} y={geom.midY} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+          <rect x={geom.left + geom.plot / 2} y={geom.midY} width={geom.plot / 2} height={geom.plot / 2}
             fill={c.red} fillOpacity={0.05} />
 
           {/* Plot frame + median dividers */}
           <rect x={geom.left} y={geom.top} width={geom.plot} height={geom.plot}
             fill="none" stroke={c.border} strokeWidth={1} />
-          <line x1={(geom.left + geom.right) / 2} y1={geom.top} x2={(geom.left + geom.right) / 2} y2={geom.bottom}
+          <line x1={geom.left + geom.plot / 2} y1={geom.top} x2={geom.left + geom.plot / 2} y2={geom.bottom}
             stroke={c.border} strokeDasharray="3 3" />
           <line x1={geom.left} y1={geom.midY} x2={geom.right} y2={geom.midY}
             stroke={c.border} strokeDasharray="3 3" />
@@ -323,9 +351,9 @@ function BubbleQuadrant({
           <text x={geom.left + 8} y={geom.bottom - 8} fontSize={11} fill={c.text3}>Спящи</text>
 
           {/* Y axis ticks */}
-          {yTicks.map((v, i) => (
+          {yTickVals.map((v, i) => (
             <text key={`y${i}`} x={geom.left - 8} y={geom.yPix(v) + 4} textAnchor="end" fontSize={11} fill={c.text3}>
-              {v.toFixed(1)}%
+              {v.toFixed(1)}%{i === yTickVals.length - 1 && model.hasYOutliers ? "+" : ""}
             </text>
           ))}
           <text
@@ -367,30 +395,23 @@ function BubbleQuadrant({
             );
           })}
 
-          {/* Direct labels — top ~6 by revenue */}
-          {points
-            .filter((p) => labelled.has(p.productId ?? p.title))
-            .map((p) => {
-              const above = p.cy > geom.midY;
-              const ly = above ? p.cy - p.r - 6 : p.cy + p.r + 13;
-              const txt = p.title.length > 18 ? p.title.slice(0, 17) + "…" : p.title;
-              return (
-                <text
-                  key={`l${p.productId ?? p.title}`}
-                  x={p.cx}
-                  y={ly}
-                  textAnchor="middle"
-                  fontSize={10}
-                  fill={c.text2}
-                  stroke="var(--surface)"
-                  strokeWidth={3}
-                  paintOrder="stroke"
-                  style={{ pointerEvents: "none" }}
-                >
-                  {txt}
-                </text>
-              );
-            })}
+          {/* Direct labels — collision-filtered */}
+          {labels.map((l) => (
+            <text
+              key={l.text + l.x}
+              x={l.x}
+              y={l.y}
+              textAnchor="middle"
+              fontSize={10}
+              fill={c.text2}
+              stroke="var(--surface)"
+              strokeWidth={3}
+              paintOrder="stroke"
+              style={{ pointerEvents: "none" }}
+            >
+              {l.text}
+            </text>
+          ))}
         </svg>
       )}
       {!geom && <div className="h-[460px]" />}
@@ -409,6 +430,102 @@ function BubbleQuadrant({
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- Priority actions (rule-based, no AI — analytics stays stats-only) ----------
+
+// Recommendation is picked by a fixed rule on the conversion gap, not
+// generated. The card surfaces the three biggest revenue leaks: the
+// products whose low conversion costs the most vs. the median.
+function leakAction(conversionRate: number, medianConversion: number): string {
+  if (conversionRate < medianConversion * 0.25)
+    return "Конверсията е критично ниска — провери първо цена и наличност, после офертата.";
+  if (conversionRate < medianConversion * 0.6)
+    return "Силен трафик, слаба конверсия — преоформи офертата и открои ясно ползите на страницата.";
+  return "Малко под средното — добави отзиви и подсили call-to-action бутона.";
+}
+
+function PriorityActions({
+  products,
+  meta,
+}: {
+  products: MatrixProduct[];
+  meta: MatrixMeta;
+}) {
+  const items = useMemo(() => {
+    const medConv = meta.medianConversion;
+    if (medConv <= 0) return [];
+    return products
+      .filter((p) => p.quadrant === "leaking" && p.conversionRate > 0 && p.revenue > 0)
+      .map((p) => {
+        // Same traffic at the median conversion → proportional revenue.
+        // Ratio capped at 5× so a near-zero converter can't dominate.
+        const ratio = Math.min(medConv / p.conversionRate, 5);
+        const potential = p.revenue * ratio;
+        return { p, potential, lost: potential - p.revenue };
+      })
+      .sort((a, b) => b.lost - a.lost)
+      .slice(0, 3);
+  }, [products, meta.medianConversion]);
+
+  return (
+    <Card>
+      <CardHeader>Приоритетни действия</CardHeader>
+      <CardBody>
+        {items.length === 0 ? (
+          <p className="text-[13px] text-text-2 text-center py-8">
+            Няма изтичащи продукти в този период — каталогът е здрав.
+          </p>
+        ) : (
+          <>
+            <p className="text-[12px] text-text-2 mb-3 leading-relaxed">
+              Трите продукта, които изпускат най-много приходи спрямо средната конверсия ({fmtPct(meta.medianConversion)}).
+            </p>
+            <div className="space-y-2.5">
+              {items.map(({ p, potential, lost }, i) => {
+                const body = (
+                  <div className="rounded-xl border border-border p-3 hover:bg-surface-2 transition-colors">
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-md bg-red/10 text-red text-[11px] font-bold flex-shrink-0">
+                        {i + 1}
+                      </span>
+                      {p.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.imageUrl} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0 bg-surface-2" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-lg bg-surface-2 flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-semibold text-text leading-snug truncate">{p.title}</div>
+                        <div className="text-[11px] text-text-3 tabular-nums">
+                          {p.ga4Views.toLocaleString("bg-BG")} сес · {fmtPct(p.conversionRate)} конверсия
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-text-2 leading-relaxed">
+                      {leakAction(p.conversionRate, meta.medianConversion)}
+                    </p>
+                    <div className="flex items-baseline gap-1.5 mt-2 pt-2 border-t border-border/70 text-[11px]">
+                      <span className="text-text-3">Сега {fmtEur(p.revenue)} · потенциал</span>
+                      <span className="text-text font-semibold tabular-nums">~{fmtEur(potential)}</span>
+                      <span className="text-red font-medium tabular-nums ml-auto">+{fmtEur(lost)}</span>
+                    </div>
+                  </div>
+                );
+                return p.handle ? (
+                  <Link key={p.title} href={`/products/${p.handle}`} className="block">
+                    {body}
+                  </Link>
+                ) : (
+                  <div key={p.title}>{body}</div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 
@@ -518,11 +635,11 @@ export function ProductMatrix({
   }
 
   return (
-    // lg: the square chart and the diagnosis list ride side by side —
-    // no empty gutter, and the list is the chart's drill-down companion.
+    // lg: wide square chart + the priority-action card on its right;
+    // the full diagnosis list runs full-width below as the drill-down.
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
-      {/* Desktop — the bubble quadrant */}
-      <div className="hidden md:block lg:col-span-2">
+      {/* Desktop — the bubble quadrant (wide → tall, better spread) */}
+      <div className="hidden md:block lg:col-span-3">
         <Card>
           <CardHeader
             action={
@@ -548,8 +665,13 @@ export function ProductMatrix({
         </Card>
       </div>
 
-      {/* Quadrant-grouped list — mobile primary, desktop drill-down companion */}
-      <div className="lg:col-span-3">
+      {/* Priority actions — rule-based, right of the matrix */}
+      <div className="lg:col-span-2">
+        <PriorityActions products={products} meta={meta} />
+      </div>
+
+      {/* Quadrant-grouped diagnosis list — full width below */}
+      <div className="lg:col-span-5">
         <Card>
           <CardHeader>Продукти по диагноза</CardHeader>
           <CardBody>
