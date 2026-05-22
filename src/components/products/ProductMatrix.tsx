@@ -1,19 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ScatterChart,
-  Scatter,
-  XAxis,
-  YAxis,
-  ZAxis,
-  Cell,
-  ReferenceLine,
-  ReferenceArea,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { useChartColors } from "@/components/charts/ChartContainer";
 
@@ -27,9 +15,16 @@ import { useChartColors } from "@/components/charts/ChartContainer";
 // catalogue fits on one chart because size, not pagination, carries
 // the scale.
 //
-// Desktop: the scatter. Mobile: the same diagnosis collapses to a
-// quadrant-grouped list (scatter + hover don't work on touch, §13).
-// The list also rides along on desktop as the drill-down companion.
+// Renderer: hand-rolled SVG, not Recharts. A static ~90-point
+// scatter with sized markers needs scale control Recharts won't give
+// — its plot clipPath slices any bubble whose centre nears a domain
+// edge, and ZAxis/log domains fought every tweak. Here the data
+// scales map to the plot rect and bubbles simply overflow into the
+// margins; nothing is ever clipped.
+//
+// Desktop: the scatter beside the diagnosis list (lg 2-col, the
+// list is the drill-down companion). Mobile: scatter + hover don't
+// work on touch (§13) — the list alone carries the diagnosis.
 // ============================================================
 
 type Quadrant = "star" | "leaking" | "gem" | "dormant" | "insufficient";
@@ -104,23 +99,24 @@ function fmtEur(n: number): string {
 function fmtPct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
 }
+function fmtInt(n: number): string {
+  return Math.round(n).toLocaleString("bg-BG");
+}
 
 // ---------- Hover card ----------
 
 interface ScatterPoint extends MatrixProduct {
-  x: number;
-  y: number;
-  z: number;
+  cx: number;
+  cy: number;
+  r: number;
 }
 
-function HoverCard({ active, payload }: { active?: boolean; payload?: { payload?: ScatterPoint }[] }) {
-  if (!active || !payload?.length) return null;
-  const p = payload[0]?.payload;
-  if (!p || p.quadrant === "insufficient") return null;
+function HoverCard({ p }: { p: ScatterPoint }) {
+  if (p.quadrant === "insufficient") return null;
   const q = QUADRANTS[p.quadrant];
 
   return (
-    <div className="bg-surface/95 backdrop-blur-xl border border-border/60 rounded-xl shadow-xl p-3 max-w-[260px]">
+    <div className="bg-surface/95 backdrop-blur-xl border border-border/60 rounded-xl shadow-xl p-3 w-[260px]">
       <div className="flex items-center gap-2.5 mb-2">
         {p.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -150,6 +146,268 @@ function HoverCard({ active, payload }: { active?: boolean; payload?: { payload?
         </div>
       </div>
       <p className="text-[11px] text-text-2 leading-relaxed border-t border-border/70 pt-2">{q.hint}</p>
+    </div>
+  );
+}
+
+// ---------- Width measure ----------
+
+function useMeasure() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      setWidth(entries[0].contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width] as const;
+}
+
+// ---------- Bubble quadrant (SVG renderer) ----------
+
+// Nice 1-2-5 ticks across a log domain.
+function logTicks(lo: number, hi: number): number[] {
+  const ticks: number[] = [];
+  const p0 = Math.floor(Math.log10(lo));
+  const p1 = Math.ceil(Math.log10(hi));
+  for (let p = p0; p <= p1; p++) {
+    for (const m of [1, 2, 5]) {
+      const v = m * Math.pow(10, p);
+      if (v >= lo && v <= hi) ticks.push(v);
+    }
+  }
+  return ticks;
+}
+
+function BubbleQuadrant({
+  products,
+  meta,
+}: {
+  products: MatrixProduct[];
+  meta: MatrixMeta;
+}) {
+  const c = useChartColors();
+  const [ref, W] = useMeasure();
+  const [hover, setHover] = useState<ScatterPoint | null>(null);
+
+  // ---- Data model: domains independent of pixel geometry ----
+  const model = useMemo(() => {
+    const plottable = products.filter((p) => p.quadrant !== "insufficient");
+    if (plottable.length === 0 || meta.medianViews <= 0 || meta.medianConversion <= 0) {
+      return null;
+    }
+    const medX = meta.medianViews;
+    const medY = meta.medianConversion * 100;
+
+    let loX = Infinity, hiX = 0, maxYData = 0, minZ = Infinity, maxZ = 1;
+    for (const p of plottable) {
+      loX = Math.min(loX, Math.max(p.ga4Views, 1));
+      hiX = Math.max(hiX, p.ga4Views);
+      maxYData = Math.max(maxYData, p.conversionRate * 100);
+      const z = Math.max(p.revenue, 1);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    // Symmetric log domain around the median → vertical divider centred.
+    // ×1.12 breathing room so the extreme bubble sits inside the plot.
+    const spread = Math.max(hiX / medX, medX / loX, 1.2) * 1.12;
+    const xLo = medX / spread;
+    const xHi = medX * spread;
+
+    // Polylinear Y: [0, median, max] → [bottom, centre, top]. The median
+    // sits dead-centre (clean 2×2) AND the true max is shown — no clamp.
+    // medY*1.4 floor keeps the top half from collapsing when the highest
+    // converter barely clears the median.
+    const maxYTop = Math.max(maxYData, medY * 1.4, 1);
+    const maxYDomain = maxYTop * 1.05;
+
+    return { plottable, medX, medY, xLo, xHi, minZ, maxZ, maxYData: maxYTop, maxYDomain };
+  }, [products, meta]);
+
+  // ---- Pixel geometry ----
+  const geom = useMemo(() => {
+    if (!model || W <= 0) return null;
+    const mT = 24, mR = 20, mB = 40, mL = 58;
+    // Square plot regardless of container width; cap so it stays compact.
+    const plot = Math.min(W - mL - mR, 540);
+    if (plot <= 80) return null;
+    const offsetX = (W - mL - mR - plot) / 2;
+    const left = mL + offsetX;
+    const top = mT;
+    const right = left + plot;
+    const bottom = top + plot;
+    const height = plot + mT + mB;
+
+    const { medX, medY, xLo, xHi, maxYData, maxYDomain } = model;
+    const logLo = Math.log(xLo);
+    const logHi = Math.log(xHi);
+    const midY = (top + bottom) / 2;
+
+    const xPix = (v: number) =>
+      left + ((Math.log(Math.max(v, 1)) - logLo) / (logHi - logLo)) * plot;
+
+    // Bottom half [0, medY] → [bottom, midY]; top half [medY, max] → [midY, top].
+    const yPix = (v: number) => {
+      if (v <= medY) return bottom - (medY > 0 ? v / medY : 0) * (bottom - midY);
+      return midY - ((v - medY) / (maxYDomain - medY)) * (midY - top);
+    };
+
+    const rScale = (z: number) => {
+      const { minZ, maxZ } = model;
+      const t = maxZ > minZ ? (Math.max(z, 1) - minZ) / (maxZ - minZ) : 0.5;
+      return 5 + Math.sqrt(Math.max(t, 0)) * 15;
+    };
+
+    return { left, top, right, bottom, midY, plot, height, xPix, yPix, rScale, medX, medY, maxYData };
+  }, [model, W]);
+
+  // ---- Points (sorted big→small so small bubbles draw on top) ----
+  const points = useMemo<ScatterPoint[]>(() => {
+    if (!model || !geom) return [];
+    return [...model.plottable]
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((p) => ({
+        ...p,
+        cx: geom.xPix(p.ga4Views),
+        cy: geom.yPix(p.conversionRate * 100),
+        r: geom.rScale(Math.max(p.revenue, 1)),
+      }));
+  }, [model, geom]);
+
+  // Top ~6 by revenue get a direct label — magic-quadrant style (§9.7).
+  const labelled = useMemo(() => new Set(points.slice(0, 6).map((p) => p.productId ?? p.title)), [points]);
+
+  if (!model) {
+    return (
+      <p className="text-[13px] text-text-2 text-center py-12">
+        Няма достатъчно продукти с данни за матрицата.
+      </p>
+    );
+  }
+
+  const xTicks = geom ? logTicks(model.xLo, model.xHi) : [];
+  const yTicks = geom
+    ? [0, model.medY / 2, model.medY, (model.medY + geom.maxYData) / 2, geom.maxYData]
+    : [];
+
+  return (
+    <div ref={ref} className="relative w-full">
+      {geom && (
+        <svg width={W} height={geom.height} className="block">
+          {/* Quadrant tints — four equal rects, median dividers at centre */}
+          <rect x={geom.left} y={geom.top} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+            fill={c.accent} fillOpacity={0.03} />
+          <rect x={(geom.left + geom.right) / 2} y={geom.top} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+            fill={c.accent} fillOpacity={0.07} />
+          <rect x={geom.left} y={geom.midY} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+            fill={c.text3} fillOpacity={0.04} />
+          <rect x={(geom.left + geom.right) / 2} y={geom.midY} width={(geom.right - geom.left) / 2} height={geom.plot / 2}
+            fill={c.red} fillOpacity={0.05} />
+
+          {/* Plot frame + median dividers */}
+          <rect x={geom.left} y={geom.top} width={geom.plot} height={geom.plot}
+            fill="none" stroke={c.border} strokeWidth={1} />
+          <line x1={(geom.left + geom.right) / 2} y1={geom.top} x2={(geom.left + geom.right) / 2} y2={geom.bottom}
+            stroke={c.border} strokeDasharray="3 3" />
+          <line x1={geom.left} y1={geom.midY} x2={geom.right} y2={geom.midY}
+            stroke={c.border} strokeDasharray="3 3" />
+
+          {/* Corner labels */}
+          <text x={geom.right - 8} y={geom.top + 15} textAnchor="end" fontSize={11} fill={c.text3}>Звезди</text>
+          <text x={geom.right - 8} y={geom.bottom - 8} textAnchor="end" fontSize={11} fill={c.text3}>Изтичащи</text>
+          <text x={geom.left + 8} y={geom.top + 15} fontSize={11} fill={c.text3}>Скрити перли</text>
+          <text x={geom.left + 8} y={geom.bottom - 8} fontSize={11} fill={c.text3}>Спящи</text>
+
+          {/* Y axis ticks */}
+          {yTicks.map((v, i) => (
+            <text key={`y${i}`} x={geom.left - 8} y={geom.yPix(v) + 4} textAnchor="end" fontSize={11} fill={c.text3}>
+              {v.toFixed(1)}%
+            </text>
+          ))}
+          <text
+            x={14} y={geom.top + geom.plot / 2}
+            textAnchor="middle" fontSize={11} fill={c.text3}
+            transform={`rotate(-90 14 ${geom.top + geom.plot / 2})`}
+          >
+            Конверсия ↑
+          </text>
+
+          {/* X axis ticks */}
+          {xTicks.map((v, i) => (
+            <text key={`x${i}`} x={geom.xPix(v)} y={geom.bottom + 18} textAnchor="middle" fontSize={11} fill={c.text3}>
+              {fmtInt(v)}
+            </text>
+          ))}
+          <text x={geom.left + geom.plot / 2} y={geom.height - 4} textAnchor="middle" fontSize={11} fill={c.text3}>
+            Сесии (внимание) →
+          </text>
+
+          {/* Bubbles */}
+          {points.map((p) => {
+            const q = QUADRANTS[p.quadrant as Exclude<Quadrant, "insufficient">];
+            const isHover = hover?.productId === p.productId && hover?.title === p.title;
+            return (
+              <circle
+                key={p.productId ?? p.title}
+                cx={p.cx}
+                cy={p.cy}
+                r={p.r}
+                fill={q.fill}
+                fillOpacity={isHover ? Math.min(q.opacity + 0.15, 1) : q.opacity}
+                stroke={isHover ? c.text : "var(--surface)"}
+                strokeWidth={isHover ? 1.5 : 1}
+                style={{ cursor: "pointer", transition: "fill-opacity 120ms" }}
+                onMouseEnter={() => setHover(p)}
+                onMouseLeave={() => setHover((h) => (h === p ? null : h))}
+              />
+            );
+          })}
+
+          {/* Direct labels — top ~6 by revenue */}
+          {points
+            .filter((p) => labelled.has(p.productId ?? p.title))
+            .map((p) => {
+              const above = p.cy > geom.midY;
+              const ly = above ? p.cy - p.r - 6 : p.cy + p.r + 13;
+              const txt = p.title.length > 18 ? p.title.slice(0, 17) + "…" : p.title;
+              return (
+                <text
+                  key={`l${p.productId ?? p.title}`}
+                  x={p.cx}
+                  y={ly}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fill={c.text2}
+                  stroke="var(--surface)"
+                  strokeWidth={3}
+                  paintOrder="stroke"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {txt}
+                </text>
+              );
+            })}
+        </svg>
+      )}
+      {!geom && <div className="h-[460px]" />}
+
+      {/* Hover glass card (§11) — anchored to the bubble */}
+      {geom && hover && (
+        <div
+          className="absolute z-50 pointer-events-none"
+          style={{
+            left: Math.max(134, Math.min(W - 134, hover.cx)),
+            top: hover.cy > geom.top + 150 ? hover.cy - hover.r - 10 : hover.cy + hover.r + 10,
+            transform: hover.cy > geom.top + 150 ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+          }}
+        >
+          <HoverCard p={hover} />
+        </div>
+      )}
     </div>
   );
 }
@@ -235,8 +493,6 @@ export function ProductMatrix({
   products: MatrixProduct[];
   meta: MatrixMeta;
 }) {
-  const c = useChartColors();
-
   const byQuadrant = useMemo(() => {
     const map: Record<Quadrant, MatrixProduct[]> = {
       star: [], leaking: [], gem: [], dormant: [], insufficient: [],
@@ -248,53 +504,9 @@ export function ProductMatrix({
     return map;
   }, [products]);
 
-  // Conversion axis is clamped to 2× the median so the median divider
-  // sits at the vertical centre — the chart reads as a real 2×2 matrix
-  // instead of a thin strip squashed by a few sky-high outliers. The
-  // hover card still shows each product's true conversion.
-  const medY = meta.medianConversion * 100;
-  const yMax = Math.max(medY * 2, 1);
-  // Explicit ticks — Recharts' auto-tick generator produced a phantom
-  // 31852022% tick on this scatter (the scale itself was fine). Five
-  // even ticks; the middle one lands exactly on the median divider.
-  const yTicks = [0, yMax * 0.25, yMax * 0.5, yMax * 0.75, yMax];
-
-  const points = useMemo<ScatterPoint[]>(() => {
-    const plottable = products.filter((p) => p.quadrant !== "insufficient");
-    return plottable.map((p) => ({
-      ...p,
-      x: p.ga4Views,
-      y: Math.min(p.conversionRate * 100, yMax),
-      z: Math.max(p.revenue, 1),
-    }));
-  }, [products, yMax]);
-
-  // Symmetric log domain around the median view-count so the vertical
-  // divider is centred too — both axes balanced = four equal quadrants.
-  // xLo/xHi are also the explicit bounds for the quadrant tint rects.
-  const { xDomain, xLo, xHi } = useMemo<{
-    xDomain: [number | string, number | string];
-    xLo: number | null;
-    xHi: number | null;
-  }>(() => {
-    if (points.length === 0 || meta.medianViews <= 0) {
-      return { xDomain: ["auto", "auto"], xLo: null, xHi: null };
-    }
-    let lo = Infinity;
-    let hi = 0;
-    for (const p of points) {
-      lo = Math.min(lo, p.x);
-      hi = Math.max(hi, p.x);
-    }
-    const spread = Math.max(hi / meta.medianViews, meta.medianViews / lo, 1.2);
-    const dLo = meta.medianViews / spread;
-    const dHi = meta.medianViews * spread;
-    return { xDomain: [dLo, dHi], xLo: dLo, xHi: dHi };
-  }, [points, meta.medianViews]);
-
   if (!meta.ga4Available) {
     return (
-      <Card>
+      <Card className="mb-6">
         <CardHeader>Матрица на продуктите</CardHeader>
         <CardBody>
           <p className="text-[13px] text-text-2 text-center py-8">
@@ -306,9 +518,11 @@ export function ProductMatrix({
   }
 
   return (
-    <div className="space-y-4 mb-6">
+    // lg: the square chart and the diagnosis list ride side by side —
+    // no empty gutter, and the list is the chart's drill-down companion.
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
       {/* Desktop — the bubble quadrant */}
-      <div className="hidden md:block">
+      <div className="hidden md:block lg:col-span-2">
         <Card>
           <CardHeader
             action={
@@ -320,96 +534,7 @@ export function ProductMatrix({
             Матрица: Внимание × Конверсия
           </CardHeader>
           <CardBody>
-            {/* Constrained width — a quadrant must read as a square-ish
-                grid, not a 3:1 band stretched across a wide monitor. */}
-            <div className="h-[460px] max-w-[640px] mx-auto">
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 16, right: 24, bottom: 28, left: 8 }}>
-                  {/* Quadrant tints — ALL four bounds explicit. Omitting
-                      x2/y2 makes Recharts guess (it pushed the Y axis to
-                      31852022% and flipped the colours). */}
-                  {xLo !== null && xHi !== null && (
-                    <ReferenceArea
-                      x1={meta.medianViews} x2={xHi} y1={medY} y2={yMax}
-                      fill={c.accent} fillOpacity={0.06} stroke="none"
-                      label={{ value: "Звезди", position: "insideTopRight", fontSize: 11, fill: c.text3 }}
-                    />
-                  )}
-                  {xLo !== null && xHi !== null && (
-                    <ReferenceArea
-                      x1={meta.medianViews} x2={xHi} y1={0} y2={medY}
-                      fill={c.red} fillOpacity={0.05} stroke="none"
-                      label={{ value: "Изтичащи", position: "insideBottomRight", fontSize: 11, fill: c.text3 }}
-                    />
-                  )}
-                  {xLo !== null && xHi !== null && (
-                    <ReferenceArea
-                      x1={xLo} x2={meta.medianViews} y1={medY} y2={yMax}
-                      fill={c.accent} fillOpacity={0.03} stroke="none"
-                      label={{ value: "Скрити перли", position: "insideTopLeft", fontSize: 11, fill: c.text3 }}
-                    />
-                  )}
-                  {xLo !== null && xHi !== null && (
-                    <ReferenceArea
-                      x1={xLo} x2={meta.medianViews} y1={0} y2={medY}
-                      fill={c.text3} fillOpacity={0.04} stroke="none"
-                      label={{ value: "Спящи", position: "insideBottomLeft", fontSize: 11, fill: c.text3 }}
-                    />
-                  )}
-
-                  <XAxis
-                    type="number"
-                    dataKey="x"
-                    name="сесии"
-                    scale="log"
-                    domain={xDomain}
-                    allowDataOverflow
-                    tick={{ fontSize: 11, fill: c.text3 }}
-                    tickLine={false}
-                    axisLine={false}
-                    label={{ value: "Сесии (внимание) →", position: "bottom", fontSize: 11, fill: c.text3 }}
-                  />
-                  <YAxis
-                    type="number"
-                    dataKey="y"
-                    name="конверсия"
-                    domain={[0, yMax]}
-                    ticks={yTicks}
-                    tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
-                    allowDataOverflow
-                    tick={{ fontSize: 11, fill: c.text3 }}
-                    tickLine={false}
-                    axisLine={false}
-                    label={{ value: "Конверсия ↑", angle: -90, position: "insideLeft", fontSize: 11, fill: c.text3 }}
-                  />
-                  <ZAxis type="number" dataKey="z" range={[50, 1100]} />
-
-                  <ReferenceLine x={meta.medianViews} stroke={c.border} strokeDasharray="3 3" />
-                  <ReferenceLine y={medY} stroke={c.border} strokeDasharray="3 3" />
-
-                  <Tooltip
-                    content={<HoverCard />}
-                    cursor={{ strokeDasharray: "3 3", stroke: c.text3 }}
-                    wrapperStyle={{ outline: "none", zIndex: 50 }}
-                  />
-
-                  <Scatter data={points} isAnimationActive={false}>
-                    {points.map((p) => {
-                      const q = QUADRANTS[p.quadrant as Exclude<Quadrant, "insufficient">];
-                      return (
-                        <Cell
-                          key={p.title}
-                          fill={q.fill}
-                          fillOpacity={q.opacity}
-                          stroke="var(--surface)"
-                          strokeWidth={1}
-                        />
-                      );
-                    })}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
+            <BubbleQuadrant products={products} meta={meta} />
             {/* Quadrant legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 pt-3 border-t border-border">
               {GROUP_ORDER.map((k) => (
@@ -424,24 +549,26 @@ export function ProductMatrix({
       </div>
 
       {/* Quadrant-grouped list — mobile primary, desktop drill-down companion */}
-      <Card>
-        <CardHeader>Продукти по диагноза</CardHeader>
-        <CardBody>
-          <div className="space-y-2">
-            {GROUP_ORDER.map((k) => (
-              <QuadrantGroup key={k} quadrant={k} products={byQuadrant[k]} />
-            ))}
-            {byQuadrant.insufficient.length > 0 && (
-              <div className="border border-border rounded-xl px-4 py-3">
-                <span className="text-[12px] text-text-3">
-                  Недостатъчно данни ({byQuadrant.insufficient.length}) — под {meta.minViews} сесии,
-                  конверсията е твърде шумна за диагноза.
-                </span>
-              </div>
-            )}
-          </div>
-        </CardBody>
-      </Card>
+      <div className="lg:col-span-3">
+        <Card>
+          <CardHeader>Продукти по диагноза</CardHeader>
+          <CardBody>
+            <div className="space-y-2">
+              {GROUP_ORDER.map((k) => (
+                <QuadrantGroup key={k} quadrant={k} products={byQuadrant[k]} />
+              ))}
+              {byQuadrant.insufficient.length > 0 && (
+                <div className="border border-border rounded-xl px-4 py-3">
+                  <span className="text-[12px] text-text-3">
+                    Недостатъчно данни ({byQuadrant.insufficient.length}) — под {meta.minViews} сесии,
+                    конверсията е твърде шумна за диагноза.
+                  </span>
+                </div>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }
