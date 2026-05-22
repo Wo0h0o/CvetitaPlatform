@@ -1,4 +1,5 @@
 import { SparkLine } from "@/components/charts/SparkLine";
+import { KpiSpark } from "@/components/charts/KpiSpark";
 import { Delta } from "@/components/shared/Delta";
 
 interface MiniKpiProps {
@@ -10,6 +11,12 @@ interface MiniKpiProps {
   sub?: string;
   highlight?: boolean;
   sparkData?: number[];
+  /**
+   * Spark shape — "bars" for discrete counts (orders, purchases,
+   * conversions), "area" for continuous metrics. Design contract §9.2.
+   * Only applied in the `hero` layout. Defaults to "area".
+   */
+  sparkKind?: "area" | "bars";
   /**
    * Optional comparison delta. When set, renders the contract's unified
    * delta badge under the value. See docs/analytics-design-contract.md §4.
@@ -40,21 +47,24 @@ interface MiniKpiProps {
  *   - `hero` — used in analytics screens. Label on top, big value, optional
  *     delta below. Strict typography from the design contract.
  */
-export function MiniKpi({ icon: Icon, label, value, sub, highlight, sparkData, delta, hero }: MiniKpiProps) {
+export function MiniKpi({ icon: Icon, label, value, sub, highlight, sparkData, sparkKind, delta, hero }: MiniKpiProps) {
   if (hero) {
+    // Spark sits full-width BELOW the value — never crammed beside it.
+    // A wide hero number ("108 816") otherwise squeezes the old corner
+    // sparkline into an unreadable stub or off the tile entirely.
     return (
-      <div className="bg-surface rounded-xl shadow-sm p-5">
+      <div className="bg-surface rounded-xl shadow-sm p-5 flex flex-col">
         <div className="text-[13px] font-semibold text-text-2 mb-2">{label}</div>
-        <div className="flex items-end justify-between gap-2">
-          <div className={`text-[28px] font-bold tracking-tight tabular-nums ${highlight ? "text-accent" : "text-text"}`}>
-            {value}
-          </div>
-          {sparkData && sparkData.length > 1 && (
-            <SparkLine data={sparkData} height={20} width={64} />
-          )}
+        <div className={`text-[28px] font-bold tracking-tight tabular-nums ${highlight ? "text-accent" : "text-text"}`}>
+          {value}
         </div>
         {delta && <Delta pct={delta.pct} label={delta.label} unit={delta.unit} inverse={delta.inverse} className="mt-2" />}
         {sub && !delta && <div className="text-[12px] text-text-2 mt-1">{sub}</div>}
+        {sparkData && sparkData.length > 1 && (
+          <div className="mt-3">
+            <KpiSpark data={sparkData} kind={sparkKind} />
+          </div>
+        )}
       </div>
     );
   }

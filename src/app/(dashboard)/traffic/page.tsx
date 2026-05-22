@@ -236,6 +236,7 @@ export default function TrafficPage() {
           value={String(ov?.purchases || 0)}
           delta={deltas ? { pct: deltas.purchases } : undefined}
           sparkData={sparks?.purchases}
+          sparkKind="bars"
         />
         <MiniKpi
           hero
@@ -243,6 +244,7 @@ export default function TrafficPage() {
           value={String(ov?.conversions || 0)}
           delta={deltas ? { pct: deltas.conversions } : undefined}
           sparkData={sparks?.conversions}
+          sparkKind="bars"
         />
       </div>
 
