@@ -267,8 +267,15 @@ export function ProductMatrix({
 
   // Symmetric log domain around the median view-count so the vertical
   // divider is centred too — both axes balanced = four equal quadrants.
-  const xDomain = useMemo<[number | string, number | string]>(() => {
-    if (points.length === 0 || meta.medianViews <= 0) return ["auto", "auto"];
+  // xLo/xHi are also the explicit bounds for the quadrant tint rects.
+  const { xDomain, xLo, xHi } = useMemo<{
+    xDomain: [number | string, number | string];
+    xLo: number | null;
+    xHi: number | null;
+  }>(() => {
+    if (points.length === 0 || meta.medianViews <= 0) {
+      return { xDomain: ["auto", "auto"], xLo: null, xHi: null };
+    }
     let lo = Infinity;
     let hi = 0;
     for (const p of points) {
@@ -276,7 +283,9 @@ export function ProductMatrix({
       hi = Math.max(hi, p.x);
     }
     const spread = Math.max(hi / meta.medianViews, meta.medianViews / lo, 1.2);
-    return [meta.medianViews / spread, meta.medianViews * spread];
+    const dLo = meta.medianViews / spread;
+    const dHi = meta.medianViews * spread;
+    return { xDomain: [dLo, dHi], xLo: dLo, xHi: dHi };
   }, [points, meta.medianViews]);
 
   if (!meta.ga4Available) {
@@ -312,10 +321,37 @@ export function ProductMatrix({
             <div className="h-[460px] max-w-[640px] mx-auto">
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 16, right: 24, bottom: 28, left: 8 }}>
-                  {/* Quadrant tints — faint, just enough to read the zones */}
-                  <ReferenceArea x1={meta.medianViews} y1={medY} fill={c.accent} fillOpacity={0.05} stroke="none" />
-                  <ReferenceArea x1={meta.medianViews} y2={medY} fill={c.red} fillOpacity={0.05} stroke="none" />
-                  <ReferenceArea x2={meta.medianViews} y1={medY} fill={c.accent} fillOpacity={0.03} stroke="none" />
+                  {/* Quadrant tints — ALL four bounds explicit. Omitting
+                      x2/y2 makes Recharts guess (it pushed the Y axis to
+                      31852022% and flipped the colours). */}
+                  {xLo !== null && xHi !== null && (
+                    <ReferenceArea
+                      x1={meta.medianViews} x2={xHi} y1={medY} y2={yMax}
+                      fill={c.accent} fillOpacity={0.06} stroke="none"
+                      label={{ value: "Звезди", position: "insideTopRight", fontSize: 11, fill: c.text3 }}
+                    />
+                  )}
+                  {xLo !== null && xHi !== null && (
+                    <ReferenceArea
+                      x1={meta.medianViews} x2={xHi} y1={0} y2={medY}
+                      fill={c.red} fillOpacity={0.05} stroke="none"
+                      label={{ value: "Изтичащи", position: "insideBottomRight", fontSize: 11, fill: c.text3 }}
+                    />
+                  )}
+                  {xLo !== null && xHi !== null && (
+                    <ReferenceArea
+                      x1={xLo} x2={meta.medianViews} y1={medY} y2={yMax}
+                      fill={c.accent} fillOpacity={0.03} stroke="none"
+                      label={{ value: "Скрити перли", position: "insideTopLeft", fontSize: 11, fill: c.text3 }}
+                    />
+                  )}
+                  {xLo !== null && xHi !== null && (
+                    <ReferenceArea
+                      x1={xLo} x2={meta.medianViews} y1={0} y2={medY}
+                      fill={c.text3} fillOpacity={0.04} stroke="none"
+                      label={{ value: "Спящи", position: "insideBottomLeft", fontSize: 11, fill: c.text3 }}
+                    />
+                  )}
 
                   <XAxis
                     type="number"
