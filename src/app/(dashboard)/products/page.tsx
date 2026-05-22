@@ -11,6 +11,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SortButton, type SortDir } from "@/components/shared/SortButton";
+import { ProductMatrix } from "@/components/products/ProductMatrix";
 import Link from "next/link";
 import { Package, Search } from "lucide-react";
 
@@ -164,6 +165,9 @@ export default function ProductsPage() {
         />
         <MiniKpi hero label="Продукти" value={String(s?.uniqueProducts || 0)} />
       </div>
+
+      {/* Diagnostic matrix — the signature: attention × conversion × revenue */}
+      {data && <ProductMatrix products={data.allProducts} meta={data.matrixMeta} />}
 
       {/* Revenue Timeline — Real Chart */}
       {data?.timeSeries && data.timeSeries.length > 1 && (
