@@ -5,6 +5,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import { ChartContainer, useChartColors } from "./ChartContainer";
+import { buildRechartsTooltip } from "./GlassTooltip";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>;
@@ -22,6 +23,9 @@ interface AreaLineChartProps {
   color2?: string;
   formatValue?: (v: number) => string;
   formatX?: (v: string) => string;
+  /** Tooltip row labels for the primary (and optional secondary) series. */
+  valueLabel?: string;
+  valueLabel2?: string;
   className?: string;
 }
 
@@ -38,11 +42,24 @@ export function AreaLineChart({
   color2,
   formatValue = (v) => v.toLocaleString("bg-BG"),
   formatX,
+  valueLabel = "Стойност",
+  valueLabel2,
   className,
 }: AreaLineChartProps) {
   const c = useChartColors();
   const fill = color || c.accent;
   const fill2 = color2 || c.blue;
+
+  const tooltipContent = buildRechartsTooltip<AnyRecord>((row) => {
+    const rows = [{ label: valueLabel, value: formatValue(Number(row[yKey])) }];
+    if (yKey2) {
+      rows.push({ label: valueLabel2 ?? yKey2, value: formatValue(Number(row[yKey2])) });
+    }
+    return {
+      header: formatX ? formatX(String(row[xKey])) : String(row[xKey]),
+      rows,
+    };
+  });
 
   return (
     <ChartContainer
@@ -85,17 +102,7 @@ export function AreaLineChart({
             return formatValue(num);
           }}
         />
-        <Tooltip
-          contentStyle={{
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            fontSize: 12,
-            boxShadow: "var(--shadow-md)",
-          }}
-          formatter={(value) => [formatValue(Number(value)), ""]}
-          labelFormatter={formatX ? (label) => formatX(String(label)) : undefined}
-        />
+        <Tooltip content={tooltipContent} />
         <Area
           type="monotone"
           dataKey={yKey}

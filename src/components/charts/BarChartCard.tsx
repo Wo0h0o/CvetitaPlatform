@@ -5,6 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
 } from "recharts";
 import { ChartContainer, useChartColors } from "./ChartContainer";
+import { buildRechartsTooltip } from "./GlassTooltip";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>;
@@ -21,6 +22,8 @@ interface BarChartCardProps {
   colors?: string[];
   horizontal?: boolean;
   formatValue?: (v: number) => string;
+  /** Row label inside the tooltip. Defaults to "Стойност". */
+  valueLabel?: string;
   className?: string;
 }
 
@@ -36,18 +39,16 @@ export function BarChartCard({
   colors,
   horizontal = false,
   formatValue = (v) => v.toLocaleString("bg-BG"),
+  valueLabel = "Стойност",
   className,
 }: BarChartCardProps) {
   const c = useChartColors();
   const fill = color || c.accent;
 
-  const tooltipStyle = {
-    background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    fontSize: 12,
-    boxShadow: "var(--shadow-md)",
-  };
+  const tooltipContent = buildRechartsTooltip<AnyRecord>((row) => ({
+    header: String(row[xKey]),
+    rows: [{ label: valueLabel, value: formatValue(Number(row[yKey])) }],
+  }));
 
   const chart = horizontal ? (
     <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 4 }}>
@@ -67,7 +68,7 @@ export function BarChartCard({
         axisLine={false}
         width={120}
       />
-      <Tooltip contentStyle={tooltipStyle} formatter={(value) => [formatValue(Number(value)), ""]} />
+      <Tooltip content={tooltipContent} />
       <Bar dataKey={yKey} radius={[0, 4, 4, 0]} maxBarSize={24}>
         {data.map((_, i) => (
           <Cell key={i} fill={colors ? colors[i % colors.length] : fill} />
@@ -98,7 +99,7 @@ export function BarChartCard({
           return String(num);
         }}
       />
-      <Tooltip contentStyle={tooltipStyle} formatter={(value) => [formatValue(Number(value)), ""]} />
+      <Tooltip content={tooltipContent} />
       <Bar dataKey={yKey} radius={[4, 4, 0, 0]} maxBarSize={40}>
         {data.map((_, i) => (
           <Cell key={i} fill={colors ? colors[i % colors.length] : fill} />

@@ -17,6 +17,16 @@ import { MiniKpi } from "@/components/shared/MiniKpi";
 import { Delta, calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
 import { fetcher } from "@/lib/swr";
 import { fmtMoneyShort, fmtInt, fmtPct, fmtRoas, fmtGA4Date } from "@/lib/format";
+import { buildRechartsTooltip } from "@/components/charts/GlassTooltip";
+
+// Daily Spend × ROAS combo tooltip — one glass vocabulary (design contract §11).
+const trendTooltip = buildRechartsTooltip<{ date: string; spend: number; roas: number }>((row) => ({
+  header: String(row.date),
+  rows: [
+    { label: "Spend", value: `${Math.round(row.spend)} €` },
+    { label: "ROAS", value: `${row.roas.toFixed(2)}x` },
+  ],
+}));
 
 interface Bucket {
   spend: number;
@@ -314,20 +324,7 @@ export default function GoogleAdsPage() {
                     width={32}
                     tickFormatter={(v) => `${v.toFixed(1)}x`}
                   />
-                  <Tooltip
-                    contentStyle={{
-                      background: "var(--surface)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      fontSize: 12,
-                      boxShadow: "var(--shadow-md)",
-                    }}
-                    formatter={(value, name) => {
-                      const v = Number(value) || 0;
-                      if (name === "ROAS") return [`${v.toFixed(2)}x`, name];
-                      return [`${Math.round(v)} €`, name];
-                    }}
-                  />
+                  <Tooltip content={trendTooltip} />
                   <Bar yAxisId="spend" dataKey="spend" name="Spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
                   <Line
                     yAxisId="roas"

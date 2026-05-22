@@ -3,6 +3,7 @@
 import { ReactNode } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { ChartContainer } from "./ChartContainer";
+import { buildRechartsTooltip } from "./GlassTooltip";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>;
@@ -17,6 +18,8 @@ interface DonutChartProps {
   loading?: boolean;
   colors?: string[];
   formatValue?: (v: number) => string;
+  /** Row label inside the tooltip. Defaults to "Стойност". */
+  valueLabel?: string;
   className?: string;
 }
 
@@ -34,6 +37,7 @@ export function DonutChart({
   loading,
   colors = DEFAULT_PALETTE,
   formatValue = (v) => v.toLocaleString("bg-BG"),
+  valueLabel = "Стойност",
   className,
 }: DonutChartProps) {
   const chartData = data.map((d) => ({
@@ -42,6 +46,14 @@ export function DonutChart({
   }));
 
   const total = chartData.reduce((s, d) => s + d.value, 0) || 1;
+
+  const tooltipContent = buildRechartsTooltip<{ name: string; value: number }>((row) => ({
+    header: row.name,
+    rows: [
+      { label: valueLabel, value: formatValue(row.value) },
+      { label: "Дял", value: `${Math.round((row.value / total) * 100)}%` },
+    ],
+  }));
 
   return (
     <ChartContainer
@@ -67,20 +79,7 @@ export function DonutChart({
             <Cell key={i} fill={colors[i % colors.length]} stroke="none" />
           ))}
         </Pie>
-        <Tooltip
-          contentStyle={{
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            fontSize: 12,
-            boxShadow: "var(--shadow-md)",
-          }}
-          formatter={(value) => {
-            const num = Number(value);
-            const pct = ((num / total) * 100).toFixed(0);
-            return [`${formatValue(num)} (${pct}%)`, ""];
-          }}
-        />
+        <Tooltip content={tooltipContent} />
         <Legend
           layout="horizontal"
           verticalAlign="bottom"
