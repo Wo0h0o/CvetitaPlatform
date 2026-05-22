@@ -247,7 +247,9 @@ export default function EmailPage() {
         <MiniKpi
           hero
           label="Email приходи"
-          value={`${fmt(data?.totalRevenue || 0)} EUR`}
+          // Whole-EUR with a compact € prefix — the 2-decimal "48 230,50
+          // EUR" form overflowed the tile on large sums (and on mobile).
+          value={`€${Math.round(data?.totalRevenue || 0).toLocaleString("bg-BG")}`}
           delta={prev ? { pct: calcDeltaPct(data?.totalRevenue || 0, prev.totalRevenue) } : undefined}
         />
         <MiniKpi

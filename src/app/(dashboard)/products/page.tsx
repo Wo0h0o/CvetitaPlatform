@@ -4,27 +4,24 @@
 import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
-import { ChangeBadge } from "@/components/shared/Badge";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
+import { MiniKpi } from "@/components/shared/MiniKpi";
 import { AreaLineChart } from "@/components/charts";
 import { useDateRange } from "@/hooks/useDateRange";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SortButton, type SortDir } from "@/components/shared/SortButton";
 import Link from "next/link";
-import {
-  ShoppingCart,
-  Repeat,
-  Package,
-  TrendingUp,
-  Search,
-} from "lucide-react";
+import { Package, Search } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type SortKey = "revenue" | "quantity" | "orders" | "avgPrice";
 
+type Quadrant = "star" | "leaking" | "gem" | "dormant" | "insufficient";
+
 interface Product {
+  productId: string | null;
   title: string;
   handle: string | null;
   imageUrl: string | null;
@@ -32,6 +29,10 @@ interface Product {
   revenue: number;
   orders: number;
   avgPrice: number;
+  ga4Views: number;
+  ga4Purchases: number;
+  conversionRate: number;
+  quadrant: Quadrant;
 }
 
 interface ProductData {
@@ -46,11 +47,18 @@ interface ProductData {
   allProducts: Product[];
   topCombos: { combo: string; count: number }[];
   timeSeries: { date: string; revenue: number }[];
+  matrixMeta: {
+    ga4Available: boolean;
+    minViews: number;
+    medianViews: number;
+    medianConversion: number;
+    plottableCount: number;
+  };
   changes: { revenue: number; orders: number; aov: number; upsellRate: number };
 }
 
 export default function ProductsPage() {
-  const { queryString, label } = useDateRange();
+  const { queryString } = useDateRange();
   const { data, isLoading, error: swrError } = useSWR<ProductData>(
     `/api/dashboard/products-analytics?${queryString}`,
     fetcher,
@@ -128,19 +136,33 @@ export default function ProductsPage() {
         <DateRangePicker />
       </PageHeader>
 
-      {/* KPIs with comparison */}
+      {/* KPIs — hero layout, no icons (§3), delta vs the preceding period */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <KpiWithChange icon={TrendingUp} label={`Revenue (${label})`} value={`${s?.totalRevenue?.toLocaleString("bg-BG")} EUR`} change={ch?.revenue} />
-        <KpiWithChange icon={ShoppingCart} label="Поръчки" value={String(s?.totalOrders || 0)} change={ch?.orders} />
-        <KpiWithChange icon={Package} label="Среден чек" value={`${s?.avgOrderValue?.toFixed(2)} EUR`} change={ch?.aov} />
-        <KpiWithChange icon={Repeat} label="Upsell Rate" value={`${s?.upsellRate}%`} change={ch?.upsellRate} />
-        <div className="bg-surface rounded-xl shadow-sm p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Package size={16} className="text-text-3" />
-            <span className="text-[13px] font-semibold text-text">Продукти</span>
-          </div>
-          <div className="text-[22px] font-bold tracking-tight text-text">{s?.uniqueProducts || 0}</div>
-        </div>
+        <MiniKpi
+          hero
+          label="Приходи"
+          value={`€${Math.round(s?.totalRevenue || 0).toLocaleString("bg-BG")}`}
+          delta={ch ? { pct: ch.revenue } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Поръчки"
+          value={String(s?.totalOrders || 0)}
+          delta={ch ? { pct: ch.orders } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Среден чек"
+          value={`€${(s?.avgOrderValue || 0).toFixed(2)}`}
+          delta={ch ? { pct: ch.aov } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Upsell дял"
+          value={`${s?.upsellRate || 0}%`}
+          delta={ch ? { pct: ch.upsellRate } : undefined}
+        />
+        <MiniKpi hero label="Продукти" value={String(s?.uniqueProducts || 0)} />
       </div>
 
       {/* Revenue Timeline — Real Chart */}
@@ -179,81 +201,117 @@ export default function ProductsPage() {
               />
             </div>
 
-            {/* Scrollable table wrapper for mobile */}
-            <div className="overflow-x-auto -mx-5 px-5">
-              <div className="min-w-[600px]">
-                {/* Table header with sorting */}
-                <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
-                  <div className="col-span-1 text-[13px] font-semibold text-text flex items-center">#</div>
-                  <div className="col-span-4 text-[13px] font-semibold text-text flex items-center">Продукт</div>
-                  <div className="col-span-2 flex justify-end">
-                    <SortButton label="Бройки" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <SortButton label="Revenue" sortKey="revenue" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  </div>
-                  <div className="col-span-1 flex justify-end">
-                    <SortButton label="Пор." sortKey="orders" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <SortButton label="Ср. цена" sortKey="avgPrice" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-                  </div>
+            {/* Desktop — table */}
+            <div className="hidden md:block">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
+                <div className="col-span-1 text-[13px] font-semibold text-text flex items-center">#</div>
+                <div className="col-span-4 text-[13px] font-semibold text-text flex items-center">Продукт</div>
+                <div className="col-span-2 flex justify-end">
+                  <SortButton label="Бройки" sortKey="quantity" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
                 </div>
-
-                {/* Rows */}
-                {filteredProducts.map((p, i) => {
-                  const row = (
-                    <div
-                      className={`grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors ${p.handle ? "cursor-pointer" : ""}`}
-                    >
-                      <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
-                      <div className="col-span-4 flex items-center gap-2.5 min-w-0">
-                        {p.imageUrl ? (
-                          <img src={p.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-surface-2" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-lg bg-surface-2 flex-shrink-0" />
-                        )}
-                        <span className="text-[13px] font-medium text-text truncate">{p.title}</span>
-                      </div>
-                      <div className="col-span-2 text-right text-[13px] text-text-2">{p.quantity}</div>
-                      <div className="col-span-2 text-right text-[14px] font-semibold text-text">{p.revenue.toFixed(2)}</div>
-                      <div className="col-span-1 text-right text-[13px] text-text-2">{p.orders}</div>
-                      <div className="col-span-2 text-right text-[12px] text-text-2">{p.avgPrice.toFixed(2)} EUR</div>
-                    </div>
-                  );
-                  return p.handle ? (
-                    <Link key={p.title} href={`/products/${p.handle}`} className="block">
-                      {row}
-                    </Link>
-                  ) : (
-                    <div key={p.title}>{row}</div>
-                  );
-                })}
-
-                {filteredProducts.length === 0 && (
-                  <div className="text-center py-10">
-                    <p className="text-[13px] text-text-2">Няма продукти за &ldquo;{searchQuery}&rdquo;</p>
-                  </div>
-                )}
-
-                {!showAll && totalCount > 15 && (
-                  <button
-                    onClick={() => setShowAll(true)}
-                    className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
-                  >
-                    Покажи всички {totalCount} продукта
-                  </button>
-                )}
-                {showAll && totalCount > 15 && (
-                  <button
-                    onClick={() => setShowAll(false)}
-                    className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
-                  >
-                    Покажи по-малко
-                  </button>
-                )}
+                <div className="col-span-2 flex justify-end">
+                  <SortButton label="Приходи" sortKey="revenue" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                </div>
+                <div className="col-span-1 flex justify-end">
+                  <SortButton label="Пор." sortKey="orders" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <SortButton label="Ср. цена" sortKey="avgPrice" currentKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+                </div>
               </div>
+
+              {filteredProducts.map((p, i) => {
+                const row = (
+                  <div
+                    className={`grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors ${p.handle ? "cursor-pointer" : ""}`}
+                  >
+                    <div className="col-span-1 text-[12px] font-bold text-text-3">{i + 1}</div>
+                    <div className="col-span-4 flex items-center gap-2.5 min-w-0">
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-surface-2" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-surface-2 flex-shrink-0" />
+                      )}
+                      <span className="text-[13px] font-medium text-text truncate">{p.title}</span>
+                    </div>
+                    <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">{p.quantity}</div>
+                    <div className="col-span-2 text-right text-[14px] font-semibold text-text tabular-nums">€{p.revenue.toFixed(2)}</div>
+                    <div className="col-span-1 text-right text-[13px] text-text-2 tabular-nums">{p.orders}</div>
+                    <div className="col-span-2 text-right text-[12px] text-text-2 tabular-nums">€{p.avgPrice.toFixed(2)}</div>
+                  </div>
+                );
+                return p.handle ? (
+                  <Link key={p.title} href={`/products/${p.handle}`} className="block">
+                    {row}
+                  </Link>
+                ) : (
+                  <div key={p.title}>{row}</div>
+                );
+              })}
             </div>
+
+            {/* Mobile — card list (no 600px sideways scroll) */}
+            <div className="md:hidden space-y-2">
+              {filteredProducts.map((p) => {
+                const card = (
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-2.5 min-w-0 mb-2">
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0 bg-surface-2" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-lg bg-surface-2 flex-shrink-0" />
+                      )}
+                      <span className="text-[13px] font-medium text-text leading-snug">{p.title}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+                      <span className="text-text-3">
+                        Приходи{" "}
+                        <span className="text-text font-semibold tabular-nums">€{p.revenue.toFixed(2)}</span>
+                      </span>
+                      <span className="text-text-3">
+                        Бройки <span className="text-text tabular-nums">{p.quantity}</span>
+                      </span>
+                      <span className="text-text-3">
+                        Поръчки <span className="text-text tabular-nums">{p.orders}</span>
+                      </span>
+                      <span className="text-text-3">
+                        Ср. цена <span className="text-text tabular-nums">€{p.avgPrice.toFixed(2)}</span>
+                      </span>
+                    </div>
+                  </div>
+                );
+                return p.handle ? (
+                  <Link key={p.title} href={`/products/${p.handle}`} className="block">
+                    {card}
+                  </Link>
+                ) : (
+                  <div key={p.title}>{card}</div>
+                );
+              })}
+            </div>
+
+            {filteredProducts.length === 0 && (
+              <div className="text-center py-10">
+                <p className="text-[13px] text-text-2">Няма продукти за &ldquo;{searchQuery}&rdquo;</p>
+              </div>
+            )}
+
+            {!showAll && totalCount > 15 && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
+              >
+                Покажи всички {totalCount} продукта
+              </button>
+            )}
+            {showAll && totalCount > 15 && (
+              <button
+                onClick={() => setShowAll(false)}
+                className="w-full mt-3 py-2.5 rounded-lg bg-surface-2 text-text-2 text-[13px] font-medium hover:bg-border transition-colors cursor-pointer"
+              >
+                Покажи по-малко
+              </button>
+            )}
           </CardBody>
         </Card>
 
@@ -278,29 +336,6 @@ export default function ProductsPage() {
         </Card>
       </div>
     </>
-  );
-}
-
-function KpiWithChange({
-  icon: Icon,
-  label,
-  value,
-  change,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  change?: number;
-}) {
-  return (
-    <div className="bg-surface rounded-xl shadow-sm p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={16} className="text-text-3" />
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-      </div>
-      <div className="text-[22px] font-bold tracking-tight text-text mb-1">{value}</div>
-      {change !== undefined && <ChangeBadge value={change} />}
-    </div>
   );
 }
 
