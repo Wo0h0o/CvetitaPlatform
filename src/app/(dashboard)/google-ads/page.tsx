@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import useSWR from "swr";
 import {
   ComposedChart, BarChart, LineChart, Bar, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer,
+  CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
@@ -18,16 +18,22 @@ import { MiniKpi } from "@/components/shared/MiniKpi";
 import { Delta, calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
 import { fetcher } from "@/lib/swr";
 import { fmtMoneyShort, fmtInt, fmtPct, fmtRoas, fmtGA4Date } from "@/lib/format";
-import { buildRechartsTooltip } from "@/components/charts/GlassTooltip";
+import { GlassTooltip, buildRechartsTooltip } from "@/components/charts/GlassTooltip";
+import { useChartScrubber } from "@/components/charts/useChartScrubber";
+import { MobileScrubber, MobileScrubberRow } from "@/components/charts/MobileScrubber";
 
-// Daily Spend × ROAS combo tooltip — one glass vocabulary (design contract §11).
-const trendTooltip = buildRechartsTooltip<{ date: string; spend: number; roas: number }>((row) => ({
-  header: String(row.date),
-  rows: [
-    { label: "Spend", value: `${Math.round(row.spend)} €` },
-    { label: "ROAS", value: `${row.roas.toFixed(2)}x` },
-  ],
-}));
+// One build function, two consumers (§11): the Recharts hover tooltip on
+// desktop, the mobile scrubber popup. Identical glass vocabulary.
+function buildGaTrendPopup(row: TrendPoint) {
+  return {
+    header: String(row.date),
+    rows: [
+      { label: "Spend", value: `${Math.round(row.spend)} €` },
+      { label: "ROAS", value: `${row.roas.toFixed(2)}x` },
+    ],
+  };
+}
+const trendTooltip = buildRechartsTooltip<TrendPoint>(buildGaTrendPopup);
 
 interface TrendPoint {
   date: string;
@@ -43,6 +49,10 @@ interface TrendPoint {
 function GoogleAdsTrend({ data }: { data: TrendPoint[] }) {
   const [metric, setMetric] = useState<"spend" | "roas">("spend");
   const axisTick = { fill: "var(--text-3)", fontSize: 11 };
+  const { activeIdx, setActiveIdx, wrapperRef, pointerHandlers } = useChartScrubber({
+    count: data.length,
+  });
+  const activeRow = activeIdx !== null ? data[activeIdx] ?? null : null;
 
   return (
     <Card className="mb-6">
@@ -53,7 +63,7 @@ function GoogleAdsTrend({ data }: { data: TrendPoint[] }) {
               <button
                 key={m}
                 onClick={() => setMetric(m)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                className={`min-h-[44px] px-3 inline-flex items-center rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
                   metric === m ? "bg-surface text-text shadow-sm" : "text-text-3"
                 }`}
               >
@@ -80,27 +90,35 @@ function GoogleAdsTrend({ data }: { data: TrendPoint[] }) {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        {/* Mobile — one metric at a time */}
-        <div className="md:hidden h-[220px]">
-          <ResponsiveContainer width="100%" height="100%">
-            {metric === "spend" ? (
-              <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
-                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${Math.round(v)}€`} />
-                <Tooltip content={trendTooltip} />
-                <Bar dataKey="spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            ) : (
-              <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
-                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v.toFixed(1)}x`} />
-                <Tooltip content={trendTooltip} />
-                <Line type="monotone" dataKey="roas" stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
-              </LineChart>
-            )}
-          </ResponsiveContainer>
+        {/* Mobile — one metric, scrubber-driven inspection (§13) */}
+        <div className="md:hidden">
+          <div ref={wrapperRef} {...pointerHandlers} className="h-[220px] touch-pan-y">
+            <ResponsiveContainer width="100%" height="100%">
+              {metric === "spend" ? (
+                <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
+                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${Math.round(v)}€`} />
+                  {activeRow && <ReferenceLine x={activeRow.date} stroke="var(--text-3)" strokeDasharray="3 3" />}
+                  <Bar dataKey="spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              ) : (
+                <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
+                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v.toFixed(1)}x`} />
+                  {activeRow && <ReferenceLine x={activeRow.date} stroke="var(--text-3)" strokeDasharray="3 3" />}
+                  <Line type="monotone" dataKey="roas" stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+          <MobileScrubberRow
+            visible={activeRow !== null}
+            popup={activeRow ? <GlassTooltip {...buildGaTrendPopup(activeRow)} /> : null}
+          >
+            <MobileScrubber count={data.length} value={activeIdx} onChange={setActiveIdx} />
+          </MobileScrubberRow>
         </div>
       </CardBody>
     </Card>
