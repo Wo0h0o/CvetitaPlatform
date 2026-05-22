@@ -14,11 +14,11 @@ import { MarketFlag } from "@/components/shared/MarketFlag";
 import { useDateRange } from "@/hooks/useDateRange";
 import { useToast } from "@/providers/ToastProvider";
 import { MiniKpi } from "@/components/shared/MiniKpi";
+import { calcDeltaPct } from "@/components/shared/Delta";
 import { type MarketBinding } from "@/lib/store-market-resolver";
 import {
-  Megaphone, Euro, ShoppingCart, MousePointerClick,
-  Target, TrendingUp, ArrowUpDown, ChevronDown, ChevronUp,
-  CreditCard, Pause, Play, X, Image as ImageIcon, Search,
+  Megaphone, ArrowUpDown, ChevronDown, ChevronUp,
+  Pause, Play, X, Image as ImageIcon, Search,
   Film,
 } from "lucide-react";
 
@@ -84,11 +84,13 @@ const STATUS_MAP: Record<string, { label: string; variant: "green" | "red" | "or
   WITH_ISSUES: { label: "С проблеми", variant: "red" },
 };
 
-const SCORE_LABELS: { min: number; label: string; variant: "green" | "blue" | "neutral" | "orange" | "red" }[] = [
+// Score is a metric — design contract §1 allows only accent / red / neutral
+// for metric visualisations. Five labels, three contract-legal colours.
+const SCORE_LABELS: { min: number; label: string; variant: "green" | "neutral" | "red" }[] = [
   { min: 80, label: "Топ", variant: "green" },
-  { min: 60, label: "Добра", variant: "blue" },
+  { min: 60, label: "Добра", variant: "green" },
   { min: 40, label: "Средна", variant: "neutral" },
-  { min: 20, label: "Под средната", variant: "orange" },
+  { min: 20, label: "Под средната", variant: "neutral" },
   { min: 0, label: "Слаба", variant: "red" },
 ];
 
@@ -124,9 +126,7 @@ function getScoreStyle(score: number) {
   const s = SCORE_LABELS.find((l) => score >= l.min) || SCORE_LABELS[SCORE_LABELS.length - 1];
   const colors: Record<string, string> = {
     green: "bg-accent text-white",
-    blue: "bg-blue text-white",
     neutral: "bg-surface-2 text-text-2",
-    orange: "bg-orange text-white",
     red: "bg-red text-white",
   };
   return { ...s, colorClass: colors[s.variant] };
@@ -187,11 +187,11 @@ export default function AdsMarketPage({
 
   // Overview (KPIs)
   const overviewKey = `/api/dashboard/ads?market=${market}&preset=${metaPreset}`;
-  const { data: overviewData, isLoading: ovLoading } = useSWR<{ overview: AdsOverview; error?: string }>(
-    overviewKey,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
+  const { data: overviewData, isLoading: ovLoading } = useSWR<{
+    overview: AdsOverview;
+    previous?: AdsOverview | null;
+    error?: string;
+  }>(overviewKey, fetcher, { revalidateOnFocus: false });
 
   // Ads — active first (faster), then paused as a background fetch
   const activeKey = `/api/dashboard/ads/individual?market=${market}&preset=${metaPreset}&status=ACTIVE`;
@@ -346,6 +346,7 @@ export default function AdsMarketPage({
   const isPageLoading =
     ovLoading || !marketData || marketData.marketCode !== market;
   const ov = overviewData?.overview;
+  const prev = overviewData?.previous ?? null;
 
   return (
     <>
@@ -378,12 +379,43 @@ export default function AdsMarketPage({
           [1, 2, 3, 4, 5, 6].map((i) => <KpiSkeleton key={i} />)
         ) : (
           <>
-            <MiniKpi icon={CreditCard} label="Разход" value={`€${fmt(ov?.spend || 0)}`} />
-            <MiniKpi icon={Euro} label="Приходи" value={`€${fmt(ov?.revenue || 0)}`} />
-            <MiniKpi icon={TrendingUp} label="ROAS" value={`${fmt(ov?.roas || 0)}x`} highlight={(ov?.roas ?? 0) >= 2} />
-            <MiniKpi icon={ShoppingCart} label="Покупки" value={fmtInt(ov?.purchases || 0)} />
-            <MiniKpi icon={Target} label="CPA" value={`€${fmt(ov?.cpa || 0)}`} />
-            <MiniKpi icon={MousePointerClick} label="CTR" value={`${fmt(ov?.ctr || 0)}%`} />
+            <MiniKpi
+              hero
+              label="Разход"
+              value={`€${fmt(ov?.spend || 0)}`}
+              delta={prev ? { pct: calcDeltaPct(ov?.spend ?? 0, prev.spend) } : undefined}
+            />
+            <MiniKpi
+              hero
+              label="Приходи"
+              value={`€${fmt(ov?.revenue || 0)}`}
+              delta={prev ? { pct: calcDeltaPct(ov?.revenue ?? 0, prev.revenue) } : undefined}
+            />
+            <MiniKpi
+              hero
+              label="ROAS"
+              value={`${fmt(ov?.roas || 0)}x`}
+              highlight={(ov?.roas ?? 0) >= 2}
+              delta={prev ? { pct: calcDeltaPct(ov?.roas ?? 0, prev.roas) } : undefined}
+            />
+            <MiniKpi
+              hero
+              label="Покупки"
+              value={fmtInt(ov?.purchases || 0)}
+              delta={prev ? { pct: calcDeltaPct(ov?.purchases ?? 0, prev.purchases) } : undefined}
+            />
+            <MiniKpi
+              hero
+              label="CPA"
+              value={`€${fmt(ov?.cpa || 0)}`}
+              delta={prev ? { pct: calcDeltaPct(ov?.cpa ?? 0, prev.cpa ?? 0), inverse: true } : undefined}
+            />
+            <MiniKpi
+              hero
+              label="CTR"
+              value={`${fmt(ov?.ctr || 0)}%`}
+              delta={prev && prev.impressions > 0 ? { pct: (ov?.ctr ?? 0) - prev.ctr, unit: "pp" } : undefined}
+            />
           </>
         )}
       </div>
@@ -718,7 +750,7 @@ function MetricCell({ label, value, highlight, bad }: { label: string; value: st
 }
 
 function ScoreBar({ label, value, avg, current, unit, inverted }: { label: string; value: number; avg?: number; current?: number; unit: string; inverted?: boolean }) {
-  const barColor = value >= 70 ? "bg-accent" : value >= 40 ? "bg-blue" : "bg-red";
+  const barColor = value >= 70 ? "bg-accent" : value >= 40 ? "bg-text-2" : "bg-red";
   return (
     <div>
       <div className="flex items-center justify-between mb-1">

@@ -302,13 +302,21 @@ async function fetchCampaigns(client: MetaClient): Promise<MetaCampaign[]> {
 
 export async function getMetaOverview(
   datePreset: string = "last_7d",
-  integrationAccountId?: string
+  integrationAccountId?: string,
+  /**
+   * Explicit window override. When set, the insights call uses `time_range`
+   * instead of `date_preset` — used to fetch the equal-length previous
+   * period for KPI deltas, which Meta has no preset for.
+   */
+  timeRange?: { since: string; until: string }
 ) {
   const client = await getMetaClient(integrationAccountId);
   const rows = await fetchInsights(
     {
       fields: "spend,impressions,clicks,cpc,cpm,ctr,actions,action_values",
-      date_preset: datePreset,
+      ...(timeRange
+        ? { time_range: JSON.stringify(timeRange) }
+        : { date_preset: datePreset }),
     },
     client
   );

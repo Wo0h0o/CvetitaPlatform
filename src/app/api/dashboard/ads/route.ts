@@ -28,6 +28,31 @@ const PRESET_MAP: Record<string, string> = {
   last_month: "last_month",
 };
 
+/** Shift a YYYY-MM-DD string by N days (UTC math — no TZ drift). */
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Equal-length window immediately before `period`, derived from the actual
+ * dates Meta reported — so we never have to guess a preset's semantics.
+ * Returns null when the current period has no resolved dates (no data).
+ */
+function previousRange(
+  period: { start: string; end: string }
+): { since: string; until: string } | null {
+  if (!period.start || !period.end) return null;
+  const start = new Date(`${period.start}T00:00:00Z`).getTime();
+  const end = new Date(`${period.end}T00:00:00Z`).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  const lenDays = Math.round((end - start) / 86_400_000) + 1;
+  const until = addDaysIso(period.start, -1);
+  const since = addDaysIso(until, -(lenDays - 1));
+  return { since, until };
+}
+
 export async function GET(request: NextRequest) {
   const authError = await requireAuth(request);
   if (authError) return authError;
@@ -57,7 +82,14 @@ export async function GET(request: NextRequest) {
         getMetaOverview(datePreset),
         getMetaCampaignInsights(datePreset),
       ]);
-      return NextResponse.json({ overview, campaigns }, { headers: CACHE_HEADERS });
+      const prev = previousRange(overview.period);
+      const previous = prev
+        ? await getMetaOverview(undefined, undefined, prev)
+        : null;
+      return NextResponse.json(
+        { overview, previous, campaigns },
+        { headers: CACHE_HEADERS }
+      );
     }
 
     // Market-scoped path.
@@ -90,6 +122,22 @@ export async function GET(request: NextRequest) {
       overview = aggregateOverview(perAccountOverviews);
     }
 
+    // Previous equal-length period for KPI deltas. Derived from the actual
+    // window `overview` reported, so it always lines up — including `today`,
+    // where the previous period is simply yesterday.
+    const prev = previousRange(overview.period);
+    let previous: Overview | null = null;
+    if (prev) {
+      if (preset === "today") {
+        previous = await buildOverviewFromPostgres(ids, prev.until);
+      } else {
+        const prevParts = await Promise.all(
+          ids.map((id) => getMetaOverview(datePreset, id, prev))
+        );
+        previous = aggregateOverview(prevParts);
+      }
+    }
+
     // Merge and sort fresh — don't alternate per-account order. Tiebreak by
     // id asc so deterministic pagination across requests.
     const campaigns = perAccountCampaigns
@@ -99,7 +147,10 @@ export async function GET(request: NextRequest) {
         return a.id.localeCompare(b.id);
       });
 
-    return NextResponse.json({ overview, campaigns }, { headers: CACHE_HEADERS });
+    return NextResponse.json(
+      { overview, previous, campaigns },
+      { headers: CACHE_HEADERS }
+    );
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Meta API fetch failed";
     logger.error("GET /api/dashboard/ads failed", { error: msg });
