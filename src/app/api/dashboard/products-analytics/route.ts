@@ -249,13 +249,18 @@ export async function GET(req: NextRequest) {
     // Quadrant — median split of the products that clear the data gate.
     // Median (not zero) is the honest divider: it asks "above or below
     // typical", which is the diagnostic question (contract §9.7).
-    const plottable = enriched.filter((p) => p.ga4Views >= MATRIX_MIN_VIEWS);
+    // A product GA4 reports converting >100% (more purchases than views)
+    // is a tracking artefact — typically a gift / bundle item auto-added
+    // to orders, never "viewed". Excluded so it can't blow out the axis.
+    const plottable = enriched.filter(
+      (p) => p.ga4Views >= MATRIX_MIN_VIEWS && p.conversionRate <= 1
+    );
     const medianViews = median(plottable.map((p) => p.ga4Views));
     const medianConversion = median(plottable.map((p) => p.conversionRate));
 
     const allProducts = enriched.map((p) => {
       let quadrant: Quadrant;
-      if (p.ga4Views < MATRIX_MIN_VIEWS) {
+      if (p.ga4Views < MATRIX_MIN_VIEWS || p.conversionRate > 1) {
         quadrant = "insufficient";
       } else if (p.ga4Views >= medianViews) {
         quadrant = p.conversionRate >= medianConversion ? "star" : "leaking";

@@ -248,20 +248,36 @@ export function ProductMatrix({
     return map;
   }, [products]);
 
-  // Scatter points — everything that cleared the data gate. The top 6
-  // by revenue get a name label directly on the chart (magic-quadrant
-  // style); the rest stay anonymous until hover.
+  // Conversion axis is clamped to 2× the median so the median divider
+  // sits at the vertical centre — the chart reads as a real 2×2 matrix
+  // instead of a thin strip squashed by a few sky-high outliers. The
+  // hover card still shows each product's true conversion.
+  const medY = meta.medianConversion * 100;
+  const yMax = Math.max(medY * 2, 1);
+
   const points = useMemo<ScatterPoint[]>(() => {
     const plottable = products.filter((p) => p.quadrant !== "insufficient");
     return plottable.map((p) => ({
       ...p,
       x: p.ga4Views,
-      y: p.conversionRate * 100,
+      y: Math.min(p.conversionRate * 100, yMax),
       z: Math.max(p.revenue, 1),
     }));
-  }, [products]);
+  }, [products, yMax]);
 
-  const medY = meta.medianConversion * 100;
+  // Symmetric log domain around the median view-count so the vertical
+  // divider is centred too — both axes balanced = four equal quadrants.
+  const xDomain = useMemo<[number | string, number | string]>(() => {
+    if (points.length === 0 || meta.medianViews <= 0) return ["auto", "auto"];
+    let lo = Infinity;
+    let hi = 0;
+    for (const p of points) {
+      lo = Math.min(lo, p.x);
+      hi = Math.max(hi, p.x);
+    }
+    const spread = Math.max(hi / meta.medianViews, meta.medianViews / lo, 1.2);
+    return [meta.medianViews / spread, meta.medianViews * spread];
+  }, [points, meta.medianViews]);
 
   if (!meta.ga4Available) {
     return (
@@ -291,7 +307,9 @@ export function ProductMatrix({
             Матрица: Внимание × Конверсия
           </CardHeader>
           <CardBody>
-            <div className="h-[440px]">
+            {/* Constrained width — a quadrant must read as a square-ish
+                grid, not a 3:1 band stretched across a wide monitor. */}
+            <div className="h-[460px] max-w-[640px] mx-auto">
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 16, right: 24, bottom: 28, left: 8 }}>
                   {/* Quadrant tints — faint, just enough to read the zones */}
@@ -304,7 +322,8 @@ export function ProductMatrix({
                     dataKey="x"
                     name="сесии"
                     scale="log"
-                    domain={["auto", "auto"]}
+                    domain={xDomain}
+                    allowDataOverflow
                     tick={{ fontSize: 11, fill: c.text3 }}
                     tickLine={false}
                     axisLine={false}
@@ -315,6 +334,8 @@ export function ProductMatrix({
                     dataKey="y"
                     name="конверсия"
                     unit="%"
+                    domain={[0, yMax]}
+                    allowDataOverflow
                     tick={{ fontSize: 11, fill: c.text3 }}
                     tickLine={false}
                     axisLine={false}
