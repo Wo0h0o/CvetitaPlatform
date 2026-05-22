@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
-import { CheckCircle2, X, Clock, Inbox as InboxIcon, TrendingDown, TrendingUp, Minus, AlertTriangle } from "lucide-react";
+import { CheckCircle2, X, Clock, Inbox as InboxIcon, TrendingDown, TrendingUp, Minus, AlertTriangle, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/shared/Button";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -107,6 +108,36 @@ function daysUntil(iso: string | null): number | null {
   return Math.round(ms / (24 * 60 * 60 * 1000));
 }
 
+/**
+ * Maps an inbox card's target to the page where the operator can act on it.
+ * `target_type` values written into agent_briefs today:
+ *   market | product | ad | adset | campaign.
+ * Returns null when no route can be resolved — the card then stays
+ * inspect-only rather than offering a dead link.
+ */
+function targetHref(card: InboxCard): string | null {
+  const market = card.stores?.market_code ?? null;
+  switch (card.target_type) {
+    case "market": {
+      // watcher-roas-drop writes target_id = market_code
+      const m = card.target_id || market;
+      return m ? `/ads/${m}` : null;
+    }
+    case "product":
+      // agent-briefs cron writes target_id = product handle
+      return card.target_id ? `/products/${card.target_id}` : "/products";
+    case "ad":
+      // /ads/[market] auto-opens the ad modal on ?focus=<adId>
+      return market ? `/ads/${market}?focus=${card.target_id}` : null;
+    case "adset":
+    case "campaign":
+      // No focus handler for these yet — land on the market's ads overview
+      return market ? `/ads/${market}` : null;
+    default:
+      return null;
+  }
+}
+
 // ============================================================
 // Outcome badge
 // ============================================================
@@ -156,10 +187,12 @@ function OutcomeBadge({ card }: { card: InboxCard }) {
 // ============================================================
 
 function CardRow({ card, onAction }: { card: InboxCard; onAction: (id: string, action: string) => void }) {
+  const router = useRouter();
   const sev = SEVERITY_STYLE[card.severity];
   const market = card.stores?.market_code ?? null;
   const sourceLabel = card.source_agent ? SOURCE_LABEL[card.source_agent] ?? card.source_agent : "Система";
   const showActions = card.status === "pending";
+  const href = targetHref(card);
 
   return (
     <div
@@ -193,6 +226,11 @@ function CardRow({ card, onAction }: { card: InboxCard; onAction: (id: string, a
 
       {showActions && (
         <div className="flex items-center gap-2 flex-wrap pt-1">
+          {href && (
+            <Button size="sm" variant="secondary" onClick={() => router.push(href)}>
+              <ArrowRight size={14} /> Прегледай
+            </Button>
+          )}
           <Button size="sm" variant="primary" onClick={() => onAction(card.id, "approve")}>
             <CheckCircle2 size={14} /> Действам
           </Button>
@@ -206,15 +244,19 @@ function CardRow({ card, onAction }: { card: InboxCard; onAction: (id: string, a
       )}
 
       {!showActions && (
-        <div className="flex items-center gap-2 text-[11px] text-text-3">
-          {card.status === "actioned" && (
-            <span>✓ Действано {relativeTime(card.actioned_at)}</span>
-          )}
-          {card.status === "dismissed" && (
-            <span>Отхвърлено {relativeTime(card.actioned_at)}</span>
-          )}
-          {card.status === "acknowledged" && (
-            <span>Прегледано {relativeTime(card.actioned_at)}</span>
+        <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
+          <span className="text-[11px] text-text-3">
+            {card.status === "actioned" && `✓ Действано ${relativeTime(card.actioned_at)}`}
+            {card.status === "dismissed" && `Отхвърлено ${relativeTime(card.actioned_at)}`}
+            {card.status === "acknowledged" && `Прегледано ${relativeTime(card.actioned_at)}`}
+          </span>
+          {href && (
+            <button
+              onClick={() => router.push(href)}
+              className="inline-flex items-center gap-1 text-[12px] text-text-2 hover:text-accent transition-colors cursor-pointer"
+            >
+              Прегледай <ArrowRight size={13} />
+            </button>
           )}
         </div>
       )}
