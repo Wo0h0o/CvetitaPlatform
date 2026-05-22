@@ -4,7 +4,8 @@ import Link from "next/link";
 import useSWR from "swr";
 import {
   Area,
-  AreaChart,
+  Bar,
+  ComposedChart,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -175,6 +176,12 @@ interface HeroCardProps {
    * tooltip reads in the same unit as the headline.
    */
   valueFormatter?: (n: number) => string;
+  /**
+   * Chart shape for the `current` trace. Design contract §9.2: counts
+   * (orders, signups) are discrete events → bars. Continuous metrics
+   * (revenue, spend, CAC) → smooth area. Defaults to "area".
+   */
+  chartType?: "area" | "bars";
 }
 
 interface ChartRow {
@@ -197,6 +204,7 @@ function HeroCard({
   subText,
   drillTo,
   valueFormatter,
+  chartType = "area",
 }: HeroCardProps) {
   // Delta rendering — same triangle convention as before.
   let deltaNode: React.ReactNode = null;
@@ -244,7 +252,7 @@ function HeroCard({
       {chartRows && (
         <div className="h-[90px] -mx-2 mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartRows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+            <ComposedChart data={chartRows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
               <defs>
                 <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
@@ -276,29 +284,57 @@ function HeroCard({
                   />
                 )}
               />
-              {/* Comparison line — drawn FIRST so the accent area paints on top.
-                  Stroke kept thin + dashed at 30% opacity to read as "context"
-                  not data the user is reading. */}
-              <Line
-                type="monotone"
-                dataKey="comparison"
-                stroke="var(--text-3)"
-                strokeWidth={1}
-                strokeDasharray="3 3"
-                dot={false}
-                isAnimationActive={false}
-                connectNulls
-              />
-              <Area
-                type="monotone"
-                dataKey="current"
-                stroke="var(--accent)"
-                strokeWidth={1.5}
-                fill="url(#heroFill)"
-                isAnimationActive={false}
-                dot={false}
-                connectNulls={false}
-              />
+              {/* Comparison line — thin + dashed at low opacity to read as
+                  "context", not data the user is reading. For an area
+                  current trace it is drawn FIRST so the accent area paints
+                  on top; for bars it is drawn AFTER so the line stays
+                  visible above the solid accent columns. */}
+              {chartType === "area" && (
+                <Line
+                  type="monotone"
+                  dataKey="comparison"
+                  stroke="var(--text-3)"
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              )}
+              {chartType === "bars" ? (
+                // §9.2 — counts are discrete events; a bar per bucket is
+                // an honest "this many happened", not an interpolated flow.
+                <Bar
+                  dataKey="current"
+                  fill="var(--accent)"
+                  radius={[2, 2, 0, 0]}
+                  maxBarSize={20}
+                  isAnimationActive={false}
+                />
+              ) : (
+                <Area
+                  type="monotone"
+                  dataKey="current"
+                  stroke="var(--accent)"
+                  strokeWidth={1.5}
+                  fill="url(#heroFill)"
+                  isAnimationActive={false}
+                  dot={false}
+                  connectNulls={false}
+                />
+              )}
+              {chartType === "bars" && (
+                <Line
+                  type="monotone"
+                  dataKey="comparison"
+                  stroke="var(--text-3)"
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              )}
               {/* "Now" marker — only hourly today renders this. The
                   ReferenceLine sits at the last filled hour so the chart
                   endpoint visually marks "we are here". */}
@@ -310,7 +346,7 @@ function HeroCard({
                   strokeWidth={1}
                 />
               )}
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -854,6 +890,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
           nullLabel={nullLabel}
           series={series.business.orders}
           valueFormatter={fmtInt}
+          chartType="bars"
           drillTo={businessDrill}
         />
         <HeroCard
@@ -956,6 +993,7 @@ export function KpiStrip({ queryString, preset, rangeLabel }: KpiStripProps) {
             nullLabel={nullLabel}
             series={series.googleAds?.purchases ?? null}
             valueFormatter={fmtInt}
+            chartType="bars"
             drillTo={googleAdsDrill}
           />
         </SectionShell>
