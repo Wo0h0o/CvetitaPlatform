@@ -15,19 +15,21 @@ export async function GET(request: NextRequest) {
   const preset = request.nextUrl.searchParams.get("preset") || "30d";
 
   try {
-    // Comparison is best-effort — a failed prev-period fetch drops the
-    // deltas but must not take the whole page down (principle 8).
-    const [data, previous] = await Promise.all([
-      getKlaviyoMetrics(preset),
-      getKlaviyoComparison(preset).catch((e) => {
-        logger.error("Klaviyo comparison failed", { error: String(e) });
-        return null;
-      }),
-    ]);
+    // Sequential, NOT Promise.all — Klaviyo's report endpoints throttle a
+    // burst of 4 concurrent queries (2 here + 2 in the comparison). The
+    // primary fetch runs first and alone; the comparison follows.
+    const data = await getKlaviyoMetrics(preset);
 
     if (!data) {
       return NextResponse.json({ error: "Klaviyo fetch failed" });
     }
+
+    // Comparison is best-effort — a failed prev-period fetch drops the
+    // deltas but must not take the whole page down (principle 8).
+    const previous = await getKlaviyoComparison(preset).catch((e) => {
+      logger.error("Klaviyo comparison failed", { error: String(e) });
+      return null;
+    });
 
     return NextResponse.json({ ...data, previous }, {
       headers: { "Cache-Control": "s-maxage=1800, stale-while-revalidate=300" },

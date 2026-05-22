@@ -8,14 +8,32 @@ function getApiKey() {
   return process.env.KLAVIYO_API_KEY || "";
 }
 
+// Klaviyo's reporting endpoints throttle hard (a burst of ~4 concurrent
+// report queries trips a 429). One retry after the server-advised delay
+// turns a burst 429 into a slightly slower 200 instead of a failed page.
+async function withThrottleRetry(
+  doFetch: () => Promise<Response>,
+  attempt = 0
+): Promise<Response> {
+  const res = await doFetch();
+  if (res.status === 429 && attempt < 2) {
+    const retryAfter = Number(res.headers.get("Retry-After")) || 2;
+    await new Promise((r) => setTimeout(r, (retryAfter + 0.5) * 1000));
+    return withThrottleRetry(doFetch, attempt + 1);
+  }
+  return res;
+}
+
 async function klaviyoGet(path: string): Promise<Record<string, unknown>> {
-  const res = await fetchWithTimeout(`https://a.klaviyo.com${path}`, {
-    headers: {
-      Authorization: `Klaviyo-API-Key ${getApiKey()}`,
-      revision: API_REVISION,
-      Accept: "application/json",
-    },
-  }, 15_000);
+  const res = await withThrottleRetry(() =>
+    fetchWithTimeout(`https://a.klaviyo.com${path}`, {
+      headers: {
+        Authorization: `Klaviyo-API-Key ${getApiKey()}`,
+        revision: API_REVISION,
+        Accept: "application/json",
+      },
+    }, 15_000)
+  );
 
   if (!res.ok) {
     throw new Error(`Klaviyo API error: ${res.status} ${await res.text()}`);
@@ -25,16 +43,18 @@ async function klaviyoGet(path: string): Promise<Record<string, unknown>> {
 }
 
 async function klaviyoPost(path: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetchWithTimeout(`https://a.klaviyo.com${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Klaviyo-API-Key ${getApiKey()}`,
-      revision: API_REVISION,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  }, 15_000);
+  const res = await withThrottleRetry(() =>
+    fetchWithTimeout(`https://a.klaviyo.com${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Klaviyo-API-Key ${getApiKey()}`,
+        revision: API_REVISION,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }, 15_000)
+  );
 
   if (!res.ok) {
     throw new Error(`Klaviyo API error: ${res.status} ${await res.text()}`);
