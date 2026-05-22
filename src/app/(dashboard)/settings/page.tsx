@@ -342,23 +342,68 @@ function BusinessSection({ toast }: { toast: (msg: string, kind?: ToastKind) => 
         </CardBody>
       </Card>
 
-      {/* Integration Status */}
-      <Card className="lg:col-span-2">
-        <CardHeader action={<Wifi size={16} className="text-text-3" />}>
-          Свързани интеграции
-        </CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <IntegrationBadge name="Shopify" status="connected" />
-            <IntegrationBadge name="Google Analytics" status="unknown" />
-            <IntegrationBadge name="Meta Ads" status="unknown" />
-            <IntegrationBadge name="Klaviyo" status="unknown" />
-            <IntegrationBadge name="Google Ads" status="disconnected" />
-          </div>
-          <p className="text-[11px] text-text-3 mt-3">Статусът се определя от конфигурацията в Vercel Environment Variables.</p>
-        </CardBody>
-      </Card>
+      {/* Integration Status — live health probe */}
+      <IntegrationStatusCard />
     </>
+  );
+}
+
+// ============================================================
+// Integration health — live probe of every connected service
+// ============================================================
+
+type IntegrationStatus = "connected" | "error" | "disconnected";
+
+interface IntegrationHealth {
+  key: string;
+  name: string;
+  status: IntegrationStatus;
+  detail: string;
+}
+
+function IntegrationStatusCard() {
+  const { data, isLoading } = useSWR<{
+    integrations: IntegrationHealth[];
+    checkedAt: string;
+  }>("/api/settings/health", fetcher, { revalidateOnFocus: false });
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader action={<Wifi size={16} className="text-text-3" />}>
+        Свързани интеграции
+      </CardHeader>
+      <CardBody>
+        {isLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-[58px] w-full" />
+            ))}
+          </div>
+        ) : data?.integrations ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {data.integrations.map((it) => (
+              <IntegrationBadge
+                key={it.key}
+                name={it.name}
+                status={it.status}
+                detail={it.detail}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-[12px] text-red">
+            Неуспешна проверка на интеграциите. Опитайте отново.
+          </p>
+        )}
+        <p className="text-[11px] text-text-3 mt-3">
+          {data?.checkedAt
+            ? `Проверено в реално време чрез тестова заявка · ${new Date(
+                data.checkedAt
+              ).toLocaleTimeString("bg-BG", { hour: "2-digit", minute: "2-digit" })}`
+            : "Всяка услуга се проверява в реално време чрез тестова заявка."}
+        </p>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -413,17 +458,30 @@ function Field({
   );
 }
 
-function IntegrationBadge({ name, status }: { name: string; status: "connected" | "unknown" | "disconnected" }) {
+function IntegrationBadge({
+  name,
+  status,
+  detail,
+}: {
+  name: string;
+  status: IntegrationStatus;
+  detail: string;
+}) {
   const styles = {
     connected: { border: "border-accent/20 bg-accent-soft", icon: CheckCircle, iconColor: "text-accent", text: "text-text" },
-    unknown: { border: "border-orange/20 bg-orange-soft", icon: AlertCircle, iconColor: "text-orange", text: "text-text" },
+    error: { border: "border-red/20 bg-red-soft", icon: AlertCircle, iconColor: "text-red", text: "text-text" },
     disconnected: { border: "border-border bg-surface-2", icon: XCircle, iconColor: "text-text-3", text: "text-text-3" },
   };
   const s = styles[status];
   return (
-    <div className={`flex items-center gap-2 p-3 rounded-lg border ${s.border}`}>
-      <s.icon size={16} className={s.iconColor} />
-      <span className={`text-[13px] font-medium ${s.text}`}>{name}</span>
+    <div className={`flex items-start gap-2 p-3 rounded-lg border ${s.border}`}>
+      <s.icon size={16} className={`${s.iconColor} flex-shrink-0 mt-0.5`} />
+      <div className="min-w-0">
+        <div className={`text-[13px] font-medium ${s.text}`}>{name}</div>
+        <div className="text-[11px] text-text-3 truncate" title={detail}>
+          {detail}
+        </div>
+      </div>
     </div>
   );
 }
