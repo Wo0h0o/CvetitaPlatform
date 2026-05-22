@@ -15,6 +15,7 @@ import { useDateRange } from "@/hooks/useDateRange";
 import { useToast } from "@/providers/ToastProvider";
 import { MiniKpi } from "@/components/shared/MiniKpi";
 import { calcDeltaPct } from "@/components/shared/Delta";
+import { SpendRoasTrend } from "./_components/SpendRoasTrend";
 import { type MarketBinding } from "@/lib/store-market-resolver";
 import {
   Megaphone, ArrowUpDown, ChevronDown, ChevronUp,
@@ -419,6 +420,9 @@ export default function AdsMarketPage({
           </>
         )}
       </div>
+
+      {/* Spend × ROAS trend — tempo context before drilling into ad cards */}
+      {!isPageLoading && <SpendRoasTrend market={market} preset={metaPreset} />}
 
       {/* Sub-brand filter (BG only — multi-binding markets) */}
       {!isPageLoading && subBrandOptions.length > 0 && (
