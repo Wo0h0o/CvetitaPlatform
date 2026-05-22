@@ -225,7 +225,25 @@ function BubbleQuadrant({
     const maxYDomain = maxYTop * 1.04;
     const hasYOutliers = maxYData > maxYTop + 0.05;
 
-    return { plottable, medX, medY, xLo, xHi, minZ, maxZ, maxYTop, maxYDomain, hasYOutliers };
+    // Quadrant tint intensity carries each quadrant's share of total
+    // revenue — the money-heavy quadrant visibly glows strongest, so
+    // the catalogue's centre of gravity reads at a glance, no text.
+    // Hue stays = diagnosis (§1); only opacity is data-driven.
+    const qRev: Record<Exclude<Quadrant, "insufficient">, number> = {
+      star: 0, leaking: 0, gem: 0, dormant: 0,
+    };
+    let totalRev = 0;
+    for (const p of plottable) {
+      const r = Math.max(p.revenue, 0);
+      qRev[p.quadrant as Exclude<Quadrant, "insufficient">] += r;
+      totalRev += r;
+    }
+    const tintOpacity = {} as Record<Exclude<Quadrant, "insufficient">, number>;
+    for (const k of Object.keys(qRev) as Exclude<Quadrant, "insufficient">[]) {
+      tintOpacity[k] = totalRev > 0 ? 0.035 + (qRev[k] / totalRev) * 0.17 : 0.05;
+    }
+
+    return { plottable, medX, medY, xLo, xHi, minZ, maxZ, maxYTop, maxYDomain, hasYOutliers, tintOpacity };
   }, [products, meta]);
 
   // ---- Pixel geometry ----
@@ -281,36 +299,6 @@ function BubbleQuadrant({
       }));
   }, [model, geom]);
 
-  // ---- Direct labels — top by revenue, greedy collision skip (§9.7) ----
-  // Magic-quadrant style, but a label that would overlap another is
-  // dropped rather than stacked into an unreadable pile.
-  const labels = useMemo(() => {
-    if (!geom) return [];
-    const placed: { x: number; y: number; text: string }[] = [];
-    const boxes: { x1: number; y1: number; x2: number; y2: number }[] = [];
-    for (const p of points.slice(0, 8)) {
-      const text = p.title.length > 20 ? p.title.slice(0, 19) + "…" : p.title;
-      const w = text.length * 5.6;
-      const lowerHalf = p.cy > geom.midY;
-      for (const side of lowerHalf ? ["above", "below"] : ["below", "above"]) {
-        const y = side === "above" ? p.cy - p.r - 6 : p.cy + p.r + 12;
-        const box = { x1: p.cx - w / 2, y1: y - 9, x2: p.cx + w / 2, y2: y + 2 };
-        const fitsX = box.x1 > 2 && box.x2 < W - 2;
-        const fitsY = y > geom.top + 4 && y < geom.bottom - 2;
-        const clear = !boxes.some(
-          (b) => !(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)
-        );
-        if (fitsX && fitsY && clear) {
-          placed.push({ x: p.cx, y, text });
-          boxes.push(box);
-          break;
-        }
-      }
-      if (placed.length >= 6) break;
-    }
-    return placed;
-  }, [points, geom, W]);
-
   if (!model) {
     return (
       <p className="text-[13px] text-text-2 text-center py-12">
@@ -326,15 +314,15 @@ function BubbleQuadrant({
     <div ref={ref} className="relative w-full">
       {geom && (
         <svg width={W} height={geom.height} className="block">
-          {/* Quadrant tints — four equal rects, median dividers at centre */}
+          {/* Quadrant tints — four rects, opacity ∝ revenue share */}
           <rect x={geom.left} y={geom.top} width={geom.plot / 2} height={geom.plot / 2}
-            fill={c.accent} fillOpacity={0.03} />
+            fill={c.accent} fillOpacity={model.tintOpacity.gem} />
           <rect x={geom.left + geom.plot / 2} y={geom.top} width={geom.plot / 2} height={geom.plot / 2}
-            fill={c.accent} fillOpacity={0.07} />
+            fill={c.accent} fillOpacity={model.tintOpacity.star} />
           <rect x={geom.left} y={geom.midY} width={geom.plot / 2} height={geom.plot / 2}
-            fill={c.text3} fillOpacity={0.04} />
+            fill={c.text3} fillOpacity={model.tintOpacity.dormant} />
           <rect x={geom.left + geom.plot / 2} y={geom.midY} width={geom.plot / 2} height={geom.plot / 2}
-            fill={c.red} fillOpacity={0.05} />
+            fill={c.red} fillOpacity={model.tintOpacity.leaking} />
 
           {/* Plot frame + median dividers */}
           <rect x={geom.left} y={geom.top} width={geom.plot} height={geom.plot}
@@ -374,6 +362,24 @@ function BubbleQuadrant({
             Сесии (внимание) →
           </text>
 
+          {/* Headline halo — top revenue products glow (§10 static halo).
+              Replaces text labels: the eye finds the winners/leaks with
+              no words; identity comes from the hover card. */}
+          {points.slice(0, 6).map((p) => {
+            const q = QUADRANTS[p.quadrant as Exclude<Quadrant, "insufficient">];
+            return (
+              <circle
+                key={`halo-${p.productId ?? p.title}`}
+                cx={p.cx}
+                cy={p.cy}
+                r={p.r + 7}
+                fill={q.fill}
+                fillOpacity={0.15}
+                style={{ pointerEvents: "none" }}
+              />
+            );
+          })}
+
           {/* Bubbles */}
           {points.map((p) => {
             const q = QUADRANTS[p.quadrant as Exclude<Quadrant, "insufficient">];
@@ -395,23 +401,6 @@ function BubbleQuadrant({
             );
           })}
 
-          {/* Direct labels — collision-filtered */}
-          {labels.map((l) => (
-            <text
-              key={l.text + l.x}
-              x={l.x}
-              y={l.y}
-              textAnchor="middle"
-              fontSize={10}
-              fill={c.text2}
-              stroke="var(--surface)"
-              strokeWidth={3}
-              paintOrder="stroke"
-              style={{ pointerEvents: "none" }}
-            >
-              {l.text}
-            </text>
-          ))}
         </svg>
       )}
       {!geom && <div className="h-[460px]" />}
@@ -466,7 +455,7 @@ function PriorityActions({
         return { p, potential, lost: potential - p.revenue };
       })
       .sort((a, b) => b.lost - a.lost)
-      .slice(0, 3);
+      .slice(0, 5);
   }, [products, meta.medianConversion]);
 
   return (
@@ -480,7 +469,7 @@ function PriorityActions({
         ) : (
           <>
             <p className="text-[12px] text-text-2 mb-3 leading-relaxed">
-              Трите продукта, които изпускат най-много приходи спрямо средната конверсия ({fmtPct(meta.medianConversion)}).
+              Продуктите с най-голям изпуснат приход спрямо средната конверсия ({fmtPct(meta.medianConversion)}).
             </p>
             <div className="space-y-2.5">
               {items.map(({ p, potential, lost }, i) => {
@@ -513,12 +502,15 @@ function PriorityActions({
                     </div>
                   </div>
                 );
+                // Items 4–5 only show on lg — 3 on mobile/tablet, 5 on
+                // desktop so the card balances the tall matrix beside it.
+                const cls = i >= 3 ? "hidden lg:block" : "block";
                 return p.handle ? (
-                  <Link key={p.title} href={`/products/${p.handle}`} className="block">
+                  <Link key={p.title} href={`/products/${p.handle}`} className={cls}>
                     {body}
                   </Link>
                 ) : (
-                  <div key={p.title}>{body}</div>
+                  <div key={p.title} className={cls}>{body}</div>
                 );
               })}
             </div>
