@@ -20,7 +20,7 @@ export function SortButton<T extends string>({
     <button
       onClick={() => onToggle(sortKey)}
       className={`
-        flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 cursor-pointer
+        flex items-center justify-center gap-1 px-2.5 py-1.5 min-h-[44px] rounded-lg text-[12px] font-medium transition-all duration-150 cursor-pointer
         ${isActive
           ? "bg-surface-2 text-text border border-border-strong"
           : "text-text-3 hover:text-text-2"
@@ -53,7 +53,7 @@ export function FilterPill<T extends string>({
     <button
       onClick={() => onChange(value)}
       className={`
-        px-3 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 cursor-pointer
+        inline-flex items-center justify-center px-3 py-1.5 min-h-[44px] rounded-full text-[12px] font-medium transition-all duration-150 cursor-pointer
         ${isActive
           ? "bg-accent text-white shadow-sm"
           : "text-text-3 hover:text-text-2 hover:bg-surface-2"
