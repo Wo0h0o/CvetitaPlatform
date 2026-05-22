@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
       prevTopEventsRows,
       dailyRows,
       rhythmRows,
+      geoRows,
     ] = await Promise.all([
       // Channel Group — coarse aggregation (Organic Search / Paid Search /
       // Direct / Referral / ...). Kept because agent-context.ts feeds it
@@ -120,6 +121,13 @@ export async function GET(req: NextRequest) {
             startDate: start, endDate: rhythmEnd,
           })
         : Promise.resolve([] as GA4Row[]),
+      // Geo — sessions by country (ISO alpha-2 via countryId). Top 12
+      // covers the long tail; the UI renders a ranked bar breakdown.
+      runReport({
+        metrics: ["sessions", "totalUsers"],
+        dimensions: ["countryId"],
+        startDate: start, endDate: end, limit: 12,
+      }),
     ]);
 
     // Channel Group (kept for agent-context.ts backward compat).
@@ -226,6 +234,17 @@ export async function GET(req: NextRequest) {
       weekdayCounts: Object.fromEntries(rhythmWeekdayCounts),
     };
 
+    // Geo — countryId is the ISO alpha-2 code (caps). "(not set)" rows
+    // (GA4's unresolved-geo bucket) keep their raw value so the UI can
+    // label them honestly rather than silently dropping sessions.
+    const geo = geoRows
+      .map((r) => ({
+        country: r.dimensionValues?.[0]?.value || "(not set)",
+        sessions: parseInt(r.metricValues?.[0]?.value || "0", 10),
+        users: parseInt(r.metricValues?.[1]?.value || "0", 10),
+      }))
+      .sort((a, b) => b.sessions - a.sessions);
+
     return NextResponse.json(
       {
         period: range.label,
@@ -243,6 +262,7 @@ export async function GET(req: NextRequest) {
         dailyOverview,
         rhythm,
         rhythmMeta,
+        geo,
       },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );

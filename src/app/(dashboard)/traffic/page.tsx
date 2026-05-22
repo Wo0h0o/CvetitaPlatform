@@ -13,6 +13,7 @@ import { MiniKpi } from "@/components/shared/MiniKpi";
 import { calcDeltaPct, calcDeltaPp, Delta } from "@/components/shared/Delta";
 import { fetcher } from "@/lib/swr";
 import { TrafficRhythm } from "@/components/traffic/TrafficRhythm";
+import { TrafficGeo } from "@/components/traffic/TrafficGeo";
 
 interface OverviewMetrics {
   sessions: number;
@@ -65,6 +66,7 @@ interface TrafficData {
     valid: boolean;
     weekdayCounts: Record<string, number>;
   };
+  geo?: { country: string; sessions: number; users: number }[];
   error?: string;
 }
 
@@ -295,6 +297,11 @@ export default function TrafficPage() {
           rhythm={data?.rhythm ?? []}
           weekdayCounts={data?.rhythmMeta?.weekdayCounts ?? {}}
         />
+      </div>
+
+      {/* Държави — откъде идва трафикът (§9 Top X bar breakdown) */}
+      <div className="mb-6">
+        <TrafficGeo geo={data?.geo ?? []} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
