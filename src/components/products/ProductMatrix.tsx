@@ -254,6 +254,10 @@ export function ProductMatrix({
   // hover card still shows each product's true conversion.
   const medY = meta.medianConversion * 100;
   const yMax = Math.max(medY * 2, 1);
+  // Explicit ticks — Recharts' auto-tick generator produced a phantom
+  // 31852022% tick on this scatter (the scale itself was fine). Five
+  // even ticks; the middle one lands exactly on the median divider.
+  const yTicks = [0, yMax * 0.25, yMax * 0.5, yMax * 0.75, yMax];
 
   const points = useMemo<ScatterPoint[]>(() => {
     const plottable = products.filter((p) => p.quadrant !== "insufficient");
@@ -369,8 +373,9 @@ export function ProductMatrix({
                     type="number"
                     dataKey="y"
                     name="конверсия"
-                    unit="%"
                     domain={[0, yMax]}
+                    ticks={yTicks}
+                    tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
                     allowDataOverflow
                     tick={{ fontSize: 11, fill: c.text3 }}
                     tickLine={false}
