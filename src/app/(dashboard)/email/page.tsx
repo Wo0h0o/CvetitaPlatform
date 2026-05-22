@@ -62,12 +62,24 @@ interface EmailData {
   error?: string;
 }
 
-const statusVariant: Record<string, "green" | "blue" | "orange" | "neutral"> = {
+// Status is a category, not a metric — design contract §1 forbids
+// categorical blue/orange. Only "Изпратена" (the done/positive state)
+// earns the accent; everything else is neutral.
+const statusVariant: Record<string, "green" | "neutral"> = {
   Sent: "green",
   Draft: "neutral",
-  Scheduled: "blue",
-  Sending: "orange",
+  Scheduled: "neutral",
+  Sending: "neutral",
   Cancelled: "neutral",
+};
+
+// Bulgarian status labels — all user-visible strings are BG cyrillic.
+const STATUS_LABEL: Record<string, string> = {
+  Sent: "Изпратена",
+  Draft: "Чернова",
+  Scheduled: "Планирана",
+  Sending: "Изпраща се",
+  Cancelled: "Отказана",
 };
 
 type CampaignFilter = "all" | "Sent" | "Draft" | "Scheduled";
@@ -283,14 +295,22 @@ export default function EmailPage() {
         />
       )}
 
-      {/* Flow Revenue Chart */}
+      {/* Flow Revenue Chart — height scales with row count so the
+          (2-line) flow-name labels get room instead of overlapping. */}
       {filteredFlows.length > 0 && (
         <BarChartCard
-          data={filteredFlows.slice(0, 8).map((f) => ({ name: f.name.length > 25 ? f.name.slice(0, 25) + "..." : f.name, revenue: f.revenue }))}
+          data={filteredFlows.slice(0, 8).map((f) => {
+            // Strip the "SH | " account prefix — it's noise on every row.
+            const clean = f.name.replace(/^[A-Za-z]{2,4}\s*\|\s*/, "");
+            return {
+              name: clean.length > 28 ? clean.slice(0, 28) + "…" : clean,
+              revenue: f.revenue,
+            };
+          })}
           xKey="name"
           yKey="revenue"
-          title="Flows по Revenue"
-          height={200}
+          title="Flows по приходи"
+          height={Math.max(240, Math.min(filteredFlows.length, 8) * 50)}
           formatValue={(v) => `${v.toFixed(2)} EUR`}
           className="mb-4"
           horizontal
@@ -311,9 +331,9 @@ export default function EmailPage() {
               {(
                 [
                   { id: "all", label: "Всички" },
-                  { id: "Sent", label: "Sent" },
-                  { id: "Draft", label: "Draft" },
-                  { id: "Scheduled", label: "Planned" },
+                  { id: "Sent", label: "Изпратени" },
+                  { id: "Draft", label: "Чернови" },
+                  { id: "Scheduled", label: "Планирани" },
                 ] as { id: CampaignFilter; label: string }[]
               ).map((f) => (
                 <FilterPill
@@ -326,63 +346,110 @@ export default function EmailPage() {
               ))}
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto -mx-5 px-5">
-              <div className="min-w-[500px]">
-                {/* Header with sort buttons */}
-                <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
-                  <div className="col-span-5 text-[13px] font-semibold text-text flex items-center">
-                    Кампания
+            {/* Desktop — table. Columns rebalanced so the status pill has
+                room (was col-span-1 ≈ 42px, the badge overflowed). */}
+            <div className="hidden md:block">
+              <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b border-border">
+                <div className="col-span-4 text-[13px] font-semibold text-text flex items-center">
+                  Кампания
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <SortButton label="Приходи" sortKey="revenue" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <SortButton label="Open" sortKey="openRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <SortButton label="Click" sortKey="clickRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
+                </div>
+                <div className="col-span-2 text-[13px] font-semibold text-text text-right flex items-center justify-end">
+                  Статус
+                </div>
+              </div>
+
+              {visibleCampaigns.map((c, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
+                >
+                  <div className="col-span-4 min-w-0">
+                    <div className="text-[13px] font-medium text-text truncate">{c.name}</div>
+                    {c.sendTime && (
+                      <div className="text-[12px] text-text-2">
+                        {new Date(c.sendTime).toLocaleDateString("bg-BG", { day: "numeric", month: "short" })}
+                        {" · "}
+                        {c.recipients.toLocaleString("bg-BG")} получатели
+                      </div>
+                    )}
+                  </div>
+                  <div className="col-span-2 text-right text-[13px] font-semibold text-text tabular-nums">
+                    {c.revenue > 0 ? fmt(c.revenue) : "—"}
+                  </div>
+                  <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">
+                    {c.recipients > 0 ? pct(c.openRate) : "—"}
+                  </div>
+                  <div className="col-span-2 text-right text-[13px] text-text-2 tabular-nums">
+                    {c.recipients > 0 ? pct(c.clickRate) : "—"}
                   </div>
                   <div className="col-span-2 flex justify-end">
-                    <SortButton label="Revenue" sortKey="revenue" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <SortButton label="Open" sortKey="openRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <SortButton label="Click" sortKey="clickRate" currentKey={campaignSort} dir={campaignSortDir} onToggle={toggleCampaignSort} />
-                  </div>
-                  <div className="col-span-1 text-[13px] font-semibold text-text text-right flex items-center justify-end">
-                    Статус
+                    <Badge variant={statusVariant[c.status] || "neutral"}>
+                      {STATUS_LABEL[c.status] || c.status}
+                    </Badge>
                   </div>
                 </div>
-
-                {visibleCampaigns.map((c, i) => (
-                  <div
-                    key={i}
-                    className="grid grid-cols-12 gap-2 py-2.5 items-center hover:bg-surface-2 rounded-lg px-1 transition-colors"
-                  >
-                    <div className="col-span-5 min-w-0">
-                      <div className="text-[13px] font-medium text-text truncate">{c.name}</div>
-                      {c.sendTime && (
-                        <div className="text-[12px] text-text-2">
-                          {new Date(c.sendTime).toLocaleDateString("bg-BG", { day: "numeric", month: "short" })}
-                          {" | "}
-                          {c.recipients.toLocaleString("bg-BG")} получатели
-                        </div>
-                      )}
-                    </div>
-                    <div className="col-span-2 text-right text-[13px] font-semibold text-text">
-                      {c.revenue > 0 ? fmt(c.revenue) : "—"}
-                    </div>
-                    <div className="col-span-2 text-right text-[13px] text-text-2">
-                      {c.recipients > 0 ? pct(c.openRate) : "—"}
-                    </div>
-                    <div className="col-span-2 text-right text-[13px] text-text-2">
-                      {c.recipients > 0 ? pct(c.clickRate) : "—"}
-                    </div>
-                    <div className="col-span-1 flex justify-end">
-                      <Badge variant={statusVariant[c.status] || "neutral"}>{c.status}</Badge>
-                    </div>
-                  </div>
-                ))}
-
-                {visibleCampaigns.length === 0 && (
-                  <div className="text-center py-8 text-text-3 text-[13px]">Няма кампании</div>
-                )}
-              </div>
+              ))}
             </div>
+
+            {/* Mobile — card list. A 5-column table at 500px min-width
+                scrolled sideways and the status pill overflowed its cell;
+                one card per campaign removes the scroll entirely. */}
+            <div className="md:hidden space-y-2">
+              {visibleCampaigns.map((c, i) => (
+                <div key={i} className="rounded-lg border border-border p-3">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="text-[13px] font-medium text-text leading-snug">
+                      {c.name}
+                    </span>
+                    <span className="flex-shrink-0">
+                      <Badge variant={statusVariant[c.status] || "neutral"}>
+                        {STATUS_LABEL[c.status] || c.status}
+                      </Badge>
+                    </span>
+                  </div>
+                  {c.sendTime && (
+                    <div className="text-[12px] text-text-3 mb-2">
+                      {new Date(c.sendTime).toLocaleDateString("bg-BG", { day: "numeric", month: "short" })}
+                      {" · "}
+                      {c.recipients.toLocaleString("bg-BG")} получатели
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+                    <span className="text-text-3">
+                      Приходи{" "}
+                      <span className="text-text font-semibold tabular-nums">
+                        {c.revenue > 0 ? fmt(c.revenue) : "—"}
+                      </span>
+                    </span>
+                    <span className="text-text-3">
+                      Open{" "}
+                      <span className="text-text tabular-nums">
+                        {c.recipients > 0 ? pct(c.openRate) : "—"}
+                      </span>
+                    </span>
+                    <span className="text-text-3">
+                      Click{" "}
+                      <span className="text-text tabular-nums">
+                        {c.recipients > 0 ? pct(c.clickRate) : "—"}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {visibleCampaigns.length === 0 && (
+              <div className="text-center py-8 text-text-3 text-[13px]">Няма кампании</div>
+            )}
 
             {!showAllCampaigns && totalCampaigns > 10 && (
               <button
