@@ -12,6 +12,7 @@ import { DonutChart, FunnelChart, type FunnelStep } from "@/components/charts";
 import { MiniKpi } from "@/components/shared/MiniKpi";
 import { calcDeltaPct, calcDeltaPp, Delta } from "@/components/shared/Delta";
 import { fetcher } from "@/lib/swr";
+import { TrafficRhythm } from "@/components/traffic/TrafficRhythm";
 
 interface OverviewMetrics {
   sessions: number;
@@ -52,6 +53,18 @@ interface TrafficData {
     conversions: number;
     purchases: number;
   }[];
+  rhythm?: {
+    weekday: number;
+    hour: number;
+    sessions: number;
+    avgSessions: number;
+  }[];
+  rhythmMeta?: {
+    from: string;
+    to: string;
+    valid: boolean;
+    weekdayCounts: Record<string, number>;
+  };
   error?: string;
 }
 
@@ -274,6 +287,14 @@ export default function TrafficPage() {
             )}
           </CardBody>
         </Card>
+      </div>
+
+      {/* Ритъм — кога през седмицата идва трафикът (§9 hour×weekday) */}
+      <div className="mb-6">
+        <TrafficRhythm
+          rhythm={data?.rhythm ?? []}
+          weekdayCounts={data?.rhythmMeta?.weekdayCounts ?? {}}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">

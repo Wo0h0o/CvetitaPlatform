@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireAuth } from "@/lib/api-auth";
-import { getDateRange, type DatePreset } from "@/lib/dates";
+import {
+  getDateRange,
+  type DatePreset,
+  sofiaToday,
+  addDays,
+  daysInRange,
+  countWeekdaysInRange,
+} from "@/lib/dates";
 import { runReport, isGA4Configured, type GA4Row } from "@/lib/ga4";
 
 export async function GET(req: NextRequest) {
@@ -19,6 +26,14 @@ export async function GET(req: NextRequest) {
     const range = getDateRange(preset, customFrom, customTo);
     const start = range.from;
     const end = range.to;
+
+    // Rhythm window — the hour×weekday view presents per-weekday
+    // AVERAGES, so a partial current day (counted as a whole occurrence)
+    // dilutes every average it touches (design contract §12). Drop today
+    // when the range ends on it; the numerator fetch and the weekday
+    // divisors below both span this clamped window in lockstep.
+    const rhythmEnd = end === sofiaToday() ? addDays(end, -1) : end;
+    const rhythmValid = daysInRange(start, rhythmEnd) >= 2;
 
     const overviewMetrics = ["sessions", "totalUsers", "engagementRate", "keyEvents", "ecommercePurchases"];
     // Standard GA4 e-commerce event names — the dataLayer on cvetitaherbal.com
@@ -41,6 +56,7 @@ export async function GET(req: NextRequest) {
       topEventsRows,
       prevTopEventsRows,
       dailyRows,
+      rhythmRows,
     ] = await Promise.all([
       // Channel Group — coarse aggregation (Organic Search / Paid Search /
       // Direct / Referral / ...). Kept because agent-context.ts feeds it
@@ -95,6 +111,15 @@ export async function GET(req: NextRequest) {
       // Daily time series — feeds the hero-strip sparklines. Same 5 overview
       // metrics, broken down by date so each MiniKpi can render its own trend.
       runReport({ metrics: overviewMetrics, dimensions: ["date"], startDate: start, endDate: end }),
+      // Rhythm — sessions split by weekday × hour. Skipped (empty) when the
+      // complete-days window is too short for a meaningful pattern.
+      rhythmValid
+        ? runReport({
+            metrics: ["sessions"],
+            dimensions: ["dayOfWeek", "hour"],
+            startDate: start, endDate: rhythmEnd,
+          })
+        : Promise.resolve([] as GA4Row[]),
     ]);
 
     // Channel Group (kept for agent-context.ts backward compat).
@@ -182,6 +207,25 @@ export async function GET(req: NextRequest) {
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
+    // Rhythm — sessions by ISO weekday (1=Mon..7=Sun) × hour, averaged per
+    // occurrence. GA4's dayOfWeek is 0-6 with 0=Sunday; remap to ISO. The
+    // weekday counts double as the tooltip's "средно от N" divisor.
+    const rhythmWeekdayCounts = countWeekdaysInRange(start, rhythmEnd);
+    const rhythm = rhythmRows.map((r) => {
+      const ga4Wd = parseInt(r.dimensionValues?.[0]?.value || "0", 10);
+      const weekday = ga4Wd === 0 ? 7 : ga4Wd;
+      const hour = parseInt(r.dimensionValues?.[1]?.value || "0", 10);
+      const sessions = parseInt(r.metricValues?.[0]?.value || "0", 10);
+      const occ = rhythmWeekdayCounts.get(weekday) ?? 0;
+      return { weekday, hour, sessions, avgSessions: occ > 0 ? sessions / occ : 0 };
+    });
+    const rhythmMeta = {
+      from: start,
+      to: rhythmEnd,
+      valid: rhythmValid,
+      weekdayCounts: Object.fromEntries(rhythmWeekdayCounts),
+    };
+
     return NextResponse.json(
       {
         period: range.label,
@@ -197,6 +241,8 @@ export async function GET(req: NextRequest) {
         topEvents,
         previousTopEvents,
         dailyOverview,
+        rhythm,
+        rhythmMeta,
       },
       { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=300" } }
     );
