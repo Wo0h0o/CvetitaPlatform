@@ -16,6 +16,7 @@ import { useToast } from "@/providers/ToastProvider";
 import { MiniKpi } from "@/components/shared/MiniKpi";
 import { calcDeltaPct } from "@/components/shared/Delta";
 import { SpendRoasTrend } from "./_components/SpendRoasTrend";
+import { AdsBreakdown } from "./_components/AdsBreakdown";
 import { type MarketBinding } from "@/lib/store-market-resolver";
 import {
   Megaphone, ArrowUpDown, ChevronDown, ChevronUp,
@@ -191,6 +192,7 @@ export default function AdsMarketPage({
   const { data: overviewData, isLoading: ovLoading } = useSWR<{
     overview: AdsOverview;
     previous?: AdsOverview | null;
+    campaigns?: { name: string; spend: number; roas: number }[];
     error?: string;
   }>(overviewKey, fetcher, { revalidateOnFocus: false });
 
@@ -423,6 +425,16 @@ export default function AdsMarketPage({
 
       {/* Spend × ROAS trend — tempo context before drilling into ad cards */}
       {!isPageLoading && <SpendRoasTrend market={market} preset={metaPreset} />}
+
+      {/* Breakdown grid — where spend goes, creative health, top campaigns */}
+      {!isPageLoading && (
+        <AdsBreakdown
+          market={market}
+          preset={metaPreset}
+          ads={adsData?.ads ?? []}
+          campaigns={overviewData?.campaigns ?? []}
+        />
+      )}
 
       {/* Sub-brand filter (BG only — multi-binding markets) */}
       {!isPageLoading && subBrandOptions.length > 0 && (

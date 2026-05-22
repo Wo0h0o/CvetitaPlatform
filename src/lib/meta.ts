@@ -400,6 +400,52 @@ export async function getMetaCampaignInsights(
     .sort((a, b) => b.spend - a.spend);
 }
 
+// ============================================================
+// Placement breakdown — spend split across Meta's networks
+// ============================================================
+
+export interface PlacementRow {
+  /** publisher_platform key: facebook | instagram | audience_network | messenger */
+  platform: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  purchases: number;
+}
+
+/**
+ * Account-level insights broken down by publisher_platform — answers
+ * "where across Meta's networks is the budget going, and does it pay back".
+ * One Graph call per account; callers fan out + merge across a market.
+ */
+export async function getMetaPlacementBreakdown(
+  datePreset: string = "last_7d",
+  integrationAccountId?: string
+): Promise<PlacementRow[]> {
+  const client = await getMetaClient(integrationAccountId);
+  const rows = (await fetchInsights(
+    {
+      fields: "spend,actions,action_values",
+      date_preset: datePreset,
+      breakdowns: "publisher_platform",
+    },
+    client
+  )) as (MetaInsightRow & { publisher_platform?: string })[];
+
+  return rows.map((r) => {
+    const spend = parseFloat(r.spend || "0");
+    const revenue = actionVal(r.action_values, "omni_purchase");
+    const purchases = actionVal(r.actions, "omni_purchase");
+    return {
+      platform: r.publisher_platform || "unknown",
+      spend,
+      revenue,
+      roas: spend > 0 ? revenue / spend : 0,
+      purchases,
+    };
+  });
+}
+
 // ---- Ad Set level insights ----
 
 export interface MetaAdSetInsightRow extends MetaInsightRow {
