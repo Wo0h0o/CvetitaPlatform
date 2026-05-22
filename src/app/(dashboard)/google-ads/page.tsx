@@ -3,7 +3,8 @@
 import { useState, useMemo } from "react";
 import useSWR from "swr";
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, BarChart, LineChart, Bar, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { KpiSkeleton, Skeleton } from "@/components/shared/Skeleton";
@@ -27,6 +28,93 @@ const trendTooltip = buildRechartsTooltip<{ date: string; spend: number; roas: n
     { label: "ROAS", value: `${row.roas.toFixed(2)}x` },
   ],
 }));
+
+interface TrendPoint {
+  date: string;
+  spend: number;
+  roas: number;
+}
+
+/**
+ * Daily Spend × ROAS. Desktop: combo (spend bars + ROAS line, dual axis,
+ * §9.4). Mobile: collapses to a one-metric tab toggle (§9.6) — dual axes
+ * are unreadable at 375px.
+ */
+function GoogleAdsTrend({ data }: { data: TrendPoint[] }) {
+  const [metric, setMetric] = useState<"spend" | "roas">("spend");
+  const axisTick = { fill: "var(--text-3)", fontSize: 11 };
+
+  return (
+    <Card className="mb-6">
+      <CardHeader
+        action={
+          <div className="md:hidden flex items-center gap-0.5 bg-surface-2 rounded-lg p-0.5">
+            {(["spend", "roas"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMetric(m)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                  metric === m ? "bg-surface text-text shadow-sm" : "text-text-3"
+                }`}
+              >
+                {m === "spend" ? "Spend" : "ROAS"}
+              </button>
+            ))}
+          </div>
+        }
+      >
+        Дневен spend и ROAS
+      </CardHeader>
+      <CardBody>
+        {/* Desktop — full combo */}
+        <div className="hidden md:block h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
+              <YAxis yAxisId="spend" tick={axisTick} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${Math.round(v)}€`} />
+              <YAxis yAxisId="roas" orientation="right" tick={axisTick} axisLine={false} tickLine={false} width={32} tickFormatter={(v) => `${v.toFixed(1)}x`} />
+              <Tooltip content={trendTooltip} />
+              <Bar yAxisId="spend" dataKey="spend" name="Spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
+              <Line yAxisId="roas" type="monotone" dataKey="roas" name="ROAS" stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        {/* Mobile — one metric at a time */}
+        <div className="md:hidden h-[220px]">
+          <ResponsiveContainer width="100%" height="100%">
+            {metric === "spend" ? (
+              <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
+                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${Math.round(v)}€`} />
+                <Tooltip content={trendTooltip} />
+                <Bar dataKey="spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            ) : (
+              <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
+                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v.toFixed(1)}x`} />
+                <Tooltip content={trendTooltip} />
+                <Line type="monotone" dataKey="roas" stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function MetricCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] text-text-3">{label}</div>
+      <div className="text-[13px] text-text tabular-nums">{value}</div>
+    </div>
+  );
+}
 
 interface Bucket {
   spend: number;
@@ -290,58 +378,8 @@ export default function GoogleAdsPage() {
         })}
       </div>
 
-      {/* Daily Spend + ROAS — composed chart, design contract §7 (light grid, no extra axes) */}
-      {chartData.length > 1 && (
-        <Card className="mb-6">
-          <CardHeader>Дневен spend и ROAS</CardHeader>
-          <CardBody>
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "var(--text-3)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval="preserveStartEnd"
-                    minTickGap={20}
-                  />
-                  <YAxis
-                    yAxisId="spend"
-                    tick={{ fill: "var(--text-3)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={48}
-                    tickFormatter={(v) => `${Math.round(v)}€`}
-                  />
-                  <YAxis
-                    yAxisId="roas"
-                    orientation="right"
-                    tick={{ fill: "var(--text-3)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={32}
-                    tickFormatter={(v) => `${v.toFixed(1)}x`}
-                  />
-                  <Tooltip content={trendTooltip} />
-                  <Bar yAxisId="spend" dataKey="spend" name="Spend" fill="var(--text-3)" radius={[2, 2, 0, 0]} />
-                  <Line
-                    yAxisId="roas"
-                    type="monotone"
-                    dataKey="roas"
-                    name="ROAS"
-                    stroke="var(--accent)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+      {/* Daily Spend × ROAS — combo on desktop, one-metric toggle on mobile (§9.6) */}
+      {chartData.length > 1 && <GoogleAdsTrend data={chartData} />}
 
       {/* Demand Gen / Video — thin status banner, not a full card. Status-state
           is the §1 exception that lets us use an off-palette ring. */}
@@ -359,7 +397,7 @@ export default function GoogleAdsPage() {
       {/* Campaign table — neutral text, delta vs previous period carries direction */}
       <Card>
         <CardHeader action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <div className="flex items-center gap-0.5 bg-surface-2 rounded-lg p-0.5">
               {([
                 ["all", "Всички"],
@@ -396,7 +434,8 @@ export default function GoogleAdsPage() {
           {filteredCampaigns.length === 0 ? (
             <p className="text-center py-8 text-[13px] text-text-2">Няма кампании за този филтър</p>
           ) : (
-            <div className="overflow-x-auto -mx-5 px-5">
+            <>
+            <div className="hidden md:block overflow-x-auto -mx-5 px-5">
               <div className="min-w-[900px]">
                 <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border text-[12px] font-semibold text-text-2">
                   <div className="col-span-5">Кампания</div>
@@ -445,6 +484,42 @@ export default function GoogleAdsPage() {
                 })}
               </div>
             </div>
+
+            {/* Mobile — card per campaign instead of a 900px-wide scroll */}
+            <div className="md:hidden space-y-2">
+              {filteredCampaigns.map((c) => {
+                const prevC = data?.previousCampaigns?.[c.name];
+                const roasDelta = prevC ? calcDeltaPct(c.roas, prevC.roas) : null;
+                const roasValue = c.isVideo && c.roas === 0 ? "view" : fmtRoas(c.roas);
+                return (
+                  <div key={c.name} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-2 mb-2.5 min-w-0">
+                      <span className="text-[13px] font-medium text-text truncate" title={c.name}>{c.name}</span>
+                      {c.isBrand && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium text-text-3 ring-1 ring-inset ring-border flex-shrink-0">brand</span>
+                      )}
+                      {c.isVideo && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium text-text-3 ring-1 ring-inset ring-border flex-shrink-0">video</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-y-2.5 gap-x-3">
+                      <MetricCell label="Spend" value={c.spend.toFixed(0)} />
+                      <MetricCell label="Покупки" value={String(c.purchases)} />
+                      <MetricCell label="ROAS" value={roasValue} />
+                      <MetricCell label="Clicks" value={fmtInt(c.clicks)} />
+                      <MetricCell label="CTR" value={`${(c.ctr * 100).toFixed(1)}%`} />
+                      <MetricCell label="CPA" value={c.cpa > 0 ? c.cpa.toFixed(0) : "—"} />
+                    </div>
+                    {roasDelta !== null && !(c.isVideo && c.roas === 0) && (
+                      <div className="mt-2.5">
+                        <Delta pct={roasDelta} label="ROAS спрямо пр. период" className="text-[11px]" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            </>
           )}
         </CardBody>
       </Card>
