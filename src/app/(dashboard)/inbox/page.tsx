@@ -227,17 +227,17 @@ function CardRow({ card, onAction }: { card: InboxCard; onAction: (id: string, a
       {showActions && (
         <div className="flex items-center gap-2 flex-wrap pt-1">
           {href && (
-            <Button size="sm" variant="secondary" onClick={() => router.push(href)}>
+            <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => router.push(href)}>
               <ArrowRight size={14} /> Прегледай
             </Button>
           )}
-          <Button size="sm" variant="primary" onClick={() => onAction(card.id, "approve")}>
+          <Button size="sm" variant="primary" className="min-h-[44px]" onClick={() => onAction(card.id, "approve")}>
             <CheckCircle2 size={14} /> Действам
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => onAction(card.id, "snooze")}>
+          <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onAction(card.id, "snooze")}>
             <Clock size={14} /> Отложи 24ч
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onAction(card.id, "dismiss")}>
+          <Button size="sm" variant="ghost" className="min-h-[44px]" onClick={() => onAction(card.id, "dismiss")}>
             <X size={14} /> Отхвърли
           </Button>
         </div>
@@ -253,7 +253,7 @@ function CardRow({ card, onAction }: { card: InboxCard; onAction: (id: string, a
           {href && (
             <button
               onClick={() => router.push(href)}
-              className="inline-flex items-center gap-1 text-[12px] text-text-2 hover:text-accent transition-colors cursor-pointer"
+              className="min-h-[44px] inline-flex items-center gap-1 text-[12px] text-text-2 hover:text-accent transition-colors cursor-pointer"
             >
               Прегледай <ArrowRight size={13} />
             </button>

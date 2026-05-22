@@ -1,10 +1,9 @@
 "use client";
 
-import useSWR from "swr";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { ErrorState } from "@/components/shared/ErrorState";
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 
 function fmtEur(n: number): string {
   return `€${Math.round(n).toLocaleString("bg-BG")}`;
@@ -15,6 +14,9 @@ function fmtEur(n: number): string {
 // and the 50 individual ad cards. Three distinct budget questions:
 // where the spend goes, how healthy the creatives are, which
 // campaigns carry the account.
+//
+// Each card designs all three states (CLAUDE.md §8): loading skeleton,
+// error (ErrorState — distinct from empty), and a real empty result.
 // ============================================================
 
 interface CampaignLite {
@@ -27,18 +29,25 @@ export function AdsBreakdown({
   market,
   preset,
   ads,
+  adsLoading,
   campaigns,
+  campaignsError,
 }: {
   market: string;
   preset: string;
   ads: { score: number }[];
+  /** True while the individual-ads fetch is in flight — lets
+   *  CreativeHealthCard tell "still loading" from "0 ads". */
+  adsLoading: boolean;
   campaigns: CampaignLite[];
+  /** The overview fetch (campaigns source) failed. */
+  campaignsError: boolean;
 }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
       <PlacementCard market={market} preset={preset} />
-      <CreativeHealthCard ads={ads} />
-      <CampaignsCard campaigns={campaigns} />
+      <CreativeHealthCard ads={ads} adsLoading={adsLoading} />
+      <CampaignsCard campaigns={campaigns} hasError={campaignsError} />
     </div>
   );
 }
@@ -61,10 +70,10 @@ const PLATFORM_LABEL: Record<string, string> = {
 };
 
 function PlacementCard({ market, preset }: { market: string; preset: string }) {
-  const { data, isLoading } = useSWR<{ placements: Placement[]; error?: string }>(
-    `/api/dashboard/ads/placements?market=${market}&preset=${preset}`,
-    fetcher,
-    { revalidateOnFocus: false }
+  // useAnalyticsSWR + jsonFetcher surface HTTP !ok and `{ error }` soft
+  // failures as a thrown ApiError — no more "no data" masking a 500.
+  const { data, error, isLoading, mutate } = useAnalyticsSWR<{ placements: Placement[] }>(
+    `/api/dashboard/ads/placements?market=${market}&preset=${preset}`
   );
   const placements = data?.placements ?? [];
   const max = Math.max(...placements.map((p) => p.spend), 1);
@@ -77,6 +86,8 @@ function PlacementCard({ market, preset }: { market: string; preset: string }) {
           <div className="space-y-3">
             {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-9 w-full" />)}
           </div>
+        ) : error ? (
+          <ErrorState error={error} onRetry={() => mutate()} compact />
         ) : placements.length === 0 ? (
           <p className="text-[13px] text-text-2">Няма данни за периода</p>
         ) : (
@@ -119,7 +130,13 @@ const SCORE_TIERS: { min: number; label: string; color: string }[] = [
   { min: 0, label: "Слаба", color: "bg-red" },
 ];
 
-function CreativeHealthCard({ ads }: { ads: { score: number }[] }) {
+function CreativeHealthCard({
+  ads,
+  adsLoading,
+}: {
+  ads: { score: number }[];
+  adsLoading: boolean;
+}) {
   const buckets = SCORE_TIERS.map((t) => ({ ...t, count: 0 }));
   for (const a of ads) {
     const idx = SCORE_TIERS.findIndex((t) => a.score >= t.min);
@@ -131,8 +148,16 @@ function CreativeHealthCard({ ads }: { ads: { score: number }[] }) {
     <Card>
       <CardHeader>Креативно здраве</CardHeader>
       <CardBody>
-        {total === 0 ? (
-          <p className="text-[13px] text-text-2">Зареждане...</p>
+        {adsLoading ? (
+          <>
+            <Skeleton className="h-3 w-full rounded-full mb-3" />
+            <div className="space-y-1.5">
+              {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-4 w-full" />)}
+            </div>
+          </>
+        ) : total === 0 ? (
+          // Genuine empty — the fetch finished and the account has no ads.
+          <p className="text-[13px] text-text-2">Няма активни реклами за периода</p>
         ) : (
           <>
             <div className="flex h-3 rounded-full overflow-hidden bg-surface-2 mb-3">
@@ -170,7 +195,13 @@ function CreativeHealthCard({ ads }: { ads: { score: number }[] }) {
 
 // ---------- Campaigns ----------
 
-function CampaignsCard({ campaigns }: { campaigns: CampaignLite[] }) {
+function CampaignsCard({
+  campaigns,
+  hasError,
+}: {
+  campaigns: CampaignLite[];
+  hasError: boolean;
+}) {
   const top = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 6);
   const max = Math.max(...top.map((c) => c.spend), 1);
 
@@ -178,7 +209,10 @@ function CampaignsCard({ campaigns }: { campaigns: CampaignLite[] }) {
     <Card>
       <CardHeader>Кампании</CardHeader>
       <CardBody>
-        {top.length === 0 ? (
+        {hasError ? (
+          // No own fetch — error is signalled by the parent's overview SWR.
+          <ErrorState compact />
+        ) : top.length === 0 ? (
           <p className="text-[13px] text-text-2">Няма кампании за периода</p>
         ) : (
           <div className="space-y-3">

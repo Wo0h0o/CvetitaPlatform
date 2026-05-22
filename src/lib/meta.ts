@@ -425,6 +425,10 @@ export async function getMetaPlacementBreakdown(
   const client = await getMetaClient(integrationAccountId);
   const rows = (await fetchInsights(
     {
+      // Explicit level — with `breakdowns` set, Meta's default level is
+      // undocumented; pinning "account" guarantees one row per platform
+      // instead of a per-ad fan-out that paginates + truncates.
+      level: "account",
       fields: "spend,actions,action_values",
       date_preset: datePreset,
       breakdowns: "publisher_platform",

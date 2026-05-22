@@ -189,7 +189,7 @@ export default function AdsMarketPage({
 
   // Overview (KPIs)
   const overviewKey = `/api/dashboard/ads?market=${market}&preset=${metaPreset}`;
-  const { data: overviewData, isLoading: ovLoading } = useSWR<{
+  const { data: overviewData, isLoading: ovLoading, error: overviewError } = useSWR<{
     overview: AdsOverview;
     previous?: AdsOverview | null;
     campaigns?: { name: string; spend: number; roas: number }[];
@@ -432,7 +432,9 @@ export default function AdsMarketPage({
           market={market}
           preset={metaPreset}
           ads={adsData?.ads ?? []}
+          adsLoading={adsLoading}
           campaigns={overviewData?.campaigns ?? []}
+          campaignsError={!!overviewError || !!overviewData?.error}
         />
       )}
 

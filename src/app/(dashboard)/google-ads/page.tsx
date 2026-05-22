@@ -423,7 +423,7 @@ export default function GoogleAdsPage() {
                 ["non-brand", "Non-Brand"],
               ] as [ViewFilter, string][]).map(([v, l]) => (
                 <button key={v} onClick={() => setView(v)}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  className={`min-h-[44px] inline-flex items-center justify-center px-2.5 rounded-md text-[11px] font-medium transition-colors ${
                     view === v ? "bg-surface text-text shadow-sm" : "text-text-3 hover:text-text-2"
                   }`}
                 >{l}</button>
@@ -437,7 +437,7 @@ export default function GoogleAdsPage() {
                 ["ctr", "CTR"],
               ] as [SortKey, string][]).map(([k, l]) => (
                 <button key={k} onClick={() => toggleSort(k)}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                  className={`min-h-[44px] flex items-center gap-1 px-2 rounded-lg text-[11px] font-medium transition-colors ${
                     sortKey === k ? "bg-surface-2 text-text border border-border" : "text-text-3 hover:text-text-2"
                   }`}
                 >

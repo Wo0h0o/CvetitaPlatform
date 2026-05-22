@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
 import {
   ComposedChart, BarChart, LineChart, Bar, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { ChartContainer, useChartColors } from "@/components/charts/ChartContainer";
 import { GlassTooltip, buildRechartsTooltip } from "@/components/charts/GlassTooltip";
 import { useChartScrubber } from "@/components/charts/useChartScrubber";
 import { MobileScrubber, MobileScrubberRow } from "@/components/charts/MobileScrubber";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { useAnalyticsSWR } from "@/hooks/useAnalyticsSWR";
 
 interface TrendPoint {
   date: string;
@@ -53,14 +52,12 @@ export function SpendRoasTrend({ market, preset }: { market: string; preset: str
   const c = useChartColors();
   const [tab, setTab] = useState<"spend" | "roas">("spend");
 
-  const { data, isLoading } = useSWR<{ trend: TrendPoint[]; error?: string }>(
-    `/api/dashboard/ads/trend?market=${market}&preset=${preset}`,
-    fetcher,
-    { revalidateOnFocus: false }
+  const { data, error, isLoading, mutate } = useAnalyticsSWR<{ trend: TrendPoint[] }>(
+    `/api/dashboard/ads/trend?market=${market}&preset=${preset}`
   );
 
   const trend = data?.trend ?? [];
-  const empty = !isLoading && trend.length === 0;
+  const empty = !isLoading && !error && trend.length === 0;
   const axisTick = { fontSize: 11, fill: c.text3 };
 
   const { activeIdx, setActiveIdx, wrapperRef, pointerHandlers } = useChartScrubber({
@@ -88,7 +85,14 @@ export function SpendRoasTrend({ market, preset }: { market: string; preset: str
     <div className="mb-6">
       {/* Desktop — full combo, native hover tooltip */}
       <div className="hidden md:block">
-        <ChartContainer title="Разход × ROAS" height={260} loading={isLoading} empty={empty}>
+        <ChartContainer
+          title="Разход × ROAS"
+          height={260}
+          loading={isLoading}
+          error={error}
+          onRetry={() => mutate()}
+          empty={empty}
+        >
           <ComposedChart data={trend} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={c.grid} strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="date" tickFormatter={fmtDate} tick={axisTick} axisLine={false} tickLine={false} minTickGap={24} />
@@ -108,6 +112,8 @@ export function SpendRoasTrend({ market, preset }: { market: string; preset: str
           <CardBody>
             {isLoading ? (
               <Skeleton className="w-full h-[220px]" />
+            ) : error ? (
+              <ErrorState error={error} onRetry={() => mutate()} compact />
             ) : empty ? (
               <div className="flex items-center justify-center h-[220px] text-[13px] text-text-2">
                 Няма данни

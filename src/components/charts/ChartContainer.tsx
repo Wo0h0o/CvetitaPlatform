@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo, ReactNode } from "react";
 import { ResponsiveContainer } from "recharts";
 import { Card, CardHeader, CardBody } from "@/components/shared/Card";
 import { Skeleton } from "@/components/shared/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
+import type { ApiError } from "@/lib/swr";
 
 // ---------- useChartColors ----------
 
@@ -59,6 +61,10 @@ interface ChartContainerProps {
   action?: ReactNode;
   height?: number;
   loading?: boolean;
+  /** Failed fetch — takes priority over `empty`. Renders <ErrorState>
+   *  inside the card body so the title + period context stay visible. */
+  error?: ApiError | Error | null;
+  onRetry?: () => void;
   empty?: boolean;
   emptyText?: string;
   children: ReactNode;
@@ -70,6 +76,8 @@ export function ChartContainer({
   action,
   height = 240,
   loading,
+  error,
+  onRetry,
   empty,
   emptyText = "Няма данни",
   children,
@@ -81,6 +89,19 @@ export function ChartContainer({
         {title && <CardHeader action={action}>{title}</CardHeader>}
         <CardBody>
           <div style={{ height }}><Skeleton className="w-full h-full" /></div>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className={className}>
+        {title && <CardHeader action={action}>{title}</CardHeader>}
+        <CardBody>
+          <div className="flex items-center justify-center" style={{ minHeight: height }}>
+            <ErrorState error={error} onRetry={onRetry} compact />
+          </div>
         </CardBody>
       </Card>
     );
