@@ -1,7 +1,10 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchBusinessContext, formatContextForPrompt } from "@/lib/agent-context";
-import { requireAuth } from "@/lib/api-auth";
+import { getUserContext } from "@/lib/user-role";
 import { rateLimit } from "@/lib/rate-limit";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { sofiaDate } from "@/lib/sofia-date";
+import { logger } from "@/lib/logger";
 
 export const maxDuration = 120;
 
@@ -48,9 +51,36 @@ function sseChunk(data: object): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+/**
+ * GET — today's cached report, or { report: null } if none exists yet.
+ *
+ * Degrades gracefully: if the morning_reports table has not been migrated
+ * yet (or the query fails), this returns { report: null } so the page just
+ * falls back to generating a fresh one — no crash.
+ */
+export async function GET(req: NextRequest) {
+  const userCtx = await getUserContext(req);
+  if (!userCtx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { data, error } = await supabaseAdmin
+    .from("morning_reports")
+    .select("content, data_snapshot, created_at")
+    .eq("organization_id", userCtx.organizationId)
+    .eq("report_date", sofiaDate())
+    .maybeSingle();
+
+  if (error) {
+    // Table missing / transient — treat as cache miss, never block the page.
+    logger.error("morning report cache read failed", { error: error.message });
+    return NextResponse.json({ report: null });
+  }
+
+  return NextResponse.json({ report: data ?? null });
+}
+
 export async function POST(req: NextRequest) {
-  const authError = await requireAuth(req);
-  if (authError) return authError;
+  const userCtx = await getUserContext(req);
+  if (!userCtx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const limited = rateLimit(req, { limit: 5, windowMs: 60_000 });
   if (limited) return limited;
 
@@ -65,6 +95,7 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (data: object) => controller.enqueue(sseChunk(data));
+      let fullText = "";
 
       try {
         send({ t: "status", msg: "Зареждам бизнес данните..." });
@@ -120,12 +151,30 @@ export async function POST(req: NextRequest) {
             try {
               const evt = JSON.parse(rawData);
               if (evt.type === "content_block_delta" && evt.delta?.text) {
+                fullText += evt.delta.text;
                 send({ t: "text", d: evt.delta.text });
               }
-              if (evt.type === "message_stop") {
-                send({ t: "done" });
-              }
             } catch { /* skip */ }
+          }
+        }
+
+        // Persist once per Sofia day so subsequent opens load instantly and
+        // for free. Failure here never reaches the user — they already have
+        // the streamed report; the cache is the only thing lost.
+        if (fullText.trim()) {
+          const { error: persistErr } = await supabaseAdmin
+            .from("morning_reports")
+            .upsert(
+              {
+                organization_id: userCtx.organizationId,
+                report_date: sofiaDate(),
+                content: fullText,
+                data_snapshot: ctx,
+              },
+              { onConflict: "organization_id,report_date" }
+            );
+          if (persistErr) {
+            logger.error("morning report persist failed", { error: persistErr.message });
           }
         }
 

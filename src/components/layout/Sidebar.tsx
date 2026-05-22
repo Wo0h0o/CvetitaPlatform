@@ -19,6 +19,7 @@ import {
   Inbox,
   CalendarDays,
   Search,
+  Sunrise,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -63,6 +64,7 @@ const fullNavSections: NavSection[] = [
     label: "Основни",
     items: [
       { href: "/", icon: LayoutDashboard, label: "Дашборд" },
+      { href: "/morning-report", icon: Sunrise, label: "Сутрешен доклад" },
       { href: "/inbox", icon: Inbox, label: "Входящи" },
       { href: "/agents", icon: Bot, label: "Агенти" },
     ],

@@ -6,16 +6,17 @@ import { Card } from "@/components/shared/Card";
 import { Markdown } from "@/components/shared/Markdown";
 import { PageHeader } from "@/components/shared/PageHeader";
 
-// MarkdownText now uses shared Markdown component
-
 export default function MorningReportPage() {
   const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const hasGenerated = useRef(false);
+  const hasInit = useRef(false);
 
+  // Stream a fresh report (Claude call). Used on a cache miss and by the
+  // manual "Генерирай нов" button — the latter overwrites today's cache.
   const generate = useCallback(async () => {
     setContent("");
     setLoading(true);
@@ -47,7 +48,10 @@ export default function MorningReportPage() {
               setStatus(null);
               setContent((prev) => prev + evt.d);
             }
-            if (evt.t === "done") setStatus(null);
+            if (evt.t === "done") {
+              setStatus(null);
+              setGeneratedAt(new Date().toISOString());
+            }
             if (evt.t === "error") setError(evt.msg);
           } catch { /* skip */ }
         }
@@ -60,12 +64,30 @@ export default function MorningReportPage() {
     setStatus(null);
   }, []);
 
-  useEffect(() => {
-    if (!hasGenerated.current) {
-      hasGenerated.current = true;
-      generate();
-    }
+  // On open: load today's cached report. Generate only on a cache miss —
+  // a report is printed once per morning, not re-typeset on every glance.
+  const init = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/morning-report");
+      if (res.ok) {
+        const json = await res.json();
+        if (json.report?.content) {
+          setContent(json.report.content);
+          setGeneratedAt(json.report.created_at ?? null);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch { /* fall through to a fresh generation */ }
+    generate();
   }, [generate]);
+
+  useEffect(() => {
+    if (!hasInit.current) {
+      hasInit.current = true;
+      init();
+    }
+  }, [init]);
 
   const today = new Date().toLocaleDateString("bg-BG", {
     weekday: "long",
@@ -73,6 +95,10 @@ export default function MorningReportPage() {
     month: "long",
     year: "numeric",
   });
+
+  const generatedLabel = generatedAt
+    ? `Генериран в ${new Date(generatedAt).toLocaleTimeString("bg-BG", { hour: "2-digit", minute: "2-digit" })} · Shopify, Meta Ads, GA4, Klaviyo`
+    : "Базиран на реални данни от Shopify, Meta Ads, GA4, Klaviyo";
 
   return (
     <>
@@ -121,7 +147,7 @@ export default function MorningReportPage() {
                 </div>
                 <div>
                   <h2 className="text-[15px] font-semibold text-text">AI Доклад</h2>
-                  <p className="text-[12px] text-text-2">Базиран на реални данни от Shopify, Meta Ads, GA4, Klaviyo</p>
+                  <p className="text-[12px] text-text-2">{generatedLabel}</p>
                 </div>
               </div>
               <Markdown text={content} />
