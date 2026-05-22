@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "./fetch-utils";
+import { getDateRange, type DatePreset } from "./dates";
 
 const API_REVISION = "2024-10-15";
 const PLACED_ORDER_METRIC_ID = "QXgXuq";
@@ -235,6 +236,100 @@ export async function getKlaviyoMetrics(preset?: string) {
     topFlows,
     campaigns: campaignDetails,
   };
+}
+
+// ---- Period-over-period comparison ----
+
+/**
+ * Recipient-weighted aggregate totals from campaign + flow value-report
+ * results. The same shape backs the current period and the comparison
+ * period so the /email deltas compare like with like.
+ */
+function aggregateTotals(
+  campaignResults: ReportResult[],
+  flowResults: ReportResult[]
+) {
+  let campaignRevenue = 0;
+  let flowRevenue = 0;
+  let recipients = 0;
+  let openSum = 0;
+  let clickSum = 0;
+  let unsubSum = 0;
+  let bounceSum = 0;
+
+  const add = (r: ReportResult, isCampaign: boolean) => {
+    const recip = r.statistics.recipients || 0;
+    if (isCampaign) campaignRevenue += r.statistics.conversion_value || 0;
+    else flowRevenue += r.statistics.conversion_value || 0;
+    recipients += recip;
+    openSum += (r.statistics.open_rate || 0) * recip;
+    clickSum += (r.statistics.click_rate || 0) * recip;
+    unsubSum += (r.statistics.unsubscribe_rate || 0) * recip;
+    bounceSum += (r.statistics.bounce_rate || 0) * recip;
+  };
+  for (const r of campaignResults) add(r, true);
+  for (const r of flowResults) add(r, false);
+
+  return {
+    totalRevenue: campaignRevenue + flowRevenue,
+    campaignRevenue,
+    flowRevenue,
+    totalEmails: recipients,
+    avgOpenRate: recipients > 0 ? openSum / recipients : 0,
+    avgClickRate: recipients > 0 ? clickSum / recipients : 0,
+    avgBounceRate: recipients > 0 ? bounceSum / recipients : 0,
+    avgUnsubRate: recipients > 0 ? unsubSum / recipients : 0,
+  };
+}
+
+/**
+ * Aggregate email totals for the period PRECEDING `preset` — feeds the
+ * period-over-period deltas on /email. Lean: only the two value-reports
+ * (no campaign/flow lists), on a custom { start, end } timeframe.
+ */
+export async function getKlaviyoComparison(preset?: string) {
+  if (!getApiKey()) return null;
+  const range = getDateRange((preset as DatePreset) || "30d");
+  if (!range.compFrom || !range.compTo) return null;
+
+  const timeframe = {
+    start: `${range.compFrom}T00:00:00`,
+    end: `${range.compTo}T23:59:59`,
+  };
+  const stats = [
+    "recipients", "open_rate", "click_rate", "conversion_value",
+    "unsubscribe_rate", "bounce_rate",
+  ];
+
+  const [campaignReport, flowReport] = await Promise.all([
+    klaviyoPost("/api/campaign-values-reports/", {
+      data: {
+        type: "campaign-values-report",
+        attributes: {
+          timeframe,
+          conversion_metric_id: PLACED_ORDER_METRIC_ID,
+          filter: 'equals(send_channel,"email")',
+          statistics: stats,
+        },
+      },
+    }) as Promise<ReportResponse>,
+    klaviyoPost("/api/flow-values-reports/", {
+      data: {
+        type: "flow-values-report",
+        attributes: {
+          timeframe,
+          conversion_metric_id: PLACED_ORDER_METRIC_ID,
+          statistics: stats,
+          group_by: ["flow_id", "flow_name", "flow_message_id"],
+        },
+      },
+    }) as Promise<ReportResponse>,
+  ]);
+
+  return aggregateTotals(
+    campaignReport.data?.attributes?.results || [],
+    flowReport.data?.attributes?.results || []
+  );
 }
 
 // ---- Flow detail ----

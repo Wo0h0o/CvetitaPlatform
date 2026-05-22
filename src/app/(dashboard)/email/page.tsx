@@ -11,6 +11,7 @@ import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SortButton, FilterPill, type SortDir } from "@/components/shared/SortButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { MiniKpi } from "@/components/shared/MiniKpi";
+import { calcDeltaPct, calcDeltaPp } from "@/components/shared/Delta";
 import { Mail, ArrowRight } from "lucide-react";
 import { BarChartCard } from "@/components/charts";
 
@@ -49,6 +50,15 @@ interface EmailData {
   totalFlows: number;
   topFlows: FlowData[];
   campaigns: CampaignData[];
+  /** Preceding-period totals — drives the KPI deltas. Absent if the
+   *  comparison fetch failed (deltas then simply don't render). */
+  previous?: {
+    totalRevenue: number;
+    avgOpenRate: number;
+    avgClickRate: number;
+    avgBounceRate: number;
+    avgUnsubRate: number;
+  } | null;
   error?: string;
 }
 
@@ -188,6 +198,7 @@ export default function EmailPage() {
   const fmt = (n: number) =>
     n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pct = (n: number) => (n * 100).toFixed(1) + "%";
+  const prev = data?.previous;
 
   return (
     <>
@@ -196,22 +207,44 @@ export default function EmailPage() {
       </PageHeader>
 
       {/* KPIs — channel health: revenue, engagement, deliverability.
-          Hero layout, no icons (design contract §3). */}
+          Hero layout, no icons (§3), delta vs the preceding period (§4).
+          Bounce + Отписвания are inverse — lower is better. */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-2">
         <MiniKpi
           hero
           label="Email приходи"
           value={`${fmt(data?.totalRevenue || 0)} EUR`}
-          sub={`Кампании ${fmt(data?.campaignRevenue || 0)} · Flows ${fmt(data?.flowRevenue || 0)} EUR`}
+          delta={prev ? { pct: calcDeltaPct(data?.totalRevenue || 0, prev.totalRevenue) } : undefined}
         />
-        <MiniKpi hero label="Open Rate" value={pct(data?.avgOpenRate || 0)} />
-        <MiniKpi hero label="Click Rate" value={pct(data?.avgClickRate || 0)} />
-        <MiniKpi hero label="Bounce Rate" value={pct(data?.avgBounceRate || 0)} />
-        <MiniKpi hero label="Отписвания" value={pct(data?.avgUnsubRate || 0)} />
+        <MiniKpi
+          hero
+          label="Open Rate"
+          value={pct(data?.avgOpenRate || 0)}
+          delta={prev ? { pct: calcDeltaPp(data?.avgOpenRate || 0, prev.avgOpenRate), unit: "pp" } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Click Rate"
+          value={pct(data?.avgClickRate || 0)}
+          delta={prev ? { pct: calcDeltaPp(data?.avgClickRate || 0, prev.avgClickRate), unit: "pp" } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Bounce Rate"
+          value={pct(data?.avgBounceRate || 0)}
+          delta={prev ? { pct: calcDeltaPp(data?.avgBounceRate || 0, prev.avgBounceRate), unit: "pp", inverse: true } : undefined}
+        />
+        <MiniKpi
+          hero
+          label="Отписвания"
+          value={pct(data?.avgUnsubRate || 0)}
+          delta={prev ? { pct: calcDeltaPp(data?.avgUnsubRate || 0, prev.avgUnsubRate), unit: "pp", inverse: true } : undefined}
+        />
       </div>
       <p className="text-[12px] text-text-3 mb-6">
         {(data?.totalEmails || 0).toLocaleString("bg-BG")} имейла изпратени ·{" "}
-        {data?.activeFlows || 0} от {data?.totalFlows || 0} активни flows
+        {data?.activeFlows || 0} от {data?.totalFlows || 0} активни flows ·{" "}
+        приходи: кампании {fmt(data?.campaignRevenue || 0)} / flows {fmt(data?.flowRevenue || 0)} EUR
       </p>
 
       {/* Flow Revenue Chart */}

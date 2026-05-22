@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
-import { getKlaviyoMetrics } from "@/lib/klaviyo";
+import { getKlaviyoMetrics, getKlaviyoComparison } from "@/lib/klaviyo";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: NextRequest) {
@@ -15,13 +15,21 @@ export async function GET(request: NextRequest) {
   const preset = request.nextUrl.searchParams.get("preset") || "30d";
 
   try {
-    const data = await getKlaviyoMetrics(preset);
+    // Comparison is best-effort — a failed prev-period fetch drops the
+    // deltas but must not take the whole page down (principle 8).
+    const [data, previous] = await Promise.all([
+      getKlaviyoMetrics(preset),
+      getKlaviyoComparison(preset).catch((e) => {
+        logger.error("Klaviyo comparison failed", { error: String(e) });
+        return null;
+      }),
+    ]);
 
     if (!data) {
       return NextResponse.json({ error: "Klaviyo fetch failed" });
     }
 
-    return NextResponse.json(data, {
+    return NextResponse.json({ ...data, previous }, {
       headers: { "Cache-Control": "s-maxage=1800, stale-while-revalidate=300" },
     });
   } catch (error) {
