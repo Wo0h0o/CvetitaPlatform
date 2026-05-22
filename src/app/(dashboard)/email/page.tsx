@@ -11,14 +11,7 @@ import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { SortButton, FilterPill, type SortDir } from "@/components/shared/SortButton";
 import { useDateRange } from "@/hooks/useDateRange";
 import { MiniKpi } from "@/components/shared/MiniKpi";
-import {
-  TrendingUp,
-  Mail,
-  MousePointerClick,
-  Eye,
-  Zap,
-  ArrowRight,
-} from "lucide-react";
+import { Mail, ArrowRight } from "lucide-react";
 import { BarChartCard } from "@/components/charts";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -50,6 +43,8 @@ interface EmailData {
   totalEmails: number;
   avgOpenRate: number;
   avgClickRate: number;
+  avgBounceRate: number;
+  avgUnsubRate: number;
   activeFlows: number;
   totalFlows: number;
   topFlows: FlowData[];
@@ -70,7 +65,7 @@ type CampaignSort = "date" | "revenue" | "openRate" | "clickRate";
 type FlowFilter = "active" | "all";
 
 export default function EmailPage() {
-  const { queryString, label } = useDateRange();
+  const { queryString } = useDateRange();
   const { data, isLoading, error: swrError } = useSWR<EmailData>(
     `/api/dashboard/email?${queryString}`,
     fetcher,
@@ -200,23 +195,24 @@ export default function EmailPage() {
         <DateRangePicker />
       </PageHeader>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      {/* KPIs — channel health: revenue, engagement, deliverability.
+          Hero layout, no icons (design contract §3). */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-2">
         <MiniKpi
-          icon={TrendingUp}
-          label={`Email Revenue (${label})`}
+          hero
+          label="Email приходи"
           value={`${fmt(data?.totalRevenue || 0)} EUR`}
-          sub={`Кампании: ${fmt(data?.campaignRevenue || 0)} | Flows: ${fmt(data?.flowRevenue || 0)}`}
+          sub={`Кампании ${fmt(data?.campaignRevenue || 0)} · Flows ${fmt(data?.flowRevenue || 0)} EUR`}
         />
-        <MiniKpi icon={Eye} label="Open Rate" value={pct(data?.avgOpenRate || 0)} />
-        <MiniKpi icon={MousePointerClick} label="Click Rate" value={pct(data?.avgClickRate || 0)} />
-        <MiniKpi
-          icon={Zap}
-          label="Активни Flows"
-          value={`${data?.activeFlows || 0} / ${data?.totalFlows || 0}`}
-          sub={`${(data?.totalEmails || 0).toLocaleString("bg-BG")} имейла изпратени`}
-        />
+        <MiniKpi hero label="Open Rate" value={pct(data?.avgOpenRate || 0)} />
+        <MiniKpi hero label="Click Rate" value={pct(data?.avgClickRate || 0)} />
+        <MiniKpi hero label="Bounce Rate" value={pct(data?.avgBounceRate || 0)} />
+        <MiniKpi hero label="Отписвания" value={pct(data?.avgUnsubRate || 0)} />
       </div>
+      <p className="text-[12px] text-text-3 mb-6">
+        {(data?.totalEmails || 0).toLocaleString("bg-BG")} имейла изпратени ·{" "}
+        {data?.activeFlows || 0} от {data?.totalFlows || 0} активни flows
+      </p>
 
       {/* Flow Revenue Chart */}
       {filteredFlows.length > 0 && (

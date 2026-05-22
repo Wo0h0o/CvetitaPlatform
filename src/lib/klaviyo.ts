@@ -85,7 +85,10 @@ export async function getKlaviyoMetrics(preset?: string) {
   if (!getApiKey()) return null;
 
   const timeframe = { key: getTimeframeKey(preset) };
-  const stats = ["recipients", "open_rate", "click_rate", "conversion_value", "revenue_per_recipient", "unsubscribe_rate"];
+  const stats = [
+    "recipients", "open_rate", "click_rate", "conversion_value",
+    "revenue_per_recipient", "unsubscribe_rate", "bounce_rate",
+  ];
 
   const [campaignReport, flowReport, campaignsList, flowsList] = await Promise.all([
     // Campaign aggregate stats
@@ -123,30 +126,37 @@ export async function getKlaviyoMetrics(preset?: string) {
 
   // --- Aggregate campaign stats ---
   const campaignResults = campaignReport.data?.attributes?.results || [];
+  // Rates are recipient-weighted so the channel average reflects volume,
+  // not a flat mean of campaigns of wildly different sizes.
   const campaignTotals = campaignResults.reduce(
     (acc, r) => {
+      const recip = r.statistics.recipients || 0;
       acc.revenue += r.statistics.conversion_value || 0;
-      acc.recipients += r.statistics.recipients || 0;
-      acc.openRateSum += (r.statistics.open_rate || 0) * (r.statistics.recipients || 0);
-      acc.clickRateSum += (r.statistics.click_rate || 0) * (r.statistics.recipients || 0);
+      acc.recipients += recip;
+      acc.openRateSum += (r.statistics.open_rate || 0) * recip;
+      acc.clickRateSum += (r.statistics.click_rate || 0) * recip;
+      acc.unsubRateSum += (r.statistics.unsubscribe_rate || 0) * recip;
+      acc.bounceRateSum += (r.statistics.bounce_rate || 0) * recip;
       return acc;
     },
-    { revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0 }
+    { revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0, unsubRateSum: 0, bounceRateSum: 0 }
   );
 
   // --- Aggregate flow stats by flow name ---
   const flowResults = flowReport.data?.attributes?.results || [];
-  const flowMap = new Map<string, { id: string; name: string; revenue: number; recipients: number; openRateSum: number; clickRateSum: number }>();
+  const flowMap = new Map<string, { id: string; name: string; revenue: number; recipients: number; openRateSum: number; clickRateSum: number; unsubRateSum: number; bounceRateSum: number }>();
 
   for (const r of flowResults) {
     const flowId = r.groupings?.flow_id || "";
     const flowName = r.groupings?.flow_name || "Unknown";
-    const existing = flowMap.get(flowId) || { id: flowId, name: flowName, revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0 };
+    const existing = flowMap.get(flowId) || { id: flowId, name: flowName, revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0, unsubRateSum: 0, bounceRateSum: 0 };
     const recip = r.statistics.recipients || 0;
     existing.revenue += r.statistics.conversion_value || 0;
     existing.recipients += recip;
     existing.openRateSum += (r.statistics.open_rate || 0) * recip;
     existing.clickRateSum += (r.statistics.click_rate || 0) * recip;
+    existing.unsubRateSum += (r.statistics.unsubscribe_rate || 0) * recip;
+    existing.bounceRateSum += (r.statistics.bounce_rate || 0) * recip;
     flowMap.set(flowId, existing);
   }
 
@@ -156,9 +166,11 @@ export async function getKlaviyoMetrics(preset?: string) {
       acc.recipients += f.recipients;
       acc.openRateSum += f.openRateSum;
       acc.clickRateSum += f.clickRateSum;
+      acc.unsubRateSum += f.unsubRateSum;
+      acc.bounceRateSum += f.bounceRateSum;
       return acc;
     },
-    { revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0 }
+    { revenue: 0, recipients: 0, openRateSum: 0, clickRateSum: 0, unsubRateSum: 0, bounceRateSum: 0 }
   );
 
   // --- All flows by revenue ---
@@ -201,6 +213,14 @@ export async function getKlaviyoMetrics(preset?: string) {
   const activeFlows = flowsList.data?.filter((f) => f.attributes.status === "live").length || 0;
   const totalFlows = flowsList.data?.length || 0;
 
+  // Deliverability — recipient-weighted across campaigns + flows.
+  const avgBounceRate = totalRecipients > 0
+    ? (campaignTotals.bounceRateSum + flowTotals.bounceRateSum) / totalRecipients
+    : 0;
+  const avgUnsubRate = totalRecipients > 0
+    ? (campaignTotals.unsubRateSum + flowTotals.unsubRateSum) / totalRecipients
+    : 0;
+
   return {
     totalRevenue,
     campaignRevenue: campaignTotals.revenue,
@@ -208,6 +228,8 @@ export async function getKlaviyoMetrics(preset?: string) {
     totalEmails: totalRecipients,
     avgOpenRate,
     avgClickRate,
+    avgBounceRate,
+    avgUnsubRate,
     activeFlows,
     totalFlows,
     topFlows,
