@@ -59,14 +59,23 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     }
   }
 
-  // --- скорост (брутни продажби, без груп. филтър) ---
+  // --- скорост (брутни продажби) ---
+  // ВАЖНО: ползваме getRowsData (ch_rows = истински редове на документите), НЕ
+  // getSalesData (ch_query_orders) — последното дублира редове при поръчки с
+  // няколко свързани експедиции/плащания и надува количествата (напр. една
+  // едро-поръчка от 100 се брои като 200). ch_rows съвпада с PRIM справките.
   const vel = async (from: string): Promise<Map<string, number>> => {
-    const res = await prim.callTool<{ data?: string }>("DataAnalyses-getSalesData", {
+    const res = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
       types: ["so"],
       select: [{ col: "item_id" }, { agg: "sum", col: "quantity", as: "q" }],
-      where: [{ col: "for_date", op: "between", value: [from, asOf] }, { col: "quantity", op: ">", value: "0" }],
+      where: [
+        { col: "for_date", op: "between", value: [from, asOf] },
+        { col: "quantity", op: ">", value: "0" },
+        { col: "credit", op: "=", value: "0" },
+        { col: "debit", op: "=", value: "0" },
+      ],
       group_by: ["item_id"],
-      limit: 2000,
+      limit: 3000,
     });
     return new Map(tsv(res).map((r) => [r[0], +r[1]]));
   };
