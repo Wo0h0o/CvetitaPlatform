@@ -76,8 +76,8 @@ const fullNavSections: NavSection[] = [
     items: [
       { href: "/sales", icon: DollarSign, label: "Продажби" },
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
-      { href: "/production", icon: Factory, label: "Производство" },
-      { href: "/production/orders", icon: ClipboardList, label: "Заявки" },
+      { href: "/production", icon: Factory, label: "Наличности - Цветита Хербал" },
+      { href: "/production/orders", icon: ClipboardList, label: "Възлагателни писма" },
       { href: "/customers", icon: Users, label: "Клиенти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
       { href: "/email", icon: Mail, label: "Имейли" },

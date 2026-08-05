@@ -146,7 +146,7 @@ export default function ProductionPage() {
       <PageHeader
         title={
           <>
-            <Factory size={22} className="text-accent" /> Производство — прогноза
+            <Factory size={22} className="text-accent" /> Наличности - Цветита Хербал
           </>
         }
       >

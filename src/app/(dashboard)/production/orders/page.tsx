@@ -113,7 +113,7 @@ export default function OrdersPage() {
       <PageHeader
         title={
           <>
-            <ClipboardList size={22} className="text-accent" /> Заявки към производството
+            <ClipboardList size={22} className="text-accent" /> Възлагателни писма
           </>
         }
       />
@@ -130,7 +130,7 @@ export default function OrdersPage() {
 
       {!isLoading && orders.length === 0 && (
         <Card className="p-6 text-[14px] text-text-2">
-          Още няма издадени заявки. Създай от <b>Производство → избери продукти → Създай заявка → Издай заявката</b>.
+          Още няма издадени заявки. Създай от <b>Наличности - Цветита Хербал → избери продукти → Създай заявка → Издай заявката</b>.
         </Card>
       )}
 
