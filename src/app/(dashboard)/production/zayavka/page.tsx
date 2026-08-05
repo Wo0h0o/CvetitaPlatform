@@ -22,10 +22,23 @@ interface Recipe { item_id: string; batch_qty: number; wo_num: string; component
 const nf = (x: number, dp = 0) =>
   x.toLocaleString("bg-BG", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
-// Разфасовка + вид от името, напр. "4МАГНЕБУСТ 150ГР" -> {size:"150", unit:"ГР"}
+// Разфасовка + вид от името: брой капсули/таблетки, или грамове/мл.
+// Пропуска дозата в мг (напр. „100 МГ 30 ТАБЛ" -> 30 ТАБЛ).
+// „40 СОФТГЕЛ КАПС" -> 40 КАПС; „150ГР" -> 150 ГР; „150g" -> 150 ГР.
 function parsePack(name: string): { size: string; unit: string } {
-  const m = name.match(/(\d+)\s*(ГР|МЛ|ТАБЛ|КАПС|САШЕ|КГ|Г)\b/i);
-  return m ? { size: m[1], unit: m[2].toUpperCase() } : { size: "", unit: "" };
+  const B = "(?![А-Яа-яA-Za-z])"; // граница, съвместима с кирилица (\\b не работи)
+  const forms: { re: RegExp; unit: string }[] = [
+    { re: new RegExp(`(\\d+)\\s*(?:[А-Яа-яA-Za-z.+-]+\\s+){0,2}?(?:ТАБЛЕТКИ|ТАБЛ|ТАБС|ТАБ)${B}`, "i"), unit: "ТАБЛ" },
+    { re: new RegExp(`(\\d+)\\s*(?:[А-Яа-яA-Za-z.+-]+\\s+){0,2}?(?:КАПСУЛИ|КАПС|СОФТГЕЛ)${B}`, "i"), unit: "КАПС" },
+    { re: new RegExp(`(\\d+)\\s*(?:МЛ|ML)${B}`, "i"), unit: "МЛ" },
+    { re: new RegExp(`(\\d+)\\s*САШЕ${B}`, "i"), unit: "САШЕ" },
+    { re: new RegExp(`(\\d+)\\s*(?:ГР|GR|G|Г)\\.?${B}`, "i"), unit: "ГР" },
+  ];
+  for (const f of forms) {
+    const m = name.match(f.re);
+    if (m) return { size: m[1], unit: f.unit };
+  }
+  return { size: "", unit: "" };
 }
 
 function ZayavkaInner() {
