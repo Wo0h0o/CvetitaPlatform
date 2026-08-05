@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Factory, Loader2, AlertTriangle, FileText } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -102,13 +103,20 @@ export default function ProductionPage() {
   const [showBundles, setShowBundles] = useState(false);
   const snap = data?.snapshot ?? null;
 
-  const toggle = (r: Row) =>
+  const toggle = (r: Row) => {
+    // ако продуктът вече е в отворена заявка — питаме, за да не дублираме
+    if (sel[r.id] == null && pendingInOrder[r.id]) {
+      const o = pendingInOrder[r.id];
+      if (!confirm(`„${r.name}" вече е в заявка ${o.label} от ${fmtDate(o.date)} и още не е отбелязан като произведен.\n\nСигурен ли си, че искаш да го добавиш в нова заявка?`))
+        return;
+    }
     setSel((s) => {
       const n = { ...s };
       if (n[r.id] != null) delete n[r.id];
       else n[r.id] = r.prodQty && r.prodQty > 0 ? r.prodQty : 50;
       return n;
     });
+  };
   const setQty = (id: string, q: number) => setSel((s) => ({ ...s, [id]: Math.max(0, q) }));
 
   const selectedIds = Object.keys(sel);
@@ -122,7 +130,9 @@ export default function ProductionPage() {
   const suggestAll = () => {
     if (!snap) return;
     const next: Record<string, number> = {};
-    for (const r of snap.singles) if ((r.prodQty ?? 0) > 0) next[r.id] = r.prodQty!;
+    // пропускаме продукти, които вече са в отворена заявка -> без дублиране
+    for (const r of snap.singles)
+      if ((r.prodQty ?? 0) > 0 && !pendingInOrder[r.id]) next[r.id] = r.prodQty!;
     setSel(next);
   };
 
@@ -188,6 +198,7 @@ export default function ProductionPage() {
                     <th className="text-right font-medium px-4 py-2.5">Прод. 2 мес</th>
                     <th className="text-right font-medium px-4 py-2.5">Дни до 0</th>
                     <th className="text-left font-medium px-4 py-2.5">Статус</th>
+                    <th className="text-left font-medium px-4 py-2.5">Заявка</th>
                     <th className="text-right font-medium px-4 py-2.5">Заяви бр.</th>
                   </tr>
                 </thead>
@@ -210,17 +221,7 @@ export default function ProductionPage() {
                           />
                         </td>
                         <td className="px-4 py-2.5">
-                          <div className="font-medium text-text max-w-[300px] flex items-center gap-1.5">
-                            {r.name}
-                            {pendingInOrder[r.id] && (
-                              <span
-                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 whitespace-nowrap"
-                                title={`Вече в заявка ${pendingInOrder[r.id].label} от ${fmtDate(pendingInOrder[r.id].date)} — не дублирай`}
-                              >
-                                в заявка {pendingInOrder[r.id].label}
-                              </span>
-                            )}
-                          </div>
+                          <div className="font-medium text-text max-w-[300px]">{r.name}</div>
                           <div className="text-[11px] text-text-3">SKU {r.sku}</div>
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums">{nf(r.free)}</td>
@@ -232,6 +233,19 @@ export default function ProductionPage() {
                           <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${PILL[s.k]}`}>
                             {s.t}
                           </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {pendingInOrder[r.id] ? (
+                            <Link
+                              href="/production/orders"
+                              className="inline-flex items-center gap-1 text-[12px] text-amber-600 hover:underline whitespace-nowrap"
+                              title="Отвори Заявки за статуса"
+                            >
+                              📋 {fmtDate(pendingInOrder[r.id].date)} · {pendingInOrder[r.id].label}
+                            </Link>
+                          ) : (
+                            <span className="text-[12px] text-text-3">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           {checked ? (
