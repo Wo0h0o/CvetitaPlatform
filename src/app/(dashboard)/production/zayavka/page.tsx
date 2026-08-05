@@ -81,6 +81,25 @@ function ZayavkaInner() {
       .filter((x): x is { row: Row; qty: number } => !!x.row);
   }, [snap, selection]);
 
+  // Пълна рецепта по продукт: всеки компонент с нужно/налично/статус
+  const perProduct = useMemo(() => {
+    return items
+      .map(({ row, qty }) => {
+        const rec = recipes[row.id];
+        if (!rec) return { row, qty, rec: null, comps: [] };
+        const mult = qty / rec.batch_qty;
+        const comps = rec.components
+          .filter((c) => c.kind !== "op")
+          .map((c) => {
+            const need = c.qty_per_batch * mult;
+            const have = rawStock[c.name] ?? 0;
+            return { name: c.name, measure: c.measure, kind: c.kind, need, have, lack: Math.max(0, need - have) };
+          })
+          .sort((a, b) => (a.kind === b.kind ? b.need - a.need : a.kind === "raw" ? -1 : 1));
+        return { row, qty, rec, comps };
+      });
+  }, [items, recipes, rawStock]);
+
   // Обобщен списък суровини за поръчка (сумирано по всички избрани)
   const shortages = useMemo(() => {
     const need: Record<string, { measure: string; need: number }> = {};
@@ -254,24 +273,52 @@ function ZayavkaInner() {
             <div className="text-center">За Възложителя: ______________________<div className="text-[10px] text-gray-500">/подпис/</div></div>
           </div>
 
-          {/* Приложение — проверка на суровини */}
+          {/* Приложение — рецепта и проверка на суровини */}
           <div className="mt-8 pt-5 border-t border-gray-300 break-before-page">
-            <h2 className="text-[14px] font-bold mb-2">Приложение — проверка на суровини за поръчка</h2>
-            {shortages.length === 0 ? (
-              <p className="text-[12px]">
-                За избраните продукти с налична рецепта всички суровини стигат, или няма заредена рецепта.
-                Продукти без рецепта: {items.filter((x) => !recipes[x.row.id]).map((x) => x.row.name).join(", ") || "няма"}.
-              </p>
-            ) : (
-              <>
-                <p className="text-[12px] mb-2">Липсващи суровини/опаковки (сумарно за цялата заявка):</p>
-                <table className="w-full border-collapse text-[12px]">
+            <h2 className="text-[14px] font-bold mb-3">Приложение — рецепта и проверка на суровини</h2>
+
+            {perProduct.map(({ row, qty, rec, comps }) => (
+              <div key={row.id} className="mb-5">
+                <h3 className="text-[12px] font-bold mb-1">
+                  {row.name} — {nf(qty)} бр
+                  {rec ? <span className="font-normal text-gray-500"> (рецепта по {rec.wo_num}, партида {nf(rec.batch_qty)})</span> : null}
+                </h3>
+                {!rec ? (
+                  <p className="text-[11px] text-gray-500">Няма заредена рецепта за този продукт — суровините не са проверени.</p>
+                ) : (
+                  <table className="w-full border-collapse text-[11px]">
+                    <thead>
+                      <tr>
+                        {["Суровина / опаковка", "Нужно", "Налично", "Статус"].map((h) => (
+                          <th key={h} className="border border-gray-400 px-2 py-1 bg-gray-100 text-left font-semibold">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comps.map((c) => (
+                        <tr key={c.name}>
+                          <td className="border border-gray-400 px-2 py-1">{c.name}</td>
+                          <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap">{nf(c.need, 3)} {c.measure}</td>
+                          <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap">{nf(c.have, 3)} {c.measure}</td>
+                          <td className={`border border-gray-400 px-2 py-1 text-center font-semibold ${c.lack > 0 ? "text-red-700" : "text-green-700"}`}>
+                            {c.lack > 0 ? `поръчай ${nf(c.lack, 3)} ${c.measure}` : "стига"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
+
+            {shortages.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-gray-300">
+                <h3 className="text-[12px] font-bold mb-1 text-red-700">За поръчка — сумарно за цялата заявка</h3>
+                <table className="w-full border-collapse text-[11px]">
                   <thead>
                     <tr>
-                      {["Суровина / опаковка", "Нужно", "Налично", "За поръчка"].map((h) => (
-                        <th key={h} className="border border-gray-400 px-2 py-1 bg-gray-100 text-left font-semibold">
-                          {h}
-                        </th>
+                      {["Суровина / опаковка", "Общо нужно", "Налично", "Липсва"].map((h) => (
+                        <th key={h} className="border border-gray-400 px-2 py-1 bg-gray-100 text-left font-semibold">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -279,21 +326,14 @@ function ZayavkaInner() {
                     {shortages.map((s) => (
                       <tr key={s.name}>
                         <td className="border border-gray-400 px-2 py-1">{s.name}</td>
-                        <td className="border border-gray-400 px-2 py-1 text-right">{nf(s.need, 3)} {s.measure}</td>
-                        <td className="border border-gray-400 px-2 py-1 text-right">{nf(s.have, 3)} {s.measure}</td>
-                        <td className="border border-gray-400 px-2 py-1 text-right font-semibold text-red-700">
-                          {nf(s.lack, 3)} {s.measure}
-                        </td>
+                        <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap">{nf(s.need, 3)} {s.measure}</td>
+                        <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap">{nf(s.have, 3)} {s.measure}</td>
+                        <td className="border border-gray-400 px-2 py-1 text-right font-semibold text-red-700 whitespace-nowrap">{nf(s.lack, 3)} {s.measure}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </>
-            )}
-            {items.some((x) => !recipes[x.row.id]) && shortages.length > 0 && (
-              <p className="text-[11px] text-gray-500 mt-2">
-                Без заредена рецепта (не са проверени): {items.filter((x) => !recipes[x.row.id]).map((x) => x.row.name).join(", ")}.
-              </p>
+              </div>
             )}
           </div>
         </div>

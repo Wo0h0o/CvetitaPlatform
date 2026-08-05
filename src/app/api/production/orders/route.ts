@@ -109,3 +109,18 @@ export async function PATCH(req: NextRequest) {
   }
   return NextResponse.json({ order: data });
 }
+
+export async function DELETE(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const { error } = await supabaseAdmin.from("production_orders").delete().eq("id", Number(id));
+  if (error) {
+    logger.error("production/orders DELETE failed", { error: error.message });
+    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}

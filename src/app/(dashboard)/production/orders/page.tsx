@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { ClipboardList, Loader2, Check, Clock, PackageCheck } from "lucide-react";
+import { ClipboardList, Loader2, Check, Clock, PackageCheck, Trash2 } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -81,6 +81,18 @@ export default function OrdersPage() {
     }
   };
 
+  const deleteOrder = async (order: Order) => {
+    if (!confirm(`Изтрий заявка ${order.letter_no ? `№${order.letter_no}` : `#${order.id}`}? Действието е необратимо.`))
+      return;
+    setBusy(order.id);
+    try {
+      await fetch(`/api/production/orders?id=${order.id}`, { method: "DELETE" });
+      await mutate();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const toggleItem = (order: Order, idx: number, produced: boolean, date?: string) => {
     const items = order.items.map((it, i) =>
       i === idx
@@ -141,6 +153,14 @@ export default function OrdersPage() {
                     Издадена {fmt(o.issued_date)} · очаквана готовност ~{fmt(ready)} · {doneCount}/{o.items.length} готови
                   </p>
                 </div>
+                <button
+                  onClick={() => deleteOrder(o)}
+                  disabled={busy === o.id}
+                  className="flex items-center gap-1.5 text-[12px] text-text-3 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+                  title="Изтрий заявката"
+                >
+                  <Trash2 size={15} /> Изтрий
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px] min-w-[640px]">
