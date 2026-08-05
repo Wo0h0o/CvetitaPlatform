@@ -20,6 +20,7 @@ import {
   CalendarDays,
   Search,
   Sunrise,
+  Factory,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -74,6 +75,7 @@ const fullNavSections: NavSection[] = [
     items: [
       { href: "/sales", icon: DollarSign, label: "Продажби" },
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
+      { href: "/production", icon: Factory, label: "Производство" },
       { href: "/customers", icon: Users, label: "Клиенти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
       { href: "/email", icon: Mail, label: "Имейли" },
