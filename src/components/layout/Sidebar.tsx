@@ -21,6 +21,7 @@ import {
   Search,
   Sunrise,
   Factory,
+  ClipboardList,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -76,6 +77,7 @@ const fullNavSections: NavSection[] = [
       { href: "/sales", icon: DollarSign, label: "Продажби" },
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
       { href: "/production", icon: Factory, label: "Производство" },
+      { href: "/production/orders", icon: ClipboardList, label: "Заявки" },
       { href: "/customers", icon: Users, label: "Клиенти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
       { href: "/email", icon: Mail, label: "Имейли" },

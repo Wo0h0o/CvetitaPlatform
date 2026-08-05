@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { Printer, ArrowLeft, Loader2 } from "lucide-react";
+import { Printer, ArrowLeft, Loader2, Save, Check } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -108,6 +108,35 @@ function ZayavkaInner() {
     ? fData.as_of.split("-").reverse().join(".")
     : new Date().toLocaleDateString("bg-BG");
 
+  const [letterNo, setLetterNo] = useState("");
+  const [issuing, setIssuing] = useState(false);
+  const [issued, setIssued] = useState(false);
+
+  const issueOrder = async () => {
+    setIssuing(true);
+    try {
+      const payload = {
+        letter_no: letterNo || null,
+        items: items.map(({ row, qty }) => {
+          const p = parsePack(row.name);
+          return { item_id: row.id, sku: String(row.sku), name: row.name, qty, size: p.size, unit: p.unit };
+        }),
+      };
+      const res = await fetch("/api/production/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("fail");
+      setIssued(true);
+      setTimeout(() => router.push("/production/orders"), 700);
+    } catch {
+      alert("Грешка при записване на заявката.");
+    } finally {
+      setIssuing(false);
+    }
+  };
+
   if (l1 || l2)
     return (
       <div className="flex items-center gap-2 text-text-3 py-12 justify-center">
@@ -132,12 +161,33 @@ function ZayavkaInner() {
         >
           <ArrowLeft size={16} /> Назад
         </button>
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer"
-        >
-          <Printer size={16} /> Печат / PDF
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            value={letterNo}
+            onChange={(e) => setLetterNo(e.target.value)}
+            placeholder="№ на писмо (напр. 52)"
+            className="w-40 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
+          />
+          {issued ? (
+            <span className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-green-500/15 text-green-600">
+              <Check size={16} /> Издадена
+            </span>
+          ) : (
+            <button
+              onClick={issueOrder}
+              disabled={issuing || items.length === 0}
+              className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg border border-accent text-accent hover:bg-accent-soft cursor-pointer disabled:opacity-50"
+            >
+              {issuing ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Издай заявката
+            </button>
+          )}
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer"
+          >
+            <Printer size={16} /> Печат / PDF
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (

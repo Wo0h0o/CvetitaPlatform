@@ -81,6 +81,21 @@ export default function ProductionPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
+  // продукти вече в отворена заявка -> показваме предупреждение да не дублираме
+  const { data: ordersData } = useSWR<{
+    orders: { id: number; letter_no: string | null; issued_date: string; status: string; items: { item_id: string; status?: string }[] }[];
+  }>("/api/production/orders", fetcher, { revalidateOnFocus: false });
+  const pendingInOrder: Record<string, { label: string; date: string }> = {};
+  for (const o of ordersData?.orders ?? []) {
+    if (o.status === "done") continue;
+    for (const it of o.items) {
+      if (it.status === "produced") continue;
+      pendingInOrder[String(it.item_id)] = {
+        label: o.letter_no ? `№${o.letter_no}` : `#${o.id}`,
+        date: o.issued_date,
+      };
+    }
+  }
 
   // избор за заявка: item_id -> количество
   const [sel, setSel] = useState<Record<string, number>>({});
@@ -195,7 +210,17 @@ export default function ProductionPage() {
                           />
                         </td>
                         <td className="px-4 py-2.5">
-                          <div className="font-medium text-text max-w-[300px]">{r.name}</div>
+                          <div className="font-medium text-text max-w-[300px] flex items-center gap-1.5">
+                            {r.name}
+                            {pendingInOrder[r.id] && (
+                              <span
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 whitespace-nowrap"
+                                title={`Вече в заявка ${pendingInOrder[r.id].label} от ${fmtDate(pendingInOrder[r.id].date)} — не дублирай`}
+                              >
+                                в заявка {pendingInOrder[r.id].label}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-text-3">SKU {r.sku}</div>
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums">{nf(r.free)}</td>
