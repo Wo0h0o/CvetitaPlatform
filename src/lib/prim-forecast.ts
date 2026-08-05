@@ -83,18 +83,23 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     const q30 = Math.max(0, g30.get(id) || 0);
     if (q90 <= 0 && q60 <= 0 && q30 <= 0) continue;
     const o = office.get(id);
-    const name = o?.name || own.get(id)!.name;
-    if (!o || o.free <= 0) { noStock.push({ id, name }); continue; }
+    const it = own.get(id)!;
+    const name = o?.name || it.name;
+    const isBundle = BUNDLE_RE.test(name);
+    const free = o ? o.free : 0;
+    // комбо/сглобяем пакет без наличност -> справочно (скрито); продажбата му изписва компонентите
+    if (isBundle && free <= 0) { noStock.push({ id, name }); continue; }
     const d30 = q30 / 30, d90 = q90 / 90, daily = Math.max(d30, d90);
-    if (daily <= 0) continue;
-    const cover = o.free / daily;
+    if (daily <= 0 && free > 0) continue; // има стока, няма скорошни продажби -> без интерес
+    // нулева наличност + продажби = НАЙ-спешно за производство (cover 0), не се крие
+    const cover = daily > 0 ? free / daily : 0;
     const stockout = ymd(new Date(today.getTime() + cover * 86400000));
-    let suggest = daily * (LEAD_TIME + TARGET_COVER) - o.free;
+    let suggest = daily * (LEAD_TIME + TARGET_COVER) - free;
     suggest = suggest > 0 ? Math.ceil(suggest / ROUND) * ROUND : 0;
-    let prodQty = (q60 / 2) * 3 - o.free;
+    let prodQty = (q60 / 2) * 3 - free;
     prodQty = prodQty > 0 ? Math.ceil(prodQty / ROUND) * ROUND : 0;
     buckets[status(cover)]++;
-    rows.push({ id, name, sku: o.sku, free: o.free, onStock: o.onStock, blocked: o.blocked, q30, q60, q90, d30, d90, daily, cover, stockout, suggest, prodQty, isBundle: BUNDLE_RE.test(name), trend: d90 > 0 ? d30 / d90 : (d30 > 0 ? 2 : 1) });
+    rows.push({ id, name, sku: o?.sku ?? String(it.sku), free, onStock: o?.onStock ?? 0, blocked: o?.blocked ?? 0, q30, q60, q90, d30, d90, daily, cover, stockout, suggest, prodQty, isBundle, trend: d90 > 0 ? d30 / d90 : (d30 > 0 ? 2 : 1) });
   }
   rows.sort((a, b) => (a.cover as number) - (b.cover as number));
   const singles = rows.filter((r) => !r.isBundle);
