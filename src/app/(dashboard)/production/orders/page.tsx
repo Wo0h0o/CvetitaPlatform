@@ -2,7 +2,8 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { ClipboardList, Loader2, Check, Clock, PackageCheck, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ClipboardList, Loader2, Check, Clock, PackageCheck, Trash2, FileText, CalendarClock } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -45,6 +46,11 @@ const fmt = (d: Date | string) => {
   return x.toLocaleDateString("bg-BG", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 const nf = (x: number) => x.toLocaleString("bg-BG");
+// календарни дни до дадена дата (спрямо днес)
+function daysUntil(d: Date): number {
+  const now = new Date();
+  return Math.round((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+}
 
 export default function OrdersPage() {
   const { data, isLoading, mutate } = useSWR<{ orders: Order[] }>("/api/production/orders", fetcher, {
@@ -133,34 +139,59 @@ export default function OrdersPage() {
           const ready = addWorkdays(o.issued_date, LEAD_WORKDAYS);
           const doneCount = o.items.filter((it) => it.status === "produced").length;
           const allDone = doneCount === o.items.length;
+          const daysLeft = daysUntil(ready);
+          const cd = allDone
+            ? { text: "Готова", cls: "bg-green-500/15 text-green-600" }
+            : daysLeft > 0
+              ? { text: `остават ${daysLeft} ${daysLeft === 1 ? "ден" : "дни"}`, cls: daysLeft <= 3 ? "bg-amber-500/15 text-amber-600" : "bg-blue-500/15 text-blue-600" }
+              : daysLeft === 0
+                ? { text: "готовност днес", cls: "bg-amber-500/15 text-amber-600" }
+                : { text: `просрочена с ${-daysLeft} ${-daysLeft === 1 ? "ден" : "дни"}`, cls: "bg-red-500/15 text-red-600" };
           return (
             <Card key={o.id} className="overflow-hidden">
-              <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
-                <div>
+              <div className="px-5 py-4 border-b border-border">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                   <h3 className="text-[15px] font-semibold text-text flex items-center gap-2">
                     Възлагателно писмо {o.letter_no ? `№${o.letter_no}` : `#${o.id}`}
-                    {allDone ? (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-600">
-                        Завършена
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600">
-                        В производство
-                      </span>
-                    )}
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${allDone ? "bg-green-500/15 text-green-600" : "bg-amber-500/15 text-amber-600"}`}>
+                      {allDone ? "Завършена" : "В производство"}
+                    </span>
                   </h3>
-                  <p className="text-[12px] text-text-3 mt-0.5">
-                    Издадена {fmt(o.issued_date)} · очаквана готовност ~{fmt(ready)} · {doneCount}/{o.items.length} готови
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/production/zayavka?order=${o.id}`}
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-accent hover:bg-accent-soft px-2.5 py-1.5 rounded-lg cursor-pointer"
+                      title="Отвори писмото за преглед/печат"
+                    >
+                      <FileText size={15} /> Отвори писмото
+                    </Link>
+                    <button
+                      onClick={() => deleteOrder(o)}
+                      disabled={busy === o.id}
+                      className="flex items-center gap-1.5 text-[12px] text-text-3 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+                      title="Изтрий заявката"
+                    >
+                      <Trash2 size={15} /> Изтрий
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => deleteOrder(o)}
-                  disabled={busy === o.id}
-                  className="flex items-center gap-1.5 text-[12px] text-text-3 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
-                  title="Изтрий заявката"
-                >
-                  <Trash2 size={15} /> Изтрий
-                </button>
+                <div className="flex items-stretch gap-2 flex-wrap text-[12px]">
+                  <div className="px-3 py-2 rounded-lg bg-surface-2 border border-border">
+                    <div className="text-text-3 text-[10px] uppercase tracking-wider">Заявено</div>
+                    <div className="font-semibold text-text mt-0.5">{fmt(o.issued_date)}</div>
+                  </div>
+                  <div className="px-3 py-2 rounded-lg bg-surface-2 border border-border">
+                    <div className="text-text-3 text-[10px] uppercase tracking-wider">Очаква се готово</div>
+                    <div className="font-semibold text-text mt-0.5">{fmt(ready)}</div>
+                  </div>
+                  <div className={`px-3 py-2 rounded-lg flex items-center gap-1.5 font-bold ${cd.cls}`}>
+                    <CalendarClock size={15} /> {cd.text}
+                  </div>
+                  <div className="px-3 py-2 rounded-lg bg-surface-2 border border-border ml-auto">
+                    <div className="text-text-3 text-[10px] uppercase tracking-wider">Произведени</div>
+                    <div className="font-semibold text-text mt-0.5">{doneCount}/{o.items.length}</div>
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px] min-w-[640px]">

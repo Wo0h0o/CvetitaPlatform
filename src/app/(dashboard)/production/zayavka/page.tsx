@@ -45,6 +45,7 @@ function ZayavkaInner() {
   const params = useSearchParams();
   const router = useRouter();
   const sel = params.get("sel") ?? "";
+  const orderId = params.get("order"); // отваряне на вече издадена заявка
 
   const selection = useMemo(
     () =>
@@ -68,18 +69,31 @@ function ZayavkaInner() {
     fetcher,
     { revalidateOnFocus: false }
   );
+  const { data: oData, isLoading: l3 } = useSWR<{
+    orders: { id: number; letter_no: string | null; issued_date: string; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
+  }>(orderId ? "/api/production/orders" : null, fetcher, { revalidateOnFocus: false });
 
   const snap = fData?.snapshot ?? null;
   const recipes = useMemo(() => rData?.recipes ?? {}, [rData]);
   const rawStock = useMemo(() => snap?.rawStock ?? {}, [snap]);
+  const savedOrder = orderId ? oData?.orders?.find((o) => String(o.id) === orderId) ?? null : null;
 
   const items = useMemo(() => {
+    // 1) вече издадена заявка -> от запазените данни
+    if (orderId) {
+      if (!savedOrder) return [];
+      return savedOrder.items.map((it) => ({
+        row: { id: it.item_id, name: it.name, sku: it.sku ?? "", free: 0 } as Row,
+        qty: it.qty,
+      }));
+    }
+    // 2) нова заявка от избора на страница Производство
     if (!snap) return [];
     const byId = new Map(snap.singles.map((r) => [r.id, r]));
     return selection
       .map((s) => ({ row: byId.get(s.id), qty: s.qty }))
       .filter((x): x is { row: Row; qty: number } => !!x.row);
-  }, [snap, selection]);
+  }, [orderId, savedOrder, snap, selection]);
 
   // Пълна рецепта по продукт: всеки компонент с нужно/налично/статус
   const perProduct = useMemo(() => {
@@ -123,9 +137,12 @@ function ZayavkaInner() {
       .sort((a, b) => b.lack - a.lack);
   }, [items, recipes, rawStock]);
 
-  const today = fData?.as_of
-    ? fData.as_of.split("-").reverse().join(".")
-    : new Date().toLocaleDateString("bg-BG");
+  const today = savedOrder
+    ? savedOrder.issued_date.split("-").reverse().join(".")
+    : fData?.as_of
+      ? fData.as_of.split("-").reverse().join(".")
+      : new Date().toLocaleDateString("bg-BG");
+  const letterLabel = savedOrder?.letter_no || "___";
 
   const [letterNo, setLetterNo] = useState("");
   const [issuing, setIssuing] = useState(false);
@@ -156,7 +173,7 @@ function ZayavkaInner() {
     }
   };
 
-  if (l1 || l2)
+  if (l1 || l2 || (orderId && l3))
     return (
       <div className="flex items-center gap-2 text-text-3 py-12 justify-center">
         <Loader2 className="animate-spin" size={18} /> Зареждане…
@@ -181,13 +198,15 @@ function ZayavkaInner() {
           <ArrowLeft size={16} /> Назад
         </button>
         <div className="flex items-center gap-2 flex-wrap">
-          <input
-            value={letterNo}
-            onChange={(e) => setLetterNo(e.target.value)}
-            placeholder="№ на писмо (напр. 52)"
-            className="w-40 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
-          />
-          {issued ? (
+          {!savedOrder && (
+            <input
+              value={letterNo}
+              onChange={(e) => setLetterNo(e.target.value)}
+              placeholder="№ на писмо (напр. 52)"
+              className="w-40 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
+            />
+          )}
+          {savedOrder ? null : issued ? (
             <span className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-green-500/15 text-green-600">
               <Check size={16} /> Издадена
             </span>
@@ -213,7 +232,7 @@ function ZayavkaInner() {
         <div className="text-text-3 text-[14px]">Няма избрани продукти. Върни се и избери от списъка.</div>
       ) : (
         <div id="zayavka-print" className="bg-white text-black rounded-xl p-8 md:p-10 max-w-[900px] mx-auto shadow-sm text-[13px] leading-relaxed">
-          <h1 className="text-center text-[17px] font-bold mb-4">ВЪЗЛАГАТЕЛНО ПИСМО №___/{today}г.</h1>
+          <h1 className="text-center text-[17px] font-bold mb-4">ВЪЗЛАГАТЕЛНО ПИСМО №{letterLabel}/{today}г.</h1>
           <p className="mb-2">Днес, {today}г., в гр. Бургас между:</p>
           <p className="mb-2">
             1. <b>ЦВЕТИТА ХЕРБАЛ ЕООД</b>{', вписано в Търговския регистър под ЕИК 203492157, със седалище и адрес на управление: гр. Бургас, ул. „Граф Игнатиев" № 17, представлявано от Георги Добрев Петков от една страна като '}<b>ИЗПЪЛНИТЕЛ</b>
