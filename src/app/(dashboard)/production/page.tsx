@@ -101,6 +101,7 @@ export default function ProductionPage() {
   // избор за заявка: item_id -> количество
   const [sel, setSel] = useState<Record<string, number>>({});
   const [showBundles, setShowBundles] = useState(false);
+  const [sortBy, setSortBy] = useState<"cover" | "name" | "sales">("cover");
   const snap = data?.snapshot ?? null;
 
   const toggle = (r: Row) => {
@@ -120,7 +121,11 @@ export default function ProductionPage() {
   const setQty = (id: string, q: number) => setSel((s) => ({ ...s, [id]: Math.max(0, q) }));
 
   const selectedIds = Object.keys(sel);
-  const singles = snap?.singles ?? [];
+  const singles = [...(snap?.singles ?? [])].sort((a, b) => {
+    if (sortBy === "name") return a.name.localeCompare(b.name, "bg");
+    if (sortBy === "sales") return (b.q60 ?? 0) - (a.q60 ?? 0);
+    return a.cover - b.cover; // спешност
+  });
 
   const createZayavka = () => {
     const encoded = selectedIds.map((id) => `${id}~${sel[id]}`).join(",");
@@ -174,19 +179,39 @@ export default function ProductionPage() {
           </div>
 
           <Card className="overflow-hidden">
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-3">
               <div>
-                <h3 className="text-[15px] font-semibold text-text">Единични продукти — по спешност</h3>
+                <h3 className="text-[15px] font-semibold text-text">Единични продукти</h3>
                 <p className="text-[12px] text-text-3 mt-0.5">
                   {'Чекни продуктите и коригирай количеството, после „Създай заявка". По подразбиране = за 3 месеца напред.'}
                 </p>
               </div>
-              <button
-                onClick={suggestAll}
-                className="text-[12px] px-3 py-1.5 rounded-lg border border-border text-text-2 hover:bg-surface-2 cursor-pointer"
-              >
-                Избери всички с недостиг
-              </button>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1 text-[12px]">
+                  <span className="text-text-3 mr-1">Подреди:</span>
+                  {([
+                    ["cover", "по спешност"],
+                    ["name", "по име (А-Я)"],
+                    ["sales", "по продажби"],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setSortBy(key)}
+                      className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                        sortBy === key ? "bg-accent-soft text-accent font-medium" : "text-text-2 hover:bg-surface-2"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={suggestAll}
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-border text-text-2 hover:bg-surface-2 cursor-pointer"
+                >
+                  Избери всички с недостиг
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] min-w-[900px]">
