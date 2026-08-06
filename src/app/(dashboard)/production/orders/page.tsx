@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Loader2, Check, Clock, PackageCheck, Trash2, FileText, CalendarClock } from "lucide-react";
+import { ClipboardList, Loader2, Check, Clock, PackageCheck, Trash2, FileText, CalendarClock, Pencil, Save, X } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -87,6 +87,35 @@ export default function OrdersPage() {
     }
   };
 
+  // редактиране на количествата на издадена заявка
+  const [editId, setEditId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Record<number, number>>({});
+
+  const startEdit = (order: Order) => {
+    setEditId(order.id);
+    setDraft(Object.fromEntries(order.items.map((it, i) => [i, it.qty])));
+  };
+  const cancelEdit = () => {
+    setEditId(null);
+    setDraft({});
+  };
+  const saveEdit = async (order: Order) => {
+    const items = order.items.map((it, i) => ({ ...it, qty: Math.max(0, draft[i] ?? it.qty) }));
+    setBusy(order.id);
+    try {
+      await fetch("/api/production/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: order.id, items }),
+      });
+      await mutate();
+      setEditId(null);
+      setDraft({});
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const deleteOrder = async (order: Order) => {
     if (!confirm(`Изтрий заявка ${order.letter_no ? `№${order.letter_no}` : `#${order.id}`}? Действието е необратимо.`))
       return;
@@ -158,21 +187,48 @@ export default function OrdersPage() {
                     </span>
                   </h3>
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/production/zayavka?order=${o.id}`}
-                      className="flex items-center gap-1.5 text-[12px] font-medium text-accent hover:bg-accent-soft px-2.5 py-1.5 rounded-lg cursor-pointer"
-                      title="Отвори писмото за преглед/печат"
-                    >
-                      <FileText size={15} /> Отвори писмото
-                    </Link>
-                    <button
-                      onClick={() => deleteOrder(o)}
-                      disabled={busy === o.id}
-                      className="flex items-center gap-1.5 text-[12px] text-text-3 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
-                      title="Изтрий заявката"
-                    >
-                      <Trash2 size={15} /> Изтрий
-                    </button>
+                    {editId === o.id ? (
+                      <>
+                        <button
+                          onClick={() => saveEdit(o)}
+                          disabled={busy === o.id}
+                          className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer disabled:opacity-50"
+                        >
+                          {busy === o.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={15} />} Запази
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="flex items-center gap-1.5 text-[12px] text-text-3 hover:text-text px-2.5 py-1.5 rounded-lg hover:bg-surface-2 cursor-pointer"
+                        >
+                          <X size={15} /> Отказ
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => startEdit(o)}
+                          className="flex items-center gap-1.5 text-[12px] font-medium text-text-2 hover:bg-surface-2 px-2.5 py-1.5 rounded-lg cursor-pointer"
+                          title="Редактирай количествата"
+                        >
+                          <Pencil size={15} /> Редактирай
+                        </button>
+                        <Link
+                          href={`/production/zayavka?order=${o.id}`}
+                          className="flex items-center gap-1.5 text-[12px] font-medium text-accent hover:bg-accent-soft px-2.5 py-1.5 rounded-lg cursor-pointer"
+                          title="Отвори писмото за преглед/печат"
+                        >
+                          <FileText size={15} /> Отвори писмото
+                        </Link>
+                        <button
+                          onClick={() => deleteOrder(o)}
+                          disabled={busy === o.id}
+                          className="flex items-center gap-1.5 text-[12px] text-text-3 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+                          title="Изтрий заявката"
+                        >
+                          <Trash2 size={15} /> Изтрий
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-stretch gap-2 flex-wrap text-[12px]">
@@ -226,7 +282,21 @@ export default function OrdersPage() {
                             <div className="text-[11px] text-text-3">SKU {it.sku}</div>
                           </td>
                           <td className="px-4 py-2.5 text-right tabular-nums">
-                            {nf(it.qty)} {it.unit ? `× ${it.size} ${it.unit}` : ""}
+                            {editId === o.id ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={50}
+                                  value={draft[idx] ?? it.qty}
+                                  onChange={(e) => setDraft((d) => ({ ...d, [idx]: parseInt(e.target.value || "0", 10) }))}
+                                  className="w-24 px-2 py-1 text-right rounded-md border border-border bg-surface tabular-nums"
+                                />
+                                <span className="text-text-3">{it.unit ? `× ${it.size} ${it.unit}` : "бр"}</span>
+                              </div>
+                            ) : (
+                              <>{nf(it.qty)} {it.unit ? `× ${it.size} ${it.unit}` : ""}</>
+                            )}
                           </td>
                           <td className="px-4 py-2.5">
                             {produced ? (
