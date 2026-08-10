@@ -14,8 +14,17 @@ const LEAD_TIME = 45;
 const TARGET_COVER = 90;
 const ROUND = 50;
 const OP_RE = /Смесване|Разливане|Поставяне|Броене|Капсулиране|Таблетиране|Опако|Етикетиране|Пакетиране/i;
-const BUNDLE_RE = /\+|ПОДАРЪК|ПАКЕТ|ПРОМО|Х2|2Х|шейкър/i;
 const RAW_MEASURES = new Set(["Килограм", "Литър", "Грам", "Милилитър"]);
+
+// Комбо/промо пакет? ВАЖНО: „+" в химично име (Д3+К2+Q10) НЕ е комбо.
+// Истинско комбо = ключова дума, или свързани имена с „ + " (с интервали),
+// или 2+ разфасовки (напр. „...40 ТАБЛ + ...30 КАПС").
+function isBundleName(name: string): boolean {
+  if (/ПОДАРЪК|ПАКЕТ|ПРОМО|шейкър|2\s*[ХX]|[ХX]\s*2/i.test(name)) return true;
+  if (/ \+ /.test(name)) return true;
+  const units = (name.match(/\d+\s*(?:ТАБЛЕТКИ|ТАБЛ|ТАБ|КАПСУЛИ|КАПС|СОФТГЕЛ|МЛ|ГР|G|САШЕ)/gi) || []).length;
+  return units >= 2;
+}
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -94,7 +103,7 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     const o = office.get(id);
     const it = own.get(id)!;
     const name = o?.name || it.name;
-    const isBundle = BUNDLE_RE.test(name);
+    const isBundle = isBundleName(name);
     const free = o ? o.free : 0;
     // комбо/сглобяем пакет без наличност -> справочно (скрито); продажбата му изписва компонентите
     if (isBundle && free <= 0) { noStock.push({ id, name }); continue; }
