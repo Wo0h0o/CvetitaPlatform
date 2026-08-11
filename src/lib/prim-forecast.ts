@@ -103,6 +103,8 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     const o = office.get(id);
     const it = own.get(id)!;
     const name = o?.name || it.name;
+    // промо варианти (2+1 / 3+2 / 1+1) — не се планират отделно, махат се
+    if (/\d\s*\+\s*\d/.test(name)) continue;
     const isBundle = isBundleName(name);
     const free = o ? o.free : 0;
     // комбо/сглобяем пакет без наличност -> справочно (скрито); продажбата му изписва компонентите
