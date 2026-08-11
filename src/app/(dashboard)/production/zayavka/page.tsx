@@ -22,6 +22,17 @@ interface Recipe { item_id: string; batch_qty: number; wo_num: string; component
 const nf = (x: number, dp = 0) =>
   x.toLocaleString("bg-BG", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
+// рецепта за 1 бройка в удобни единици: кг→г, л→мл, бр→бр
+function perUnitStr(perUnit: number, measure: string): string {
+  if (measure === "кг" || measure === "л") {
+    const v = perUnit * 1000; // г или мл
+    const unit = measure === "кг" ? "г" : "мл";
+    const dp = v >= 10 ? 1 : v >= 1 ? 2 : v >= 0.01 ? 3 : 5;
+    return `${nf(v, dp)} ${unit}`;
+  }
+  return `${nf(perUnit, perUnit >= 1 ? 0 : 2)} ${measure}`;
+}
+
 // Разфасовка + вид от името: брой капсули/таблетки, или грамове/мл.
 // Пропуска дозата в мг (напр. „100 МГ 30 ТАБЛ" -> 30 ТАБЛ).
 // „40 СОФТГЕЛ КАПС" -> 40 КАПС; „150ГР" -> 150 ГР; „150g" -> 150 ГР.
@@ -107,7 +118,8 @@ function ZayavkaInner() {
           .map((c) => {
             const need = c.qty_per_batch * mult;
             const have = rawStock[c.name] ?? 0;
-            return { name: c.name, measure: c.measure, kind: c.kind, need, have, lack: Math.max(0, need - have) };
+            const perUnit = rec.batch_qty > 0 ? c.qty_per_batch / rec.batch_qty : 0;
+            return { name: c.name, measure: c.measure, kind: c.kind, perUnit, need, have, lack: Math.max(0, need - have) };
           })
           .sort((a, b) => (a.kind === b.kind ? b.need - a.need : a.kind === "raw" ? -1 : 1));
         return { row, qty, rec, comps };
@@ -308,7 +320,7 @@ function ZayavkaInner() {
                   <table className="w-full border-collapse text-[11px]">
                     <thead>
                       <tr>
-                        {["Суровина / опаковка", "Нужно", "Налично", "Статус"].map((h) => (
+                        {["Съставка / опаковка", "За 1 бр.", `Нужно за ${nf(qty)} бр`, "Налично", "Статус"].map((h) => (
                           <th key={h} className="border border-gray-400 px-2 py-1 bg-gray-100 text-left font-semibold">{h}</th>
                         ))}
                       </tr>
@@ -317,6 +329,7 @@ function ZayavkaInner() {
                       {comps.map((c) => (
                         <tr key={c.name}>
                           <td className="border border-gray-400 px-2 py-1">{c.name}</td>
+                          <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap font-semibold">{perUnitStr(c.perUnit, c.measure)}</td>
                           <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap">{nf(c.need, 3)} {c.measure}</td>
                           <td className="border border-gray-400 px-2 py-1 text-right whitespace-nowrap">{nf(c.have, 3)} {c.measure}</td>
                           <td className={`border border-gray-400 px-2 py-1 text-center font-semibold ${c.lack > 0 ? "text-red-700" : "text-green-700"}`}>
