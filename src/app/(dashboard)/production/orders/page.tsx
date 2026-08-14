@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Loader2, Check, Clock, PackageCheck, Trash2, FileText, CalendarClock, Pencil, Save, X } from "lucide-react";
+import { ClipboardList, Loader2, Clock, PackageCheck, Trash2, FileText, CalendarClock, Pencil, Save, X } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -68,6 +68,12 @@ export default function OrdersPage() {
   );
   const recentWO = fc?.snapshot?.recentWO ?? [];
   const [busy, setBusy] = useState<number | null>(null);
+
+  // произведено от работните поръчки в PRIM (сума за продукта след издаване на заявката)
+  const woSumFor = (itemId: string, since: string): number =>
+    recentWO.filter((w) => String(w.item_id) === String(itemId) && w.date >= since).reduce((a, w) => a + w.qty, 0);
+  // ефективно произведено = по-голямото от ръчно вписаното и автоматичното от PRIM
+  const effProduced = (it: Item, issuedDate: string): number => Math.max(producedOf(it), woSumFor(it.item_id, issuedDate));
 
   const orders = data?.orders ?? [];
 
@@ -155,7 +161,7 @@ export default function OrdersPage() {
         }
       />
       <p className="text-[13px] text-text-3 mb-5">
-        {`Проследяване на издадените възлагателни писма. Срок за изработка ~${LEAD_WORKDAYS} работни дни. Впиши колко бройки са произведени от всеки продукт (частично или изцяло) в колона „Произведено".`}
+        {`Проследяване на издадените възлагателни писма. Срок за изработка ~${LEAD_WORKDAYS} работни дни. Произведените бройки се вземат автоматично от работните поръчки в PRIM; можеш и ръчно да коригираш в колона „Произведено".`}
       </p>
 
       {isLoading && (
@@ -174,9 +180,9 @@ export default function OrdersPage() {
         {orders.map((o) => {
           const ready = addWorkdays(o.issued_date, LEAD_WORKDAYS);
           const totalOrdered = o.items.reduce((a, it) => a + it.qty, 0);
-          const totalProduced = o.items.reduce((a, it) => a + Math.min(producedOf(it), it.qty), 0);
-          const doneItems = o.items.filter((it) => producedOf(it) >= it.qty).length;
-          const allDone = o.items.every((it) => producedOf(it) >= it.qty);
+          const totalProduced = o.items.reduce((a, it) => a + Math.min(effProduced(it, o.issued_date), it.qty), 0);
+          const doneItems = o.items.filter((it) => effProduced(it, o.issued_date) >= it.qty).length;
+          const allDone = o.items.every((it) => effProduced(it, o.issued_date) >= it.qty);
           const daysLeft = daysUntil(ready);
           const cd = allDone
             ? { text: "Готова", cls: "bg-green-500/15 text-green-600" }
@@ -273,14 +279,12 @@ export default function OrdersPage() {
                   </thead>
                   <tbody>
                     {o.items.map((it, idx) => {
-                      const prod = producedOf(it);
+                      const prod = effProduced(it, o.issued_date);
+                      const auto = woSumFor(it.item_id, o.issued_date); // произведено според PRIM WO
                       const key = `${o.id}:${idx}`;
                       const val = prodDraft[key] ?? prod;
                       const full = prod >= it.qty;
                       const partial = prod > 0 && prod < it.qty;
-                      const woList = recentWO.filter((w) => String(w.item_id) === String(it.item_id) && w.date >= o.issued_date);
-                      const woSum = woList.reduce((a, w) => a + w.qty, 0);
-                      const woLast = woList.sort((a, b) => b.date.localeCompare(a.date))[0];
                       return (
                         <tr key={it.item_id + idx} className="border-t border-border">
                           <td className="px-4 py-2.5">
@@ -330,18 +334,13 @@ export default function OrdersPage() {
                               <span className="inline-flex items-center gap-1.5 text-[12px] text-amber-600 font-medium">
                                 <Clock size={14} /> Частично {nf(prod)}/{nf(it.qty)}
                               </span>
-                            ) : woSum > 0 ? (
-                              <button
-                                onClick={() => saveProduced(o, idx, woSum)}
-                                className="inline-flex items-center gap-1.5 text-[12px] text-amber-600 hover:underline cursor-pointer"
-                                title={woLast ? `Работна поръчка ${woLast.wo_num}` : undefined}
-                              >
-                                <Check size={14} /> Произведени {nf(woSum)} ({woLast ? fmt(woLast.date) : ""}) — впиши
-                              </button>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 text-[12px] text-text-3">
                                 <Clock size={14} /> Чака
                               </span>
+                            )}
+                            {auto > 0 && (
+                              <div className="text-[10px] text-text-3 mt-0.5">от работни поръчки: {nf(auto)}</div>
                             )}
                           </td>
                         </tr>

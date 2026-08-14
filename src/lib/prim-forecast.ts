@@ -170,6 +170,41 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     if (e2) logger.error("recipes upsert failed", { error: e2.message });
   }
 
-  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, recipes: recipeRows.length });
+  // --- авто-сверка на производството: попълва produced_qty на отворените заявки
+  //     от работните поръчки (сума произведено за продукта след издаване) ---
+  let reconciled = 0;
+  const { data: openOrders } = await supabaseAdmin
+    .from("production_orders")
+    .select("id, issued_date, items, status")
+    .neq("status", "done");
+  for (const ord of openOrders ?? []) {
+    let changed = false;
+    const items = (ord.items as OrderItem[]).map((it) => {
+      const woSum = recentWO
+        .filter((w) => String(w.item_id) === String(it.item_id) && w.date >= ord.issued_date)
+        .reduce((a, w) => a + w.qty, 0);
+      const cur = it.produced_qty != null ? it.produced_qty : it.status === "produced" ? it.qty : 0;
+      const next = Math.max(cur, woSum); // производството само нараства
+      if (next === cur) return it;
+      changed = true;
+      const full = next >= it.qty;
+      return { ...it, produced_qty: next, status: full ? "produced" : "pending", produced_date: full ? it.produced_date ?? asOf : it.produced_date ?? null };
+    });
+    const allDone = items.every((it) => (it.produced_qty ?? 0) >= it.qty);
+    if (changed || (allDone && ord.status !== "done")) {
+      await supabaseAdmin.from("production_orders").update({ items, status: allDone ? "done" : "open", updated_at: new Date().toISOString() }).eq("id", ord.id);
+      reconciled++;
+    }
+  }
+
+  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, recipes: recipeRows.length, ordersReconciled: reconciled });
   return { ok: true, singles: singles.length, recipes: recipeRows.length, as_of: asOf };
+}
+
+interface OrderItem {
+  item_id: string;
+  qty: number;
+  status?: "pending" | "produced";
+  produced_qty?: number | null;
+  produced_date?: string | null;
 }
