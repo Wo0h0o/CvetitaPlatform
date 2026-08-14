@@ -76,7 +76,15 @@ const fullNavSections: NavSection[] = [
     items: [
       { href: "/sales", icon: DollarSign, label: "Продажби" },
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
-      { href: "/production", icon: Factory, label: "Наличности - Цветита Хербал" },
+      {
+        href: "/production",
+        icon: Factory,
+        label: "Наличности",
+        children: [
+          { href: "/production", label: "Цветита Хербал" },
+          { href: "/production/ishleme", label: "Ишлемета" },
+        ],
+      },
       { href: "/production/orders", icon: ClipboardList, label: "Възлагателни писма" },
       { href: "/customers", icon: Users, label: "Клиенти" },
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },

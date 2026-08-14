@@ -43,15 +43,17 @@ function tsv(res: { data?: string }): string[][] {
   return lines.slice(1).map((l) => l.split("\t"));
 }
 
-export async function refreshForecast(): Promise<{ ok: boolean; singles: number; recipes: number; as_of: string }> {
+export async function refreshForecast(): Promise<{ ok: boolean; singles: number; ishleme: number; recipes: number; as_of: string }> {
   const prim = await connectPrim();
   const today = new Date();
   const asOf = ymd(today);
 
-  // own-production item ids (кеширани от номенклатурата)
-  const { data: ownRows } = await supabaseAdmin.from("prim_own_items").select("item_id, sku, name");
-  const own = new Map((ownRows ?? []).map((r) => [String(r.item_id), r]));
-  if (own.size === 0) throw new Error("prim_own_items празна — нужно е зареждане на номенклатурата.");
+  // продукти по списък: „stoki" (Цветита Хербал) и „ishleme" (ИШЛЕМЕТА)
+  const { data: ownRows } = await supabaseAdmin.from("prim_own_items").select("item_id, sku, name, list");
+  if (!ownRows || ownRows.length === 0) throw new Error("prim_own_items празна — нужно е зареждане на номенклатурата.");
+  const stoki = new Map(ownRows.filter((r) => r.list !== "ishleme").map((r) => [String(r.item_id), r]));
+  const ishlemeItems = new Map(ownRows.filter((r) => r.list === "ishleme").map((r) => [String(r.item_id), r]));
+  const tracked = new Set(ownRows.map((r) => String(r.item_id))); // за рецепти + recentWO
 
   // --- наличности ---
   const avail = await prim.callTool<{ result: AvailRow[] }>("Availabilities-get", { have_availability: true });
@@ -90,40 +92,46 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
   };
   const [g30, g60, g90] = await Promise.all([vel(daysAgo(today, 30)), vel(daysAgo(today, 60)), vel(daysAgo(today, 90))]);
 
-  // --- forecast ---
+  // --- forecast (обща функция за двата списъка) ---
   const status = (c: number) => (c <= 30 ? "crit" : c <= 60 ? "order" : c <= 90 ? "watch" : "ok");
-  const buckets = { crit: 0, order: 0, watch: 0, ok: 0 };
-  const rows: Record<string, unknown>[] = [];
-  const noStock: { id: string; name: string }[] = [];
-  for (const id of own.keys()) {
-    const q90 = Math.max(0, g90.get(id) || 0);
-    const q60 = Math.max(0, g60.get(id) || 0);
-    const q30 = Math.max(0, g30.get(id) || 0);
-    if (q90 <= 0 && q60 <= 0 && q30 <= 0) continue;
-    const o = office.get(id);
-    const it = own.get(id)!;
-    const name = o?.name || it.name;
-    // промо варианти (2+1 / 3+2 / 1+1) — не се планират отделно, махат се
-    if (/\d\s*\+\s*\d/.test(name)) continue;
-    const isBundle = isBundleName(name);
-    const free = o ? o.free : 0;
-    // комбо/сглобяем пакет без наличност -> справочно (скрито); продажбата му изписва компонентите
-    if (isBundle && free <= 0) { noStock.push({ id, name }); continue; }
-    const d30 = q30 / 30, d90 = q90 / 90, daily = Math.max(d30, d90);
-    if (daily <= 0 && free > 0) continue; // има стока, няма скорошни продажби -> без интерес
-    // нулева наличност + продажби = НАЙ-спешно за производство (cover 0), не се крие
-    const cover = daily > 0 ? free / daily : 0;
-    const stockout = ymd(new Date(today.getTime() + cover * 86400000));
-    let suggest = daily * (LEAD_TIME + TARGET_COVER) - free;
-    suggest = suggest > 0 ? Math.ceil(suggest / ROUND) * ROUND : 0;
-    let prodQty = (q60 / 2) * 3 - free;
-    prodQty = prodQty > 0 ? Math.ceil(prodQty / ROUND) * ROUND : 0;
-    buckets[status(cover)]++;
-    rows.push({ id, name, sku: o?.sku ?? String(it.sku), free, onStock: o?.onStock ?? 0, blocked: o?.blocked ?? 0, q30, q60, q90, d30, d90, daily, cover, stockout, suggest, prodQty, isBundle, trend: d90 > 0 ? d30 / d90 : (d30 > 0 ? 2 : 1) });
-  }
-  rows.sort((a, b) => (a.cover as number) - (b.cover as number));
-  const singles = rows.filter((r) => !r.isBundle);
-  const bundles = rows.filter((r) => r.isBundle);
+  type Item = { item_id: string; sku: string; name: string };
+  const buildForecast = (itemMap: Map<string, Item>, includeAll: boolean) => {
+    const buckets = { crit: 0, order: 0, watch: 0, ok: 0 };
+    const rows: Record<string, unknown>[] = [];
+    const noStock: { id: string; name: string }[] = [];
+    for (const id of itemMap.keys()) {
+      const q90 = Math.max(0, g90.get(id) || 0);
+      const q60 = Math.max(0, g60.get(id) || 0);
+      const q30 = Math.max(0, g30.get(id) || 0);
+      const o = office.get(id);
+      const it = itemMap.get(id)!;
+      const name = o?.name || it.name;
+      const free = o ? o.free : 0;
+      if (!includeAll && q90 <= 0 && q60 <= 0 && q30 <= 0) continue; // без продажби
+      if (/\d\s*\+\s*\d/.test(name)) continue; // промо варианти (2+1 / 3+2)
+      const isBundle = isBundleName(name);
+      if (isBundle && free <= 0) { noStock.push({ id, name }); continue; }
+      const d30 = q30 / 30, d90 = q90 / 90, daily = Math.max(d30, d90);
+      if (!includeAll && daily <= 0 && free > 0) continue; // има стока, няма продажби
+      const cover = daily > 0 ? free / daily : 0;
+      const stockout = ymd(new Date(today.getTime() + cover * 86400000));
+      let suggest = daily * (LEAD_TIME + TARGET_COVER) - free;
+      suggest = suggest > 0 ? Math.ceil(suggest / ROUND) * ROUND : 0;
+      let prodQty = (q60 / 2) * 3 - free;
+      prodQty = prodQty > 0 ? Math.ceil(prodQty / ROUND) * ROUND : 0;
+      buckets[status(cover)]++;
+      rows.push({ id, name, sku: o?.sku ?? String(it.sku), free, onStock: o?.onStock ?? 0, blocked: o?.blocked ?? 0, q30, q60, q90, d30, d90, daily, cover, stockout, suggest, prodQty, isBundle, trend: d90 > 0 ? d30 / d90 : (d30 > 0 ? 2 : 1) });
+    }
+    rows.sort((a, b) => (a.cover as number) - (b.cover as number));
+    return { rows, noStock, buckets };
+  };
+  const st = buildForecast(stoki, false);
+  const buckets = st.buckets;
+  const noStock = st.noStock;
+  const singles = st.rows.filter((r) => !r.isBundle);
+  const bundles = st.rows.filter((r) => r.isBundle);
+  // ишлеме: показваме ВСИЧКИ продукти (за да пускаме възлагателни писма и без продажби)
+  const ishleme = buildForecast(ishlemeItems, true).rows;
 
   // --- работни поръчки: рецепти + recentWO ---
   const woRes = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
@@ -139,29 +147,30 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     if (!byWo.has(r.num)) byWo.set(r.num, { for_date: r.for_date, rows: [] });
     byWo.get(r.num)!.rows.push(r);
   }
+  const allItems = new Map<string, Item>([...stoki, ...ishlemeItems]);
   const recipeByProduct = new Map<string, Record<string, unknown>>();
   const recentWO: { item_id: string; wo_num: string; date: string; qty: number }[] = [];
   for (const [num, w] of byWo) {
-    const outputs = w.rows.filter((r) => own.has(r.item_id) && r.quantity > 0);
+    const outputs = w.rows.filter((r) => tracked.has(r.item_id) && r.quantity > 0);
     for (const o of outputs) recentWO.push({ item_id: o.item_id, wo_num: num, date: w.for_date, qty: o.quantity });
     if (!outputs.length) continue;
     const output = outputs.sort((a, b) => b.quantity - a.quantity)[0];
     if (recipeByProduct.has(output.item_id)) continue; // сортирано desc -> първата е най-нова
     const components = [];
     for (const r of w.rows) {
-      if (r === output || own.has(r.item_id) || !(r.quantity > 0)) continue;
+      if (r === output || tracked.has(r.item_id) || !(r.quantity > 0)) continue;
       if (!RAW_MEASURES.has(r.measure_nm) && OP_RE.test(r.item_nm)) continue; // операция/труд
       const kind = RAW_MEASURES.has(r.measure_nm) ? "raw" : "pack";
       const measure = RAW_MEASURES.has(r.measure_nm) ? (r.measure_nm.includes("итър") ? "л" : "кг") : "бр";
       components.push({ name: r.item_nm.trim(), measure, qty_per_batch: r.quantity, kind });
     }
     if (!components.length) continue;
-    const it = own.get(output.item_id)!;
+    const it = allItems.get(output.item_id)!;
     recipeByProduct.set(output.item_id, { item_id: output.item_id, sku: String(it.sku), item_name: it.name, batch_qty: output.quantity, wo_num: num, components });
   }
 
   // --- запис ---
-  const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO };
+  const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO, ishleme };
   const { error: e1 } = await supabaseAdmin.from("inventory_forecast").insert({ as_of: asOf, payload });
   if (e1) throw new Error("snapshot insert: " + e1.message);
   const recipeRows = [...recipeByProduct.values()];
@@ -197,8 +206,8 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     }
   }
 
-  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, recipes: recipeRows.length, ordersReconciled: reconciled });
-  return { ok: true, singles: singles.length, recipes: recipeRows.length, as_of: asOf };
+  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, ishleme: ishleme.length, recipes: recipeRows.length, ordersReconciled: reconciled });
+  return { ok: true, singles: singles.length, ishleme: ishleme.length, recipes: recipeRows.length, as_of: asOf };
 }
 
 interface OrderItem {

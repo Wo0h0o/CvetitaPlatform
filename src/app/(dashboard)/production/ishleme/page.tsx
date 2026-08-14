@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import useSWR from "swr";
-import { Factory, Loader2, AlertTriangle } from "lucide-react";
+import { Boxes, Loader2, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ProductionSelector, Row } from "@/components/production/ProductionSelector";
@@ -11,27 +10,24 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const fmtDate = (s: string) => (s ? s.split("-").reverse().join(".") : "—");
 
 interface Snapshot {
-  buckets: { crit: number; order: number; watch: number; ok: number };
-  singles: Row[];
-  bundles: Row[];
-  noStock: { name: string }[];
+  ishleme?: Row[];
 }
 
-export default function ProductionPage() {
+export default function IshlemePage() {
   const { data, isLoading } = useSWR<{ snapshot: Snapshot | null; as_of?: string }>(
     "/api/production/forecast",
     fetcher,
     { revalidateOnFocus: false }
   );
-  const [showBundles, setShowBundles] = useState(false);
   const snap = data?.snapshot ?? null;
+  const rows = snap?.ishleme ?? [];
 
   return (
     <div className="pb-24">
       <PageHeader
         title={
           <>
-            <Factory size={22} className="text-accent" /> Наличности — Цветита Хербал
+            <Boxes size={22} className="text-accent" /> Наличности — Ишлемета
           </>
         }
       >
@@ -52,27 +48,12 @@ export default function ProductionPage() {
       )}
 
       {!isLoading && snap && (
-        <ProductionSelector
-          rows={snap.singles}
-          listTitle="Единични продукти"
-          extraBelow={
-            <>
-              <button
-                onClick={() => setShowBundles((v) => !v)}
-                className="text-[13px] text-text-3 hover:text-text cursor-pointer"
-              >
-                {showBundles ? "▾" : "▸"} Комбо/промо ({snap.bundles.length}) · без запис в Офис Склад ({snap.noStock.length})
-              </button>
-              {showBundles && (
-                <Card className="p-5">
-                  <p className="text-[12px] text-text-3 leading-relaxed">
-                    <b>Продава се, но няма запис в Офис Склад:</b> {snap.noStock.map((x) => x.name).join(" · ") || "—"}
-                  </p>
-                </Card>
-              )}
-            </>
-          }
-        />
+        <>
+          <p className="text-[13px] text-text-3 mb-4">
+            Продукти произвеждани по договор (ИШЛЕМЕТА). Избери и пусни възлагателно писмо — рецептата и суровините се показват в писмото както при собствените продукти.
+          </p>
+          <ProductionSelector rows={rows} listTitle="Ишлеме продукти" showBuckets={false} />
+        </>
       )}
     </div>
   );
