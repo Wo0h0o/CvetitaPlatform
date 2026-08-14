@@ -98,15 +98,19 @@ export function ProductionSelector({
 
   const [sel, setSel] = useState<Record<string, number>>({});
   const [sortBy, setSortBy] = useState<"cover" | "name" | "sales">("cover");
+  const [query, setQuery] = useState("");
 
   const buckets = { crit: 0, order: 0, watch: 0, ok: 0 };
   for (const r of allRows) buckets[statusOf(r.cover).k]++;
 
-  const rows = [...allRows].sort((a, b) => {
-    if (sortBy === "name") return a.name.localeCompare(b.name, "bg");
-    if (sortBy === "sales") return (b.q60 ?? 0) - (a.q60 ?? 0);
-    return a.cover - b.cover;
-  });
+  const q = query.trim().toLowerCase();
+  const rows = [...allRows]
+    .filter((r) => !q || r.name.toLowerCase().includes(q) || String(r.sku).toLowerCase().includes(q))
+    .sort((a, b) => {
+      if (sortBy === "name") return a.name.localeCompare(b.name, "bg");
+      if (sortBy === "sales") return (b.q60 ?? 0) - (a.q60 ?? 0);
+      return a.cover - b.cover;
+    });
 
   const toggle = (r: Row) => {
     if (sel[r.id] == null && pendingInOrder[r.id]) {
@@ -152,6 +156,12 @@ export function ProductionSelector({
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Търси продукт / SKU…"
+              className="px-3 py-1.5 text-[12px] rounded-lg border border-border bg-surface w-48"
+            />
             <div className="flex items-center gap-1 text-[12px]">
               <span className="text-text-3 mr-1">Подреди:</span>
               {([

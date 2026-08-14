@@ -169,8 +169,14 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     recipeByProduct.set(output.item_id, { item_id: output.item_id, sku: String(it.sku), item_name: it.name, batch_qty: output.quantity, wo_num: num, components });
   }
 
+  // --- ишлеме: само „готови продукти" = реално произвеждани/активни
+  //     (имат рецепта от работна поръчка, или наличност, или продажби) ---
+  const ishlemeReady = ishleme.filter(
+    (r) => recipeByProduct.has(String(r.id)) || Number(r.free) > 0 || Number(r.q90) > 0
+  );
+
   // --- запис ---
-  const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO, ishleme };
+  const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO, ishleme: ishlemeReady };
   const { error: e1 } = await supabaseAdmin.from("inventory_forecast").insert({ as_of: asOf, payload });
   if (e1) throw new Error("snapshot insert: " + e1.message);
   const recipeRows = [...recipeByProduct.values()];
@@ -206,8 +212,8 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     }
   }
 
-  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, ishleme: ishleme.length, recipes: recipeRows.length, ordersReconciled: reconciled });
-  return { ok: true, singles: singles.length, ishleme: ishleme.length, recipes: recipeRows.length, as_of: asOf };
+  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, ishleme: ishlemeReady.length, recipes: recipeRows.length, ordersReconciled: reconciled });
+  return { ok: true, singles: singles.length, ishleme: ishlemeReady.length, recipes: recipeRows.length, as_of: asOf };
 }
 
 interface OrderItem {
