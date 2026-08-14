@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     ...it,
     status: it.status ?? "pending",
     produced_date: it.produced_date ?? null,
-    produced_qty: it.produced_qty ?? null,
+    produced_qty: it.produced_qty ?? 0,
   }));
 
   const { data, error } = await supabaseAdmin

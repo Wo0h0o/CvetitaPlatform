@@ -17,8 +17,12 @@ interface Item {
   size?: string;
   unit?: string;
   status?: "pending" | "produced";
+  produced_qty?: number | null;
   produced_date?: string | null;
 }
+// произведено количество (със съвместимост към стари заявки с булев статус)
+const producedOf = (it: Item): number =>
+  it.produced_qty != null ? it.produced_qty : it.status === "produced" ? it.qty : 0;
 interface Order {
   id: number;
   letter_no: string | null;
@@ -67,14 +71,9 @@ export default function OrdersPage() {
 
   const orders = data?.orders ?? [];
 
-  const woFor = (itemId: string, sinceIso: string): WO | undefined =>
-    recentWO
-      .filter((w) => String(w.item_id) === String(itemId) && w.date >= sinceIso)
-      .sort((a, b) => b.date.localeCompare(a.date))[0];
-
   const patchOrder = async (order: Order, items: Item[]) => {
     setBusy(order.id);
-    const allDone = items.every((it) => it.status === "produced");
+    const allDone = items.every((it) => producedOf(it) >= it.qty);
     try {
       await fetch("/api/production/orders", {
         method: "PATCH",
@@ -85,6 +84,24 @@ export default function OrdersPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  // произведено количество (частично) — редактира се inline и се пази при blur
+  const [prodDraft, setProdDraft] = useState<Record<string, number>>({});
+  const today = () => new Date().toISOString().slice(0, 10);
+  const saveProduced = (order: Order, idx: number, value: number) => {
+    const val = Math.max(0, value || 0);
+    const items = order.items.map((x, i) =>
+      i === idx
+        ? {
+            ...x,
+            produced_qty: val,
+            status: (val >= x.qty ? "produced" : "pending") as Item["status"],
+            produced_date: val >= x.qty ? x.produced_date ?? today() : val > 0 ? x.produced_date ?? today() : null,
+          }
+        : x
+    );
+    patchOrder(order, items);
   };
 
   // редактиране на количествата на издадена заявка
@@ -128,15 +145,6 @@ export default function OrdersPage() {
     }
   };
 
-  const toggleItem = (order: Order, idx: number, produced: boolean, date?: string) => {
-    const items = order.items.map((it, i) =>
-      i === idx
-        ? { ...it, status: (produced ? "produced" : "pending") as Item["status"], produced_date: produced ? date ?? new Date().toISOString().slice(0, 10) : null }
-        : it
-    );
-    patchOrder(order, items);
-  };
-
   return (
     <div>
       <PageHeader
@@ -147,8 +155,7 @@ export default function OrdersPage() {
         }
       />
       <p className="text-[13px] text-text-3 mb-5">
-        Проследяване на издадените възлагателни писма. Срок за изработка ~{LEAD_WORKDAYS} работни дни.
-        Отметни произведените продукти, за да не дублираш заявки.
+        {`Проследяване на издадените възлагателни писма. Срок за изработка ~${LEAD_WORKDAYS} работни дни. Впиши колко бройки са произведени от всеки продукт (частично или изцяло) в колона „Произведено".`}
       </p>
 
       {isLoading && (
@@ -166,8 +173,10 @@ export default function OrdersPage() {
       <div className="space-y-4">
         {orders.map((o) => {
           const ready = addWorkdays(o.issued_date, LEAD_WORKDAYS);
-          const doneCount = o.items.filter((it) => it.status === "produced").length;
-          const allDone = doneCount === o.items.length;
+          const totalOrdered = o.items.reduce((a, it) => a + it.qty, 0);
+          const totalProduced = o.items.reduce((a, it) => a + Math.min(producedOf(it), it.qty), 0);
+          const doneItems = o.items.filter((it) => producedOf(it) >= it.qty).length;
+          const allDone = o.items.every((it) => producedOf(it) >= it.qty);
           const daysLeft = daysUntil(ready);
           const cd = allDone
             ? { text: "Готова", cls: "bg-green-500/15 text-green-600" }
@@ -244,8 +253,11 @@ export default function OrdersPage() {
                     <CalendarClock size={15} /> {cd.text}
                   </div>
                   <div className="px-3 py-2 rounded-lg bg-surface-2 border border-border ml-auto">
-                    <div className="text-text-3 text-[10px] uppercase tracking-wider">Произведени</div>
-                    <div className="font-semibold text-text mt-0.5">{doneCount}/{o.items.length}</div>
+                    <div className="text-text-3 text-[10px] uppercase tracking-wider">Произведено</div>
+                    <div className="font-semibold text-text mt-0.5 tabular-nums">
+                      {nf(totalProduced)} / {nf(totalOrdered)} бр
+                      <span className="text-text-3 font-normal"> · {doneItems}/{o.items.length} готови</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -253,32 +265,26 @@ export default function OrdersPage() {
                 <table className="w-full text-[13px] min-w-[640px]">
                   <thead>
                     <tr className="text-[11px] uppercase tracking-wider text-text-3">
-                      <th className="w-10 px-3 py-2"></th>
                       <th className="text-left font-medium px-4 py-2">Продукт</th>
-                      <th className="text-right font-medium px-4 py-2">Количество</th>
+                      <th className="text-right font-medium px-4 py-2">Заявено</th>
+                      <th className="text-right font-medium px-4 py-2">Произведено</th>
                       <th className="text-left font-medium px-4 py-2">Статус</th>
                     </tr>
                   </thead>
                   <tbody>
                     {o.items.map((it, idx) => {
-                      const produced = it.status === "produced";
-                      const hint = !produced ? woFor(it.item_id, o.issued_date) : undefined;
+                      const prod = producedOf(it);
+                      const key = `${o.id}:${idx}`;
+                      const val = prodDraft[key] ?? prod;
+                      const full = prod >= it.qty;
+                      const partial = prod > 0 && prod < it.qty;
+                      const woList = recentWO.filter((w) => String(w.item_id) === String(it.item_id) && w.date >= o.issued_date);
+                      const woSum = woList.reduce((a, w) => a + w.qty, 0);
+                      const woLast = woList.sort((a, b) => b.date.localeCompare(a.date))[0];
                       return (
                         <tr key={it.item_id + idx} className="border-t border-border">
-                          <td className="px-3 py-2.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={produced}
-                              disabled={busy === o.id}
-                              onChange={(e) => toggleItem(o, idx, e.target.checked)}
-                              className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
-                              aria-label={`Произведено ${it.name}`}
-                            />
-                          </td>
                           <td className="px-4 py-2.5">
-                            <div className={`font-medium ${produced ? "text-text-3 line-through" : "text-text"}`}>
-                              {it.name}
-                            </div>
+                            <div className={`font-medium ${full ? "text-text-3" : "text-text"}`}>{it.name}</div>
                             <div className="text-[11px] text-text-3">SKU {it.sku}</div>
                           </td>
                           <td className="px-4 py-2.5 text-right tabular-nums">
@@ -298,18 +304,39 @@ export default function OrdersPage() {
                               <>{nf(it.qty)} {it.unit ? `× ${it.size} ${it.unit}` : ""}</>
                             )}
                           </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <input
+                                type="number"
+                                min={0}
+                                step={50}
+                                value={val}
+                                disabled={busy === o.id}
+                                onChange={(e) => setProdDraft((d) => ({ ...d, [key]: parseInt(e.target.value || "0", 10) }))}
+                                onBlur={() => { if (val !== prod) saveProduced(o, idx, val); }}
+                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                className={`w-20 px-2 py-1 text-right rounded-md border bg-surface tabular-nums ${full ? "border-green-500/50" : partial ? "border-amber-500/50" : "border-border"}`}
+                                aria-label={`Произведено от ${it.name}`}
+                              />
+                              <span className="text-text-3 text-[12px] whitespace-nowrap">/ {nf(it.qty)}</span>
+                            </div>
+                          </td>
                           <td className="px-4 py-2.5">
-                            {produced ? (
+                            {full ? (
                               <span className="inline-flex items-center gap-1.5 text-[12px] text-green-600 font-medium">
-                                <PackageCheck size={15} /> Произведено{it.produced_date ? ` · ${fmt(it.produced_date)}` : ""}
+                                <PackageCheck size={15} /> Готово{it.produced_date ? ` · ${fmt(it.produced_date)}` : ""}
                               </span>
-                            ) : hint ? (
+                            ) : partial ? (
+                              <span className="inline-flex items-center gap-1.5 text-[12px] text-amber-600 font-medium">
+                                <Clock size={14} /> Частично {nf(prod)}/{nf(it.qty)}
+                              </span>
+                            ) : woSum > 0 ? (
                               <button
-                                onClick={() => toggleItem(o, idx, true, hint.date)}
+                                onClick={() => saveProduced(o, idx, woSum)}
                                 className="inline-flex items-center gap-1.5 text-[12px] text-amber-600 hover:underline cursor-pointer"
-                                title={`Работна поръчка ${hint.wo_num}`}
+                                title={woLast ? `Работна поръчка ${woLast.wo_num}` : undefined}
                               >
-                                <Check size={14} /> Изглежда произведено ({fmt(hint.date)}) — потвърди
+                                <Check size={14} /> Произведени {nf(woSum)} ({woLast ? fmt(woLast.date) : ""}) — впиши
                               </button>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 text-[12px] text-text-3">
