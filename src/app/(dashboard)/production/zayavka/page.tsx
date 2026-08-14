@@ -15,7 +15,7 @@ interface Row {
   q60?: number;
   prodQty?: number;
 }
-interface Snapshot { singles: Row[]; bundles: Row[]; rawStock?: Record<string, number> }
+interface Snapshot { singles: Row[]; bundles?: Row[]; ishleme?: Row[]; rawStock?: Record<string, number> }
 interface Component { name: string; measure: string; qty_per_batch: number; kind: string }
 interface Recipe { item_id: string; batch_qty: number; wo_num: string; components: Component[] }
 
@@ -98,9 +98,11 @@ function ZayavkaInner() {
         qty: it.qty,
       }));
     }
-    // 2) нова заявка от избора на страница Производство
+    // 2) нова заявка от избора на страниците (Цветита Хербал ИЛИ Ишлемета)
     if (!snap) return [];
-    const byId = new Map(snap.singles.map((r) => [r.id, r]));
+    const byId = new Map(
+      [...(snap.singles ?? []), ...(snap.bundles ?? []), ...(snap.ishleme ?? [])].map((r) => [r.id, r])
+    );
     return selection
       .map((s) => ({ row: byId.get(s.id), qty: s.qty }))
       .filter((x): x is { row: Row; qty: number } => !!x.row);
