@@ -193,10 +193,13 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     .select("id, issued_date, items, status")
     .neq("status", "done");
   for (const ord of openOrders ?? []) {
+    // буфер: броим и производство до 14 дни ПРЕДИ издаване (често цехът е
+    // почнал преди заявката да се въведе в системата)
+    const since = ymd(new Date(new Date(ord.issued_date + "T00:00:00Z").getTime() - 14 * 86400000));
     let changed = false;
     const items = (ord.items as OrderItem[]).map((it) => {
       const woSum = recentWO
-        .filter((w) => String(w.item_id) === String(it.item_id) && w.date >= ord.issued_date)
+        .filter((w) => String(w.item_id) === String(it.item_id) && w.date >= since)
         .reduce((a, w) => a + w.qty, 0);
       const cur = it.produced_qty != null ? it.produced_qty : it.status === "produced" ? it.qty : 0;
       const next = Math.max(cur, woSum); // производството само нараства

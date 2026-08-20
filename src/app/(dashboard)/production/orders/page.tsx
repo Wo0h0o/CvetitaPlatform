@@ -80,11 +80,15 @@ export default function OrdersPage() {
     }
   };
 
-  // произведено от работните поръчки в PRIM (сума за продукта след издаване на заявката)
+  // произведено от работните поръчки в PRIM (сума за продукта от дадена дата)
   const woSumFor = (itemId: string, since: string): number =>
     recentWO.filter((w) => String(w.item_id) === String(itemId) && w.date >= since).reduce((a, w) => a + w.qty, 0);
-  // ефективно произведено = по-голямото от ръчно вписаното и автоматичното от PRIM
-  const effProduced = (it: Item, issuedDate: string): number => Math.max(producedOf(it), woSumFor(it.item_id, issuedDate));
+  // ефективно произведено = по-голямото от ръчно вписаното и автоматичното от PRIM.
+  // Буфер: броим и производство до 14 дни преди издаване (цехът често почва преди заявката).
+  const effProduced = (it: Item, issuedDate: string): number => {
+    const since = new Date(new Date(issuedDate + "T00:00:00Z").getTime() - 14 * 86400000).toISOString().slice(0, 10);
+    return Math.max(producedOf(it), woSumFor(it.item_id, since));
+  };
 
   const orders = data?.orders ?? [];
 
