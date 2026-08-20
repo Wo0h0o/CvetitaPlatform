@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Loader2, Clock, PackageCheck, Trash2, FileText, CalendarClock, Pencil, Save, X } from "lucide-react";
+import { ClipboardList, Loader2, Clock, PackageCheck, Trash2, FileText, CalendarClock, Pencil, Save, X, RefreshCw } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -60,14 +60,25 @@ export default function OrdersPage() {
   const { data, isLoading, mutate } = useSWR<{ orders: Order[] }>("/api/production/orders", fetcher, {
     revalidateOnFocus: false,
   });
-  // recentWO от снимката — за авто-подсказка „изглежда произведено"
-  const { data: fc } = useSWR<{ snapshot: { recentWO?: WO[] } | null }>(
+  // recentWO от снимката — за авто-попълване на произведеното
+  const { data: fc, mutate: mutateFc } = useSWR<{ snapshot: { recentWO?: WO[] } | null }>(
     "/api/production/forecast",
     fetcher,
     { revalidateOnFocus: false }
   );
   const recentWO = fc?.snapshot?.recentWO ?? [];
   const [busy, setBusy] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      await fetch("/api/production/sync", { method: "POST" });
+      await Promise.all([mutate(), mutateFc()]);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // произведено от работните поръчки в PRIM (сума за продукта след издаване на заявката)
   const woSumFor = (itemId: string, since: string): number =>
@@ -159,7 +170,16 @@ export default function OrdersPage() {
             <ClipboardList size={22} className="text-accent" /> Възлагателни писма
           </>
         }
-      />
+      >
+        <button
+          onClick={syncNow}
+          disabled={syncing}
+          className="flex items-center gap-2 text-[13px] font-medium px-3 py-2 rounded-lg border border-border text-text-2 hover:bg-surface-2 cursor-pointer disabled:opacity-50"
+          title="Дръпни най-новите производствени данни от PRIM"
+        >
+          <RefreshCw size={15} className={syncing ? "animate-spin" : ""} /> {syncing ? "Обновявам…" : "Обнови от PRIM"}
+        </button>
+      </PageHeader>
       <p className="text-[13px] text-text-3 mb-5">
         {`Проследяване на издадените възлагателни писма. Срок за изработка ~${LEAD_WORKDAYS} работни дни. Произведените бройки се вземат автоматично от работните поръчки в PRIM; можеш и ръчно да коригираш в колона „Произведено".`}
       </p>
