@@ -43,7 +43,7 @@ function tsv(res: { data?: string }): string[][] {
   return lines.slice(1).map((l) => l.split("\t"));
 }
 
-export async function refreshForecast(): Promise<{ ok: boolean; singles: number; ishleme: number; recipes: number; as_of: string }> {
+export async function refreshForecast(): Promise<{ ok: boolean; singles: number; ishleme: number; ishlemeSales: number; recipes: number; as_of: string }> {
   const prim = await connectPrim();
   const today = new Date();
   const asOf = ymd(today);
