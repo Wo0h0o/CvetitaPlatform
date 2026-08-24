@@ -176,10 +176,11 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
   );
 
   // --- ишлеме ПРОДАЖБИ (SO) за създаване на възлагателни писма ---
+  // 1) намери НОМЕРАТА на продажбите, които съдържат поне един ишлеме продукт
   const ishlemeIds = [...ishlemeItems.keys()];
-  const salesRes = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
+  const findRes = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
     types: ["so"],
-    select: [{ col: "num" }, { col: "for_date" }, { col: "partner_nm" }, { col: "item_id" }, { col: "item_nm" }, { col: "quantity" }],
+    select: [{ col: "num" }, { col: "for_date" }],
     where: [
       { col: "for_date", op: ">=", value: daysAgo(today, 30) },
       { col: "item_id", op: "in", value: ishlemeIds },
@@ -188,17 +189,35 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
       { col: "debit", op: "=", value: "0" },
     ],
     order_by: [{ col: "for_date", dir: "desc" }],
-    limit: 2000,
+    limit: 3000,
   });
+  const saleNums = [...new Set(tsv(findRes).map((c) => c[0]).filter(Boolean))].slice(0, 60);
+
+  // 2) издърпай ВСИЧКИ редове на тези продажби (не само ишлеме — една продажба
+  //    може да съдържа и наши СТОКИ продукти или нови още некласифицирани артикули)
+  const SERVICE_RE = /транспорт|доставка|^\s*услуг|допълнителни разходи/i;
   const salesByNum = new Map<string, { num: string; date: string; partner: string; items: { item_id: string; name: string; sku: string; qty: number }[] }>();
-  for (const c of tsv(salesRes)) {
-    const [num, date, partner, item_id, item_nm, quantity] = c;
-    if (!num) continue;
-    if (!salesByNum.has(num)) salesByNum.set(num, { num, date, partner, items: [] });
-    const it = ishlemeItems.get(item_id);
-    salesByNum.get(num)!.items.push({ item_id, name: item_nm, sku: it ? String(it.sku) : "", qty: +quantity });
+  if (saleNums.length) {
+    const salesRes = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
+      types: ["so"],
+      select: [{ col: "num" }, { col: "for_date" }, { col: "partner_nm" }, { col: "item_id" }, { col: "item_nm" }, { col: "quantity" }],
+      where: [
+        { col: "num", op: "in", value: saleNums },
+        { col: "quantity", op: ">", value: "0" },
+        { col: "credit", op: "=", value: "0" },
+        { col: "debit", op: "=", value: "0" },
+      ],
+      limit: 5000,
+    });
+    for (const c of tsv(salesRes)) {
+      const [num, date, partner, item_id, item_nm, quantity] = c;
+      if (!num || SERVICE_RE.test(item_nm)) continue; // прескачаме транспорт/услуги
+      if (!salesByNum.has(num)) salesByNum.set(num, { num, date, partner, items: [] });
+      const it = allItems.get(item_id);
+      salesByNum.get(num)!.items.push({ item_id, name: item_nm, sku: it ? String(it.sku) : "", qty: +quantity });
+    }
   }
-  const ishlemeSales = [...salesByNum.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+  const ishlemeSales = [...salesByNum.values()].filter((s) => s.items.length > 0).sort((a, b) => b.date.localeCompare(a.date));
 
   // --- запис ---
   const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO, ishleme: ishlemeReady, ishlemeSales };
