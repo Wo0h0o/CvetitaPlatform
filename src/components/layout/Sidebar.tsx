@@ -83,6 +83,7 @@ const fullNavSections: NavSection[] = [
         children: [
           { href: "/production", label: "Цветита Хербал" },
           { href: "/production/ishleme", label: "Ишлемета" },
+          { href: "/production/ishleme-sales", label: "Ишлеме продажби" },
         ],
       },
       { href: "/production/orders", icon: ClipboardList, label: "Възлагателни писма" },

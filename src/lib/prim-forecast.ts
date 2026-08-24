@@ -175,8 +175,33 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     (r) => recipeByProduct.has(String(r.id)) || Number(r.free) > 0 || Number(r.q90) > 0
   );
 
+  // --- ишлеме ПРОДАЖБИ (SO) за създаване на възлагателни писма ---
+  const ishlemeIds = [...ishlemeItems.keys()];
+  const salesRes = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
+    types: ["so"],
+    select: [{ col: "num" }, { col: "for_date" }, { col: "partner_nm" }, { col: "item_id" }, { col: "item_nm" }, { col: "quantity" }],
+    where: [
+      { col: "for_date", op: ">=", value: daysAgo(today, 30) },
+      { col: "item_id", op: "in", value: ishlemeIds },
+      { col: "quantity", op: ">", value: "0" },
+      { col: "credit", op: "=", value: "0" },
+      { col: "debit", op: "=", value: "0" },
+    ],
+    order_by: [{ col: "for_date", dir: "desc" }],
+    limit: 2000,
+  });
+  const salesByNum = new Map<string, { num: string; date: string; partner: string; items: { item_id: string; name: string; sku: string; qty: number }[] }>();
+  for (const c of tsv(salesRes)) {
+    const [num, date, partner, item_id, item_nm, quantity] = c;
+    if (!num) continue;
+    if (!salesByNum.has(num)) salesByNum.set(num, { num, date, partner, items: [] });
+    const it = ishlemeItems.get(item_id);
+    salesByNum.get(num)!.items.push({ item_id, name: item_nm, sku: it ? String(it.sku) : "", qty: +quantity });
+  }
+  const ishlemeSales = [...salesByNum.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+
   // --- запис ---
-  const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO, ishleme: ishlemeReady };
+  const payload = { today: asOf, buckets, singles, bundles, noStock, rawStock, recentWO, ishleme: ishlemeReady, ishlemeSales };
   const { error: e1 } = await supabaseAdmin.from("inventory_forecast").insert({ as_of: asOf, payload });
   if (e1) throw new Error("snapshot insert: " + e1.message);
   const recipeRows = [...recipeByProduct.values()];
@@ -215,8 +240,8 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
     }
   }
 
-  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, ishleme: ishlemeReady.length, recipes: recipeRows.length, ordersReconciled: reconciled });
-  return { ok: true, singles: singles.length, ishleme: ishlemeReady.length, recipes: recipeRows.length, as_of: asOf };
+  logger.info("PRIM forecast refreshed", { as_of: asOf, singles: singles.length, ishleme: ishlemeReady.length, ishlemeSales: ishlemeSales.length, recipes: recipeRows.length, ordersReconciled: reconciled });
+  return { ok: true, singles: singles.length, ishleme: ishlemeReady.length, ishlemeSales: ishlemeSales.length, recipes: recipeRows.length, as_of: asOf };
 }
 
 interface OrderItem {

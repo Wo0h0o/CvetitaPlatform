@@ -81,7 +81,7 @@ function ZayavkaInner() {
     { revalidateOnFocus: false }
   );
   const { data: oData, isLoading: l3 } = useSWR<{
-    orders: { id: number; letter_no: string | null; issued_date: string; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
+    orders: { id: number; letter_no: string | null; issued_date: string; note?: string | null; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
   }>(orderId ? "/api/production/orders" : null, fetcher, { revalidateOnFocus: false });
 
   const snap = fData?.snapshot ?? null;
@@ -157,16 +157,25 @@ function ZayavkaInner() {
       ? fData.as_of.split("-").reverse().join(".")
       : new Date().toLocaleDateString("bg-BG");
   const letterLabel = savedOrder?.letter_no || "___";
+  const soRef = params.get("so"); // № на продажбата, от която е създадено писмото
 
   const [letterNo, setLetterNo] = useState("");
+  const [invoiceNo, setInvoiceNo] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState(false);
+
+  // ред за референция в писмото (продажба / фактура)
+  const refLine = savedOrder
+    ? savedOrder.note || ""
+    : [soRef ? `Продажба № ${soRef}` : "", invoiceNo ? `Фактура № ${invoiceNo}` : ""].filter(Boolean).join(" · ");
 
   const issueOrder = async () => {
     setIssuing(true);
     try {
+      const note = [soRef ? `Продажба ${soRef}` : "", invoiceNo ? `Фактура ${invoiceNo}` : ""].filter(Boolean).join(" · ") || null;
       const payload = {
         letter_no: letterNo || null,
+        note,
         items: items.map(({ row, qty }) => {
           const p = parsePack(row.name);
           return { item_id: row.id, sku: String(row.sku), name: row.name, qty, size: p.size, unit: p.unit };
@@ -213,12 +222,20 @@ function ZayavkaInner() {
         </button>
         <div className="flex items-center gap-2 flex-wrap">
           {!savedOrder && (
-            <input
-              value={letterNo}
-              onChange={(e) => setLetterNo(e.target.value)}
-              placeholder="№ на писмо (напр. 52)"
-              className="w-40 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
-            />
+            <>
+              <input
+                value={letterNo}
+                onChange={(e) => setLetterNo(e.target.value)}
+                placeholder="№ на писмо (напр. 52)"
+                className="w-40 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
+              />
+              <input
+                value={invoiceNo}
+                onChange={(e) => setInvoiceNo(e.target.value)}
+                placeholder="№ на фактура (по избор)"
+                className="w-44 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
+              />
+            </>
           )}
           {savedOrder ? null : issued ? (
             <span className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-green-500/15 text-green-600">
@@ -246,8 +263,9 @@ function ZayavkaInner() {
         <div className="text-text-3 text-[14px]">Няма избрани продукти. Върни се и избери от списъка.</div>
       ) : (
         <div id="zayavka-print" className="bg-white text-black rounded-xl p-8 md:p-10 max-w-[900px] mx-auto shadow-sm text-[13px] leading-relaxed">
-          <h1 className="text-center text-[17px] font-bold mb-4">ВЪЗЛАГАТЕЛНО ПИСМО №{letterLabel}/{today}г.</h1>
-          <p className="mb-2">Днес, {today}г., в гр. Бургас между:</p>
+          <h1 className="text-center text-[17px] font-bold mb-1">ВЪЗЛАГАТЕЛНО ПИСМО №{letterLabel}/{today}г.</h1>
+          {refLine && <p className="text-center text-[12px] text-gray-600 mb-3">{refLine}</p>}
+          <p className="mb-2 mt-3">Днес, {today}г., в гр. Бургас между:</p>
           <p className="mb-2">
             1. <b>ЦВЕТИТА ХЕРБАЛ ЕООД</b>{', вписано в Търговския регистър под ЕИК 203492157, със седалище и адрес на управление: гр. Бургас, ул. „Граф Игнатиев" № 17, представлявано от Георги Добрев Петков от една страна като '}<b>ИЗПЪЛНИТЕЛ</b>
           </p>
