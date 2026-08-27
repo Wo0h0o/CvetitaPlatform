@@ -11,6 +11,8 @@ import {
   compositionText,
   netWeightsAll,
   nrvPct,
+  elementalAmount,
+  compoundNrv,
   marketDate,
   bgDate,
   PRODUCER,
@@ -79,6 +81,7 @@ function NotifyProductInner() {
   const [siteId, setSiteId] = useState<number | null>(null);
   const [distAddr, setDistAddr] = useState("");
   const [submitDate, setSubmitDate] = useState(todayISO());
+  const [count, setCount] = useState("1");
   const [looking, setLooking] = useState(false);
   const [lookupNote, setLookupNote] = useState("");
   const [company, setCompany] = useState<NzCompany | null>(null);
@@ -90,7 +93,7 @@ function NotifyProductInner() {
 
   // нова съставка (не е в списъка)
   const [showNewIng, setShowNewIng] = useState(false);
-  const emptyNewIng = { name_bg: "", kind: "other" as NzIngredient["kind"], unit: "mg", name_lat: "", ref_value: "" };
+  const emptyNewIng = { name_bg: "", kind: "other" as NzIngredient["kind"], unit: "mg", name_lat: "", ref_value: "", elem_element: "", elem_factor: "", elem_ref: "" };
   const [newIng, setNewIng] = useState(emptyNewIng);
 
   // load existing product
@@ -215,7 +218,7 @@ function NotifyProductInner() {
     if (!ingPick || !refs) return;
     const found = refs.ingredients.find((i) => String(i.id) === ingPick);
     if (found) {
-      setActive((a) => [...a, { name_bg: found.name_bg, name_lat: found.name_lat, kind: found.kind, unit: found.unit, ref_value: found.ref_value ?? null, amount: "" }]);
+      setActive((a) => [...a, { name_bg: found.name_bg, name_lat: found.name_lat, kind: found.kind, unit: found.unit, ref_value: found.ref_value ?? null, elem_element: found.elem_element ?? null, elem_factor: found.elem_factor ?? null, elem_ref: found.elem_ref ?? null, amount: "" }]);
     }
     setIngPick("");
   }
@@ -224,12 +227,16 @@ function NotifyProductInner() {
   }
   async function addCustomIngredient() {
     if (!newIng.name_bg.trim()) return;
+    const isComp = newIng.kind === "compound";
     const ing: NzIngredient = {
       name_bg: newIng.name_bg.trim(),
       name_lat: newIng.kind === "herb" ? newIng.name_lat.trim() || null : null,
       kind: newIng.kind,
       unit: newIng.unit.trim() || "mg",
       ref_value: newIng.kind === "vitmin" && newIng.ref_value ? newIng.ref_value : null,
+      elem_element: isComp ? newIng.elem_element.trim() || null : null,
+      elem_factor: isComp && newIng.elem_factor ? newIng.elem_factor : null,
+      elem_ref: isComp && newIng.elem_ref ? newIng.elem_ref : null,
       amount: "",
     };
     setActive((a) => [...a, ing]);
@@ -237,7 +244,7 @@ function NotifyProductInner() {
     await fetch("/api/notify/refs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "ingredient", name_bg: ing.name_bg, name_lat: ing.name_lat, kind: ing.kind, unit: ing.unit, ref_value: ing.ref_value }),
+      body: JSON.stringify({ type: "ingredient", name_bg: ing.name_bg, name_lat: ing.name_lat, kind: ing.kind, unit: ing.unit, ref_value: ing.ref_value, elem_element: ing.elem_element, elem_factor: ing.elem_factor, elem_ref: ing.elem_ref }),
     }).catch(() => {});
     mutateRefs();
     setNewIng(emptyNewIng);
@@ -405,7 +412,11 @@ function NotifyProductInner() {
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-3 mt-3">
+          <div className="grid sm:grid-cols-3 gap-3 mt-3">
+            <div>
+              <Label>Брой добавки в заявлението</Label>
+              <input value={count} onChange={(e) => setCount(e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="1" />
+            </div>
             <div>
               <Label>Дата на подаване</Label>
               <input type="date" value={submitDate} onChange={(e) => setSubmitDate(e.target.value)} className={inputCls} />
@@ -517,6 +528,7 @@ function NotifyProductInner() {
                   <option value="other">друга</option>
                   <option value="herb">билка</option>
                   <option value="vitmin">витамин/минерал</option>
+                  <option value="compound">минерална сол</option>
                 </select>
               </div>
               <div className="w-[80px]">
@@ -536,22 +548,46 @@ function NotifyProductInner() {
                   <input value={newIng.ref_value} onChange={(e) => setNewIng({ ...newIng, ref_value: e.target.value })} className={inputCls} placeholder="напр. 75" />
                 </div>
               )}
+              {newIng.kind === "compound" && (
+                <div className="sm:col-span-4 grid sm:grid-cols-3 gap-2">
+                  <div><Label>Елементарен минерал</Label><input value={newIng.elem_element} onChange={(e) => setNewIng({ ...newIng, elem_element: e.target.value })} className={inputCls} placeholder="напр. Магнезий" /></div>
+                  <div><Label>Фактор (елем. = сол × фактор)</Label><input value={newIng.elem_factor} onChange={(e) => setNewIng({ ...newIng, elem_factor: e.target.value })} className={inputCls} placeholder="напр. 0,16" /></div>
+                  <div><Label>Референтна на елемента (NRV)</Label><input value={newIng.elem_ref} onChange={(e) => setNewIng({ ...newIng, elem_ref: e.target.value })} className={inputCls} placeholder="напр. 375" /></div>
+                </div>
+              )}
             </div>
           )}
           <div className="space-y-2">
             {active.map((ing, idx) => {
-              const pct = nrvPct(ing.amount, ing.ref_value ?? null);
+              const isCompound = ing.kind === "compound";
+              const pct = isCompound ? compoundNrv(ing) : nrvPct(ing.amount, ing.ref_value ?? null);
+              const el = isCompound ? elementalAmount(ing) : null;
+              const hasNrv = isCompound ? !!ing.elem_ref : ing.ref_value != null && ing.ref_value !== "";
               return (
-                <div key={idx} className="flex items-center gap-2 flex-wrap bg-surface-2 rounded-lg px-3 py-2">
-                  <div className="flex-1 min-w-[160px] text-[13px] text-text">
-                    {ing.name_bg}{ing.kind === "herb" && ing.name_lat ? <span className="text-text-3 italic"> ({ing.name_lat})</span> : ""}
+                <div key={idx} className="bg-surface-2 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex-1 min-w-[160px] text-[13px] text-text">
+                      {ing.name_bg}{ing.kind === "herb" && ing.name_lat ? <span className="text-text-3 italic"> ({ing.name_lat})</span> : ""}
+                    </div>
+                    <input value={String(ing.amount)} onChange={(e) => updateActive(idx, { amount: e.target.value })} placeholder={isCompound ? "сол" : "кол-во"} className="w-[90px] px-2 py-1 rounded-md border border-border text-[13px] bg-surface" />
+                    <span className="text-[12px] text-text-3 w-[40px]">{ing.unit}</span>
+                    {hasNrv ? (
+                      <span className="text-[12px] text-accent w-[64px] text-right">{pct !== null ? `${pct}%` : "—"}</span>
+                    ) : <span className="w-[64px]" />}
+                    <button onClick={() => setActive((a) => a.filter((_, i) => i !== idx))} className="text-text-3 hover:text-red-500"><X size={15} /></button>
                   </div>
-                  <input value={String(ing.amount)} onChange={(e) => updateActive(idx, { amount: e.target.value })} placeholder="кол-во" className="w-[90px] px-2 py-1 rounded-md border border-border text-[13px] bg-surface" />
-                  <span className="text-[12px] text-text-3 w-[40px]">{ing.unit}</span>
-                  {ing.ref_value != null && ing.ref_value !== "" ? (
-                    <span className="text-[12px] text-accent w-[64px] text-right">{pct !== null ? `${pct}%` : "—"}</span>
-                  ) : <span className="w-[64px]" />}
-                  <button onClick={() => setActive((a) => a.filter((_, i) => i !== idx))} className="text-text-3 hover:text-red-500"><X size={15} /></button>
+                  {isCompound && (
+                    <div className="mt-1.5 flex items-center gap-2 text-[12px] text-text-3 pl-1">
+                      → доставя
+                      <input
+                        value={ing.elemental != null && ing.elemental !== "" ? String(ing.elemental) : el != null ? String(el) : ""}
+                        onChange={(e) => updateActive(idx, { elemental: e.target.value })}
+                        className="w-[70px] px-2 py-0.5 rounded-md border border-border text-[12px] bg-surface"
+                      />
+                      <span>{ing.unit} чист {ing.elem_element}</span>
+                      <span className="text-text-4">(авто от фактора; може да се коригира)</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -600,6 +636,7 @@ function NotifyProductInner() {
           distributionAddr={distAddr}
           remote={remote}
           submitDate={submitDate}
+          count={count}
           hidden={printOnly !== null && printOnly !== "app"}
         />
       </div>
@@ -694,10 +731,11 @@ function DocList({ product, companyName, hidden }: { product: NzProduct; company
 }
 
 function DocApplication({
-  product, mode, company, distributionAddr, remote, submitDate, hidden,
+  product, mode, company, distributionAddr, remote, submitDate, count, hidden,
 }: {
-  product: NzProduct; mode: "cvetita" | "ishleme"; company: NzCompany | null; distributionAddr: string; remote: RemoteTrade; submitDate: string; hidden: boolean;
+  product: NzProduct; mode: "cvetita" | "ishleme"; company: NzCompany | null; distributionAddr: string; remote: RemoteTrade; submitDate: string; count: string; hidden: boolean;
 }) {
+  const cnt = count || "1";
   const isTrader = mode === "ishleme";
   const reg = mode === "cvetita"
     ? { manager: "ГЕОРГИ ДОБРЕВ ПЕТКОВ", name: "ЦВЕТИТА ХЕРБАЛ ЕООД", address: "гр. Бургас, община Бургас, ж.к./ул ГРАФ ИГНАТИЕВ № 17", eik: "203492157", city: "Бургас" }
@@ -733,8 +771,8 @@ function DocApplication({
       <p style={{ textAlign: "center", fontWeight: 700, marginTop: 18 }}>УВАЖАЕМИ ГОСПОДИН ИЗПЪЛНИТЕЛЕН ДИРЕКТОР,</p>
 
       <p style={{ marginTop: 14 }}>Моля да бъдат регистрирани по чл. 79 от Закона за храните:</p>
-      <p style={{ marginTop: 6 }}><Box on={supplement} /> хранителни добавки {supplement ? "1" : "…"} бр.,</p>
-      <p style={{ marginTop: 6 }}><Box on={!supplement} /> храни, предназначени за употреба при интензивно мускулно натоварване {!supplement ? "1" : "……"} бр.,</p>
+      <p style={{ marginTop: 6 }}><Box on={supplement} /> хранителни добавки {supplement ? cnt : "…"} бр.,</p>
+      <p style={{ marginTop: 6 }}><Box on={!supplement} /> храни, предназначени за употреба при интензивно мускулно натоварване {!supplement ? cnt : "……"} бр.,</p>
       <p style={{ fontSize: 12, color: "#555" }}>(вярното се отбелязва с Х и се попълва приложение с данни за всяка хранителна добавка по отделно)</p>
 
       <p style={{ marginTop: 8 }}>и законно се предлагат на пазара на друга държава членка на ЕС <Box on /> не; <Box /> да; <Box /> само някои на територията на ......................................................................</p>

@@ -7,12 +7,17 @@
 export interface NzIngredient {
   name_bg: string;
   name_lat?: string | null;
-  kind: "herb" | "vitmin" | "other";
+  kind: "herb" | "vitmin" | "other" | "compound";
   unit: string;
   amount: number | string;
   ref_value?: number | string | null;
   /** optional note, e.g. "доставящ 105,5 mg чист калций" */
   note?: string;
+  // за минерални соли (kind="compound"): солта носи % елементарен минерал
+  elem_element?: string | null; // напр. „Магнезий"
+  elem_factor?: number | string | null; // елементарен = amount × factor
+  elem_ref?: number | string | null; // референтна стойност (NRV) на елемента
+  elemental?: number | string | null; // ръчно въведен елементарен (override)
 }
 
 export interface NzProduct {
@@ -77,9 +82,40 @@ export function nrvPct(amount: number | string, refValue: number | string | null
   return Math.round((a / r) * 100);
 }
 
+/** Елементарен минерал за солта: ръчно въведен или amount × factor. */
+export function elementalAmount(ing: NzIngredient): number | null {
+  if (ing.kind !== "compound") return null;
+  if (ing.elemental !== undefined && ing.elemental !== null && String(ing.elemental) !== "") return num(ing.elemental);
+  const a = num(ing.amount);
+  const f = num(ing.elem_factor);
+  if (!isFinite(a) || !isFinite(f)) return null;
+  return Math.round(a * f * 100) / 100;
+}
+
+/** % NRV на компаунд = елементарен ÷ референтна на елемента × 100. */
+export function compoundNrv(ing: NzIngredient): number | null {
+  const el = elementalAmount(ing);
+  const r = num(ing.elem_ref);
+  if (el === null || !isFinite(r) || r === 0) return null;
+  return Math.round((el / r) * 10000) / 100; // 2 знака (напр. 26,66)
+}
+
 /** Един ред от състава, форматиран според вида на съставката. */
 export function ingredientLine(ing: NzIngredient): string {
   const amount = `${bgNum(num(ing.amount))} ${ing.unit}`.trim();
+
+  // Минерална сол → „доставящ X mg чист <минерал>, Y% от референтни стойности…"
+  if (ing.kind === "compound") {
+    let s = `${ing.name_bg} – ${amount}`;
+    const el = elementalAmount(ing);
+    if (el !== null && ing.elem_element) {
+      s += ` (доставящ ${bgNum(el)} ${ing.unit} чист ${ing.elem_element}`;
+      const pct = compoundNrv(ing);
+      s += pct !== null ? `, ${bgNum(pct)} % от референтни стойности, съгласно Регламент (ЕС) 1169/2011)` : ")";
+    }
+    return s;
+  }
+
   const parts: string[] = [];
   let head = ing.name_bg;
   if (ing.kind === "herb" && ing.name_lat) head = `${ing.name_bg} (${ing.name_lat})`;
