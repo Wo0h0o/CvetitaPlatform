@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, Suspense, type CSSProperties, type ReactNode, type ChangeEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
-import { ArrowLeft, Plus, X, Printer, Save, Loader2, Building2, FileText } from "lucide-react";
+import { ArrowLeft, Plus, X, Printer, Save, Loader2, Building2, FileText, Upload } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import {
   labelDoc,
@@ -90,6 +90,12 @@ function NotifyProductInner() {
 
   const [ingPick, setIngPick] = useState("");
   const [printOnly, setPrintOnly] = useState<null | "label" | "list" | "app">(null);
+
+  // импорт на състав от таблица/снимка
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importNote, setImportNote] = useState("");
 
   // нова съставка (не е в списъка)
   const [showNewIng, setShowNewIng] = useState(false);
@@ -225,6 +231,57 @@ function NotifyProductInner() {
   function updateActive(idx: number, patch: Partial<NzIngredient>) {
     setActive((a) => a.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
+  // намери съставка в базата по име (за да вземе вид/латинско/референтни/фактори)
+  function matchRef(rawName: string) {
+    if (!refs) return null;
+    const n = rawName.toLowerCase().replace(/\s+/g, " ").trim();
+    return (
+      refs.ingredients.find((i) => i.name_bg.toLowerCase().replace(/\s+/g, " ").trim() === n) ||
+      refs.ingredients.find((i) => n.startsWith(i.name_bg.toLowerCase().trim()) || i.name_bg.toLowerCase().trim().startsWith(n)) ||
+      null
+    );
+  }
+
+  function applyParsed(parsed: { product_name?: string; daily_dose?: string; dose_basis?: string; ingredients?: { name: string; amount: number | string; unit: string }[] }) {
+    if (parsed.product_name && !name) setName(parsed.product_name);
+    if (parsed.daily_dose && !dailyDose) setDailyDose(parsed.daily_dose);
+    if (parsed.dose_basis && !doseBasis) setDoseBasis(parsed.dose_basis);
+    const mapped: NzIngredient[] = (parsed.ingredients || []).map((p) => {
+      const ref = matchRef(p.name);
+      if (ref) {
+        return { name_bg: ref.name_bg, name_lat: ref.name_lat, kind: ref.kind, unit: p.unit || ref.unit, ref_value: ref.ref_value ?? null, elem_element: ref.elem_element ?? null, elem_factor: ref.elem_factor ?? null, elem_ref: ref.elem_ref ?? null, amount: String(p.amount ?? "") };
+      }
+      return { name_bg: p.name, name_lat: null, kind: "other", unit: p.unit || "mg", ref_value: null, amount: String(p.amount ?? "") };
+    });
+    if (mapped.length) setActive(mapped);
+    setImportNote(`Разчетени ${mapped.length} съставки. Провери количествата и % NRV.`);
+  }
+
+  async function importComposition(fileBase64?: string, mediaType?: string) {
+    setImporting(true);
+    setImportNote("");
+    try {
+      const payload = fileBase64 ? { fileBase64, mediaType } : { text: importText };
+      const res = await fetch("/api/notify/parse-composition", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const j = await res.json();
+      if (!res.ok || !j.result) { setImportNote(j.error || "Не успях да разчета състава."); return; }
+      applyParsed(j.result);
+      setShowImport(false);
+    } catch {
+      setImportNote("Грешка при разчитане. Опитай пак.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function onImportFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importComposition(String(reader.result), file.type);
+    reader.readAsDataURL(file);
+  }
+
   async function addCustomIngredient() {
     if (!newIng.name_bg.trim()) return;
     const isComp = newIng.kind === "compound";
@@ -504,6 +561,32 @@ function NotifyProductInner() {
 
         {/* ===== Активни съставки ===== */}
         <Card className="p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[13px] font-semibold text-text">Активни съставки</span>
+            <button onClick={() => setShowImport((v) => !v)} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
+              <Upload size={14} /> Импорт от таблица/снимка
+            </button>
+          </div>
+
+          {showImport && (
+            <div className="mb-3 p-3 rounded-lg border border-dashed border-border bg-surface-2">
+              <Label>Постави таблицата със състава (копирай от Word/Excel) или качи снимка/PDF</Label>
+              <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={4} className={inputCls + " resize-y"} placeholder={"напр.\nМагнезиев цитрат\t625 mg\nВитамин D\t50 µg"} />
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <button onClick={() => importComposition()} disabled={importing || !importText.trim()} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg bg-accent text-white disabled:opacity-50 cursor-pointer">
+                  {importing ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} Разчети текста
+                </button>
+                <label className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
+                  <Upload size={15} /> Качи снимка/PDF
+                  <input type="file" accept="image/*,application/pdf" onChange={onImportFile} className="hidden" />
+                </label>
+                {importing && <span className="text-[12px] text-text-3">Разчитам…</span>}
+              </div>
+              <p className="text-[11px] text-text-4 mt-1.5">Съставките се разпознават автоматично; познатите (соли/витамини) идват с латинско име, % NRV и елементарен минерал.</p>
+            </div>
+          )}
+          {importNote && <div className="mb-3 text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2">{importNote}</div>}
+
           <div className="flex items-end gap-2 mb-3">
             <div className="flex-1">
               <Label>Активни съставки (дневна доза)</Label>
