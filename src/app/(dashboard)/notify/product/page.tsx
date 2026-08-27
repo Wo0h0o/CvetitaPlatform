@@ -79,7 +79,6 @@ function NotifyProductInner() {
   const [siteId, setSiteId] = useState<number | null>(null);
   const [distAddr, setDistAddr] = useState("");
   const [submitDate, setSubmitDate] = useState(todayISO());
-  const [eikInput, setEikInput] = useState("");
   const [looking, setLooking] = useState(false);
   const [lookupNote, setLookupNote] = useState("");
   const [company, setCompany] = useState<NzCompany | null>(null);
@@ -137,6 +136,14 @@ function NotifyProductInner() {
   useEffect(() => {
     if (mode === "cvetita") setDistAddr(PRODUCER.siteAddress);
     else setDistAddr("");
+  }, [mode]);
+
+  // при Ишлеме показвай веднага празни фирмени полета (без да чакаш lookup)
+  useEffect(() => {
+    if (mode === "ishleme") {
+      setCompany((c) => (c && c.reg_role !== "producer" ? c : { eik: "", name: "", manager: "", address: "" }));
+      setCompanyId(null);
+    }
   }, [mode]);
 
   // prefill remote-trade block when mode or company identity changes
@@ -238,24 +245,23 @@ function NotifyProductInner() {
   }
 
   async function lookupCompany() {
-    const eik = eikInput.replace(/\D/g, "");
+    const eik = (company?.eik || "").replace(/\D/g, "");
     if (!eik) { setLookupNote("Въведи ЕИК."); return; }
     setLooking(true);
     setLookupNote("");
     try {
       const res = await fetch(`/api/notify/company-lookup?eik=${eik}`);
-      if (!res.ok) { setLookupNote(`Грешка ${res.status}. Опитай пак след минута (може деплоят още да тече).`); return; }
+      if (!res.ok) { setLookupNote(`Грешка ${res.status}. Опитай пак след минута.`); return; }
       const r = await res.json();
-      if (r.company && (r.company.name || r.source === "vies")) {
-        setCompany({ eik, name: "", manager: "", address: "", ...r.company });
+      if (r.company && r.company.name) {
+        setCompany((c) => ({ eik, name: "", manager: "", address: "", ...c, ...r.company }));
         setCompanyId(r.company.id ?? null);
-        setLookupNote(r.note || (r.source === "saved" ? "Заредена запазена фирма." : "Данните са извадени от VIES — провери и допълни управителя."));
+        setLookupNote(r.source === "saved" ? "Заредена запазена фирма." : "Попълнено от VIES — провери и допълни управителя.");
       } else {
-        setCompany({ eik, name: "", manager: "", address: "" });
-        setLookupNote(r.note || "Не намерих данни — попълни ръчно.");
+        setLookupNote("Няма в VIES (фирмата не е по ДДС) — попълни данните ръчно и натисни „Запази фирмата“.");
       }
     } catch {
-      setLookupNote("Няма връзка. Провери мрежата и опитай пак.");
+      setLookupNote("Няма връзка. Попълни ръчно.");
     } finally {
       setLooking(false);
     }
@@ -338,31 +344,34 @@ function NotifyProductInner() {
             </div>
           ) : (
             <div className="mt-3 grid gap-3">
-              <div className="flex gap-2 items-end flex-wrap">
-                <div className="flex-1 min-w-[180px]">
-                  <Label>ЕИК на фирмата</Label>
-                  <input value={eikInput} onChange={(e) => setEikInput(e.target.value)} placeholder="напр. 207824602" className={inputCls} />
-                </div>
-                <button onClick={lookupCompany} disabled={looking} className="flex items-center gap-2 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
-                  {looking ? <Loader2 size={15} className="animate-spin" /> : <Building2 size={15} />} Извади данни
-                </button>
-                {refs && refs.companies.filter((c) => c.reg_role !== "producer").length > 0 && (
-                  <select className={inputCls + " max-w-[240px]"} value={companyId ?? ""} onChange={(e) => { const c = refs.companies.find((x) => String(x.id) === e.target.value); if (c) { setCompany(c); setCompanyId(c.id); } }}>
-                    <option value="">— запазена фирма —</option>
+              {refs && refs.companies.filter((c) => c.reg_role !== "producer").length > 0 && (
+                <div>
+                  <Label>Избери запазена фирма</Label>
+                  <select className={inputCls} value={companyId ?? ""} onChange={(e) => { const c = refs.companies.find((x) => String(x.id) === e.target.value); if (c) { setCompany(c); setCompanyId(c.id); } else { setCompany({ eik: "", name: "", manager: "", address: "" }); setCompanyId(null); } }}>
+                    <option value="">— нова фирма —</option>
                     {refs.companies.filter((c) => c.reg_role !== "producer").map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
-                )}
-              </div>
-              {lookupNote && <div className="text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2">{lookupNote}</div>}
+                </div>
+              )}
               {company && (
                 <>
                   <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label>ЕИК / БУЛСТАТ</Label>
+                      <div className="flex gap-2">
+                        <input value={company.eik || ""} onChange={(e) => setCompany({ ...company, eik: e.target.value })} placeholder="напр. 201117033" className={inputCls} />
+                        <button onClick={lookupCompany} disabled={looking} title="Опитай авто-попълване от VIES (само за ДДС-регистрирани фирми)" className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer whitespace-nowrap disabled:opacity-50">
+                          {looking ? <Loader2 size={15} className="animate-spin" /> : <Building2 size={15} />} VIES
+                        </button>
+                      </div>
+                    </div>
                     <div><Label>Фирма</Label><input value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className={inputCls} placeholder="напр. КОККОЛИС ЕООД" /></div>
                     <div><Label>Управител (трите имена)</Label><input value={company.manager || ""} onChange={(e) => setCompany({ ...company, manager: e.target.value })} className={inputCls} /></div>
-                    <div className="sm:col-span-2"><Label>Адрес на управление</Label><input value={company.address || ""} onChange={(e) => setCompany({ ...company, address: e.target.value })} className={inputCls} /></div>
+                    <div><Label>Адрес на управление</Label><input value={company.address || ""} onChange={(e) => setCompany({ ...company, address: e.target.value })} className={inputCls} placeholder="гр. …, ул. … № …" /></div>
                   </div>
+                  {lookupNote && <div className="text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2">{lookupNote}</div>}
 
                   {/* Търговия от разстояние — редактируемо за ишлеме */}
                   <div className="rounded-lg border border-border p-3 mt-1">
