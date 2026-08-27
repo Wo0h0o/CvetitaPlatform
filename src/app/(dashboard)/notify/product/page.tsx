@@ -256,12 +256,13 @@ function NotifyProductInner() {
       if (r.company && r.company.name) {
         setCompany((c) => ({ eik, name: "", manager: "", address: "", ...c, ...r.company }));
         setCompanyId(r.company.id ?? null);
-        setLookupNote(r.source === "saved" ? "Заредена запазена фирма." : "Попълнено от VIES — провери и допълни управителя.");
+        const src = r.source === "saved" ? "запазена фирма" : r.source === "papagal" ? "Търговския регистър" : "VIES";
+        setLookupNote(`Извадено от ${src} — провери данните и натисни „Запази фирмата“.`);
       } else {
-        setLookupNote("Няма в VIES (фирмата не е по ДДС) — попълни данните ръчно и натисни „Запази фирмата“.");
+        setLookupNote(r.note || "Не намерих фирмата автоматично — попълни ръчно.");
       }
     } catch {
-      setLookupNote("Няма връзка. Попълни ръчно.");
+      setLookupNote("Няма връзка. Опитай пак.");
     } finally {
       setLooking(false);
     }
@@ -361,9 +362,9 @@ function NotifyProductInner() {
                     <div>
                       <Label>ЕИК / БУЛСТАТ</Label>
                       <div className="flex gap-2">
-                        <input value={company.eik || ""} onChange={(e) => setCompany({ ...company, eik: e.target.value })} placeholder="напр. 201117033" className={inputCls} />
-                        <button onClick={lookupCompany} disabled={looking} title="Опитай авто-попълване от VIES (само за ДДС-регистрирани фирми)" className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer whitespace-nowrap disabled:opacity-50">
-                          {looking ? <Loader2 size={15} className="animate-spin" /> : <Building2 size={15} />} VIES
+                        <input value={company.eik || ""} onChange={(e) => setCompany({ ...company, eik: e.target.value })} placeholder="напр. 201117033" className={inputCls} onKeyDown={(e) => { if (e.key === "Enter") lookupCompany(); }} />
+                        <button onClick={lookupCompany} disabled={looking} title="Извади име, адрес и управител от Търговския регистър по ЕИК" className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer whitespace-nowrap disabled:opacity-50">
+                          {looking ? <Loader2 size={15} className="animate-spin" /> : <Building2 size={15} />} Извади данни
                         </button>
                       </div>
                     </div>

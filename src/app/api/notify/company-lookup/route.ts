@@ -3,13 +3,62 @@ import type { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fetchWithTimeout } from "@/lib/fetch-utils";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/notify/company-lookup?eik=XXXXXXXXX
- * Returns a saved company (if we already know this EIK), otherwise looks up
- * name + registered address from the EU VIES service. The manager (управител)
- * is not in VIES, so the UI collects it once and saves the company for reuse.
+ *
+ * Auto-extracts a Bulgarian company's name / seat address / manager by EIK.
+ * Priority: (1) already-saved company, (2) public Trade-Register catalogue
+ * (papagal.bg — covers VAT and non-VAT firms), (3) VIES fallback (VAT only).
+ * Nothing is persisted here — the UI decides when to save.
  */
+
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+const stripTags = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+const cleanAddr = (s: string) =>
+  stripTags(s)
+    .replace(/^БЪЛГАРИЯ,\s*/i, "")
+    .replace(/\s*Има\s+\d+\s+фирм[аи].*$/i, "") // papagal UI артефакт
+    .replace(/\s*виж фирмите.*$/i, "")
+    .replace(/[„“”"]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Trade-Register catalogue (papagal.bg): EIK → {name, address, manager}. */
+async function lookupPapagal(eik: string): Promise<{ name: string; address: string; manager: string; has_vat?: boolean } | null> {
+  const common = { "User-Agent": UA, Accept: "application/json, text/html", Referer: "https://papagal.bg/", "X-Requested-With": "XMLHttpRequest" };
+  const acRes = await fetchWithTimeout(`https://papagal.bg/autocomplete/?query=${eik}`, { headers: common }, 12000);
+  const ac = await acRes.json();
+  const hit = ac?.companies?.[0];
+  if (!hit?.url) return null;
+
+  const pageRes = await fetchWithTimeout(`https://papagal.bg${hit.url}`, { headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://papagal.bg/" } }, 12000);
+  const html = await pageRes.text();
+
+  // Definition list: <dt>label</dt><dd>value</dd>
+  const map: Record<string, string> = {};
+  for (const m of html.matchAll(/<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/g)) {
+    map[stripTags(m[1])] = m[2];
+  }
+  const address = map["Седалище адрес"] ? cleanAddr(map["Седалище адрес"]) : "";
+  let manager = "";
+  const repr = map["Представляващи"] ? stripTags(map["Представляващи"]) : "";
+  const mgrMatch = repr.match(/Управител:\s*([^(]+?)(?:\s*\(|$)/);
+  if (mgrMatch) manager = mgrMatch[1].trim();
+
+  return { name: String(hit.name_bg || hit.name_en || "").trim(), address, manager, has_vat: hit.has_vat };
+}
+
+/** VIES fallback (VAT-registered only). */
+async function lookupVies(eik: string): Promise<{ name: string; address: string } | null> {
+  const res = await fetchWithTimeout(`https://ec.europa.eu/taxation_customs/vies/rest-api/ms/BG/vat/${eik}`, { headers: { Accept: "application/json" } }, 10000);
+  const v = await res.json();
+  if (!v?.isValid) return null;
+  return { name: String(v.name || "").trim(), address: (v.address || "").replace(/\s+/g, " ").trim() };
+}
+
 export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
@@ -17,27 +66,30 @@ export async function GET(req: NextRequest) {
   const eik = (new URL(req.url).searchParams.get("eik") || "").replace(/\D/g, "");
   if (!eik) return NextResponse.json({ error: "eik required" }, { status: 400 });
 
-  // вече запазена фирма?
+  // 1) вече запазена фирма
   const { data: saved } = await supabaseAdmin.from("nz_companies").select("*").eq("eik", eik).maybeSingle();
   if (saved) return NextResponse.json({ source: "saved", company: saved });
 
-  // VIES (ЕС ДДС) — име + адрес
+  // 2) Търговски регистър (papagal) — всички фирми
   try {
-    const res = await fetchWithTimeout(
-      `https://ec.europa.eu/taxation_customs/vies/rest-api/ms/BG/vat/${eik}`,
-      { headers: { Accept: "application/json" } },
-      12000
-    );
-    const v = await res.json();
-    if (v?.isValid) {
-      const name = String(v.name || "").replace(/\s*-\s*(ООД|ЕООД|АД|ЕАД)\s*$/i, "").trim();
+    const p = await lookupPapagal(eik);
+    if (p && p.name) {
       return NextResponse.json({
-        source: "vies",
-        company: { eik, name, address: (v.address || "").replace(/\s+/g, " ").trim(), vat: `BG${eik}`, manager: "" },
+        source: "papagal",
+        company: { eik, name: p.name, address: p.address, manager: p.manager, vat: p.has_vat ? `BG${eik}` : "" },
       });
     }
-    return NextResponse.json({ source: "vies", company: { eik, name: "", address: "", vat: `BG${eik}`, manager: "" }, note: "VIES не намери валиден номер — попълни ръчно." });
-  } catch {
-    return NextResponse.json({ source: "none", company: { eik, name: "", address: "", vat: `BG${eik}`, manager: "" }, note: "Няма връзка с VIES — попълни ръчно." });
+  } catch (e) {
+    logger.error("papagal lookup failed", { error: String(e) });
   }
+
+  // 3) VIES fallback
+  try {
+    const v = await lookupVies(eik);
+    if (v) return NextResponse.json({ source: "vies", company: { eik, name: v.name, address: v.address, manager: "", vat: `BG${eik}` } });
+  } catch {
+    /* ignore */
+  }
+
+  return NextResponse.json({ source: "none", company: { eik, name: "", address: "", manager: "" }, note: "Не намерих фирмата автоматично — попълни ръчно." });
 }
