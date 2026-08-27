@@ -54,6 +54,9 @@ export const PRODUCER = {
 // Регулаторен контакт за подаване (винаги Цветита)
 export const FILING_CONTACT = { phone: "0885363623", email: "pm@cvetitaherbal.com" };
 
+// Търговия от разстояние на Цветита (по подразбиране „да“)
+export const CVETITA_REMOTE = { website: "www.cvetitaherbal.com", phone: "0988393509", email: "office@cvetitaherbal.com" };
+
 const num = (v: number | string | null | undefined): number => {
   if (v === null || v === undefined || v === "") return NaN;
   return typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));

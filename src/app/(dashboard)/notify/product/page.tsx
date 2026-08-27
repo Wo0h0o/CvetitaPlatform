@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense, type CSSProperties, type ReactNode } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
@@ -13,9 +13,9 @@ import {
   nrvPct,
   marketDate,
   bgDate,
-  typeLabel,
   PRODUCER,
   FILING_CONTACT,
+  CVETITA_REMOTE,
   type NzProduct,
   type NzIngredient,
   type NzCompany,
@@ -32,7 +32,7 @@ interface Refs {
   options: { id: number; kind: string; value: string }[];
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function Label({ children }: { children: ReactNode }) {
   return <label className="block text-[11px] font-medium uppercase tracking-wider text-text-3 mb-1">{children}</label>;
 }
 const inputCls =
@@ -42,7 +42,7 @@ function NotifyProductInner() {
   const params = useSearchParams();
   const router = useRouter();
   const editId = params.get("id");
-  const { data: refs } = useSWR<Refs>("/api/notify/refs", fetcher, { revalidateOnFocus: false });
+  const { data: refs, mutate: mutateRefs } = useSWR<Refs>("/api/notify/refs", fetcher, { revalidateOnFocus: false });
 
   // ---- product fields ----
   const [name, setName] = useState("");
@@ -71,10 +71,16 @@ function NotifyProductInner() {
   const [submitDate, setSubmitDate] = useState(todayISO());
   const [eikInput, setEikInput] = useState("");
   const [looking, setLooking] = useState(false);
+  const [lookupNote, setLookupNote] = useState("");
   const [company, setCompany] = useState<NzCompany | null>(null);
 
   const [ingPick, setIngPick] = useState("");
   const [printOnly, setPrintOnly] = useState<null | "label" | "list" | "app">(null);
+
+  // нова съставка (не е в списъка)
+  const [showNewIng, setShowNewIng] = useState(false);
+  const emptyNewIng = { name_bg: "", kind: "other" as NzIngredient["kind"], unit: "mg", name_lat: "", ref_value: "" };
+  const [newIng, setNewIng] = useState(emptyNewIng);
 
   // load existing product
   useEffect(() => {
@@ -150,16 +156,47 @@ function NotifyProductInner() {
   function updateActive(idx: number, patch: Partial<NzIngredient>) {
     setActive((a) => a.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
+  async function addCustomIngredient() {
+    if (!newIng.name_bg.trim()) return;
+    const ing: NzIngredient = {
+      name_bg: newIng.name_bg.trim(),
+      name_lat: newIng.kind === "herb" ? newIng.name_lat.trim() || null : null,
+      kind: newIng.kind,
+      unit: newIng.unit.trim() || "mg",
+      ref_value: newIng.kind === "vitmin" && newIng.ref_value ? newIng.ref_value : null,
+      amount: "",
+    };
+    setActive((a) => [...a, ing]);
+    // запази в базата за следващ път
+    await fetch("/api/notify/refs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "ingredient", name_bg: ing.name_bg, name_lat: ing.name_lat, kind: ing.kind, unit: ing.unit, ref_value: ing.ref_value }),
+    }).catch(() => {});
+    mutateRefs();
+    setNewIng(emptyNewIng);
+    setShowNewIng(false);
+  }
 
   async function lookupCompany() {
-    if (!eikInput.trim()) return;
+    const eik = eikInput.replace(/\D/g, "");
+    if (!eik) { setLookupNote("Въведи ЕИК."); return; }
     setLooking(true);
+    setLookupNote("");
     try {
-      const r = await fetch(`/api/notify/company-lookup?eik=${eikInput.replace(/\D/g, "")}`).then((x) => x.json());
-      if (r.company) {
-        setCompany(r.company);
+      const res = await fetch(`/api/notify/company-lookup?eik=${eik}`);
+      if (!res.ok) { setLookupNote(`Грешка ${res.status}. Опитай пак след минута (може деплоят още да тече).`); return; }
+      const r = await res.json();
+      if (r.company && (r.company.name || r.source === "vies")) {
+        setCompany({ eik, name: "", manager: "", address: "", ...r.company });
         setCompanyId(r.company.id ?? null);
+        setLookupNote(r.note || (r.source === "saved" ? "Заредена запазена фирма." : "Данните са извадени от VIES — провери и допълни управителя."));
+      } else {
+        setCompany({ eik, name: "", manager: "", address: "" });
+        setLookupNote(r.note || "Не намерих данни — попълни ръчно.");
       }
+    } catch {
+      setLookupNote("Няма връзка. Провери мрежата и опитай пак.");
     } finally {
       setLooking(false);
     }
@@ -265,6 +302,7 @@ function NotifyProductInner() {
                   </select>
                 )}
               </div>
+              {lookupNote && <div className="text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2">{lookupNote}</div>}
               {company && (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div><Label>Фирма</Label><input value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className={inputCls} /></div>
@@ -357,7 +395,42 @@ function NotifyProductInner() {
               </select>
             </div>
             <button onClick={addIngredient} disabled={!ingPick} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg bg-accent text-white disabled:opacity-50 cursor-pointer"><Plus size={15} /> Добави</button>
+            <button onClick={() => setShowNewIng((v) => !v)} className="text-[12px] px-3 py-2 rounded-lg border border-border text-text-2 hover:bg-surface-2 cursor-pointer whitespace-nowrap">+ нова</button>
           </div>
+
+          {showNewIng && (
+            <div className="mb-3 p-3 rounded-lg border border-dashed border-border bg-surface-2 grid sm:grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
+              <div>
+                <Label>Име (българско)</Label>
+                <input value={newIng.name_bg} onChange={(e) => setNewIng({ ...newIng, name_bg: e.target.value })} className={inputCls} placeholder="напр. Витамин K2-MK7" />
+              </div>
+              <div>
+                <Label>Вид</Label>
+                <select value={newIng.kind} onChange={(e) => setNewIng({ ...newIng, kind: e.target.value as NzIngredient["kind"] })} className={inputCls}>
+                  <option value="other">друга</option>
+                  <option value="herb">билка</option>
+                  <option value="vitmin">витамин/минерал</option>
+                </select>
+              </div>
+              <div className="w-[80px]">
+                <Label>Мярка</Label>
+                <input value={newIng.unit} onChange={(e) => setNewIng({ ...newIng, unit: e.target.value })} className={inputCls} placeholder="mg" />
+              </div>
+              <button onClick={addCustomIngredient} disabled={!newIng.name_bg.trim()} className="px-3 py-2 rounded-lg bg-accent text-white text-[13px] disabled:opacity-50 cursor-pointer">Запази</button>
+              {newIng.kind === "herb" && (
+                <div className="sm:col-span-4">
+                  <Label>Латинско име</Label>
+                  <input value={newIng.name_lat} onChange={(e) => setNewIng({ ...newIng, name_lat: e.target.value })} className={inputCls} placeholder="напр. Menaquinone-7" />
+                </div>
+              )}
+              {newIng.kind === "vitmin" && (
+                <div className="sm:col-span-4">
+                  <Label>Референтна стойност (за % NRV — по избор)</Label>
+                  <input value={newIng.ref_value} onChange={(e) => setNewIng({ ...newIng, ref_value: e.target.value })} className={inputCls} placeholder="напр. 75" />
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             {active.map((ing, idx) => {
               const pct = nrvPct(ing.amount, ing.ref_value ?? null);
@@ -412,12 +485,11 @@ function NotifyProductInner() {
       }`}</style>
       <div id="docs" className="space-y-6">
         <DocLabel product={product} hidden={printOnly !== null && printOnly !== "label"} />
-        <DocList product={product} company={mode === "cvetita" ? { name: PRODUCER.name } : company} hidden={printOnly !== null && printOnly !== "list"} />
+        <DocList product={product} companyName={mode === "cvetita" ? PRODUCER.name : company?.name || PRODUCER.name} hidden={printOnly !== null && printOnly !== "list"} />
         <DocApplication
           product={product}
           mode={mode}
           company={company}
-          isTrader={isTrader}
           distributionAddr={distributionAddr}
           submitDate={submitDate}
           hidden={printOnly !== null && printOnly !== "app"}
@@ -427,87 +499,182 @@ function NotifyProductInner() {
   );
 }
 
-// ---------- Document renderers (A4, black on white) ----------
-const paper = "doc-page bg-white text-black rounded-xl p-8 md:p-10 max-w-[900px] mx-auto shadow-sm text-[13px] leading-relaxed";
+// ---------- Document renderers (A4, serif, 1:1 с образеца) ----------
+const paperCls = "doc-page bg-white rounded-xl mx-auto shadow-sm";
+const paperStyle: CSSProperties = {
+  fontFamily: '"Times New Roman", Georgia, serif',
+  color: "#000",
+  fontSize: 15,
+  lineHeight: 1.5,
+  padding: "16mm 15mm",
+  maxWidth: 820,
+  textAlign: "justify",
+};
+
+/** Кутийка за отметка (☐ / ☒). */
+function Box({ on }: { on?: boolean }) {
+  return (
+    <span style={{ display: "inline-flex", width: 15, height: 15, border: "1px solid #000", alignItems: "center", justifyContent: "center", fontSize: 11, lineHeight: "13px", verticalAlign: "middle", margin: "0 3px" }}>
+      {on ? "Х" : ""}
+    </span>
+  );
+}
+
+/** Дата в отделни клетки: 1 0 0 9 2 0 2 6 г */
+function DateCells({ date }: { date: string }) {
+  const ds = date.replace(/\D/g, "").slice(0, 8).split("");
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", margin: "6px 0" }}>
+      {ds.map((d, i) => (
+        <span key={i} style={{ width: 24, height: 28, borderTop: "1px solid #000", borderBottom: "1px solid #000", borderRight: "1px solid #000", borderLeft: i === 0 ? "1px solid #000" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>{d}</span>
+      ))}
+      <span style={{ marginLeft: 6 }}>г</span>
+    </span>
+  );
+}
 
 function DocLabel({ product, hidden }: { product: NzProduct; hidden: boolean }) {
   const d = labelDoc(product);
   return (
-    <div className={`${paper} ${hidden ? "hidden" : ""}`}>
-      <div className="text-center text-[10px] uppercase tracking-wider text-gray-400 mb-3">Проекто-етикет</div>
-      <h2 className="text-[20px] font-bold text-center">{d.name || "—"}</h2>
-      <p className="text-center text-[13px] mb-3">{d.subtitle}</p>
-      <p className="text-gray-600 text-[11px]">{d.regLine}</p>
-      {d.action && <p className="mt-2"><b>{d.action}</b></p>}
-      <p className="mt-2">{d.packsLine}</p>
+    <div className={`${paperCls} ${hidden ? "hidden" : ""}`} style={paperStyle}>
+      <div style={{ textAlign: "center", fontSize: 10, letterSpacing: 1, color: "#999", marginBottom: 8 }}>ПРОЕКТО-ЕТИКЕТ</div>
+      <h2 style={{ textAlign: "center", fontSize: 22, fontWeight: 700 }}>{d.name || "—"}</h2>
+      <p style={{ textAlign: "center", marginBottom: 8 }}>{d.subtitle}</p>
+      <p style={{ fontSize: 12, color: "#555" }}>{d.regLine}</p>
+      {d.action && <p style={{ marginTop: 6, fontWeight: 700 }}>{d.action}</p>}
+      <p style={{ marginTop: 6 }}>{d.packsLine}</p>
       <p>{d.countLine}</p>
       <p>{d.netLine}</p>
-      {d.doseLine && <p className="mt-2">{d.doseLine}</p>}
-      <p className="mt-2">{d.composition}</p>
-      {d.additional && <p className="mt-1">{d.additional}</p>}
-      {d.sweetener && <p className="mt-1">{d.sweetener}</p>}
-      <p className="mt-1">{d.contents}</p>
-      <ul className="mt-3 space-y-0.5 text-[12px]">
-        {d.warnings.map((w) => <li key={w}>• {w}</li>)}
-      </ul>
-      <p className="mt-3 text-[12px]">{d.producer}</p>
-      <div className="mt-1 text-[12px] text-gray-600">{d.footer.map((f) => <div key={f}>{f}</div>)}</div>
+      {d.doseLine && <p style={{ marginTop: 6 }}>{d.doseLine}</p>}
+      <p style={{ marginTop: 6 }}>{d.composition}</p>
+      {d.additional && <p style={{ marginTop: 3 }}>{d.additional}</p>}
+      {d.sweetener && <p style={{ marginTop: 3 }}>{d.sweetener}</p>}
+      <p style={{ marginTop: 3 }}>{d.contents}</p>
+      <div style={{ marginTop: 10 }}>{d.warnings.map((w) => <div key={w}>{w}</div>)}</div>
+      <p style={{ marginTop: 12 }}>{d.producer}</p>
+      <div style={{ marginTop: 4, color: "#555" }}>{d.footer.map((f) => <div key={f}>{f}</div>)}</div>
     </div>
   );
 }
 
-function DocList({ product, company, hidden }: { product: NzProduct; company: { name: string } | null; hidden: boolean }) {
+function DocList({ product, companyName, hidden }: { product: NzProduct; companyName: string; hidden: boolean }) {
+  const sport = product.product_type === "sport";
   return (
-    <div className={`${paper} ${hidden ? "hidden" : ""}`}>
-      <div className="text-center text-[11px]">(Образец КХ № 24)</div>
-      <p className="text-center text-[11px] text-gray-600 mt-1">Приложение към Заявление за пускане на пазара на хранителна добавка и/или храна, предназначена за употреба при интензивно мускулно натоварване</p>
-      <h3 className="text-center font-bold mt-3 text-[13px]">СПИСЪК НА ХРАНИТЕЛНИТЕ ДОБАВКИ ИЛИ ХРАНИ, ПРЕДНАЗНАЧЕНИ ЗА УПОТРЕБА ПРИ ИНТЕНЗИВНО МУСКУЛНО НАТОВАРВАНЕ КЪМ ЗАЯВЛЕНИЕ ОТ</h3>
-      <p className="text-center font-semibold mt-1">ФИРМА {(company?.name || PRODUCER.name).toUpperCase()}</p>
-      <p className="mt-3"><b>1. Търговско наименование:</b> {product.name || "—"}</p>
-      <p className="mt-1"><b>Х</b> {typeLabel(product.product_type)}, която се произвежда в обект, находящ се в: {PRODUCER.siteAddress}</p>
-      <p className="mt-1 text-[11px] text-gray-600">(точен адрес на обекта, в който ще се осъществява дейността)</p>
-      <p className="mt-1">От {PRODUCER.name}, {PRODUCER.seat}</p>
-      <p className="mt-1 text-[11px] text-gray-600">(наименование, седалище и адрес на управление на бизнес оператора по производство)</p>
-      <p className="mt-2">с качествен и количествен състав на веществата с хранителен и физиологичен ефект в препоръчаната дневна доза:</p>
-      <p className="mt-1">Дози в опаковка: {(product.pack_sizes ?? []).join(", ")}</p>
+    <div className={`${paperCls} ${hidden ? "hidden" : ""}`} style={paperStyle}>
+      <div style={{ textAlign: "center" }}>(Образец КХ № 24)</div>
+      <p style={{ textAlign: "center", fontSize: 12, color: "#555", marginTop: 4 }}>Приложение към Заявление за пускане на пазара на хранителна добавка и/или храна, предназначена за употреба при интензивно мускулно натоварване</p>
+      <h3 style={{ textAlign: "center", fontWeight: 700, marginTop: 12 }}>СПИСЪК НА ХРАНИТЕЛНИТЕ ДОБАВКИ ИЛИ ХРАНИ, ПРЕДНАЗНАЧЕНИ ЗА УПОТРЕБА ПРИ ИНТЕНЗИВНО МУСКУЛНО НАТОВАРВАНЕ КЪМ ЗАЯВЛЕНИЕ ОТ</h3>
+      <p style={{ textAlign: "center", fontWeight: 600, marginTop: 4 }}>ФИРМА {companyName.toUpperCase()}</p>
+      <p style={{ marginTop: 12 }}><b>1. Търговско наименование:</b> {product.name || "—"}</p>
+      <p style={{ marginTop: 4 }}>
+        <Box on={!sport} /> хранителна добавка, <Box on={sport} /> храна, предназначена за употреба при интензивно мускулно натоварване, която се произвежда в обект, находящ се в: {PRODUCER.siteAddress}
+      </p>
+      <p style={{ fontSize: 12, color: "#555" }}>(точен адрес на обекта, в който ще се осъществява дейността)</p>
+      <p style={{ marginTop: 4 }}>От {PRODUCER.name}, {PRODUCER.seat}</p>
+      <p style={{ fontSize: 12, color: "#555" }}>(наименование, седалище и адрес на управление на бизнес оператора по производство)</p>
+      <p style={{ marginTop: 8 }}>с качествен и количествен състав на веществата с хранителен и физиологичен ефект в препоръчаната дневна доза:</p>
+      <p style={{ marginTop: 4 }}>Дози в опаковка: {(product.pack_sizes ?? []).join(", ")}</p>
       <p>Нетно количество: {netWeightsAll(product)}</p>
-      <p className="mt-1">{compositionText(product)}</p>
-      {product.daily_dose && <p className="mt-1">Препоръчителна дневна доза: {product.daily_dose}</p>}
-      {product.sweetener && <p className="mt-1">Подсладител: {product.sweetener}</p>}
-      {product.action && <p className="mt-1">и е предназначена за: {product.action}</p>}
-      <p className="mt-2">и законно се предлагат на пазара на друга държава членка на ЕС: <b>Х не</b></p>
+      <p style={{ marginTop: 4 }}>{compositionText(product)}</p>
+      {product.daily_dose && <p style={{ marginTop: 4 }}>Препоръчителна дневна доза: {product.daily_dose}</p>}
+      {product.sweetener && <p style={{ marginTop: 4 }}>Подсладител: {product.sweetener}</p>}
+      {product.action && <p style={{ marginTop: 4 }}>и е предназначена за: {product.action}</p>}
+      <p style={{ fontSize: 12, color: "#555" }}>(описание на предназначението на хранителната добавка или храната)</p>
+      <p style={{ marginTop: 6 }}>и законно се предлагат на пазара на друга държава членка на ЕС <Box on /> не, <Box /> да</p>
     </div>
   );
 }
 
 function DocApplication({
-  product, mode, company, isTrader, distributionAddr, submitDate, hidden,
+  product, mode, company, distributionAddr, submitDate, hidden,
 }: {
-  product: NzProduct; mode: "cvetita" | "ishleme"; company: NzCompany | null; isTrader: boolean; distributionAddr: string; submitDate: string; hidden: boolean;
+  product: NzProduct; mode: "cvetita" | "ishleme"; company: NzCompany | null; distributionAddr: string; submitDate: string; hidden: boolean;
 }) {
+  const isTrader = mode === "ishleme";
   const reg = mode === "cvetita"
-    ? { manager: "Георги Добрев Петков", name: PRODUCER.name, address: `гр. Бургас, община Бургас, ул. Граф Игнатиев № 17`, eik: "203492157" }
-    : { manager: company?.manager || "……………", name: company?.name || "……………", address: company?.address || "……………", eik: company?.eik || "……………" };
-  const remote = isTrader && (company?.remote_website || company?.remote_email || company?.remote_phone);
+    ? { manager: "ГЕОРГИ ДОБРЕВ ПЕТКОВ", name: "ЦВЕТИТА ХЕРБАЛ ЕООД", address: "гр. Бургас, община Бургас, ж.к./ул ГРАФ ИГНАТИЕВ № 17", eik: "203492157", city: "Бургас" }
+    : {
+        manager: company?.manager || "……………………………",
+        name: company?.name || "……………………………",
+        address: company?.address || "……………………………",
+        eik: company?.eik || "…………………",
+        city: (company?.address || "").match(/гр\.?\s*([А-Яа-яЁё\-]+)/)?.[1] || "………",
+      };
+  const remote = mode === "cvetita"
+    ? { website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email }
+    : company?.remote_website || company?.remote_email || company?.remote_phone
+    ? { website: company?.remote_website || "", phone: company?.remote_phone || "", email: company?.remote_email || "" }
+    : null;
+  const supplement = product.product_type === "supplement";
+
   return (
-    <div className={`${paper} ${hidden ? "hidden" : ""}`}>
-      <div className="text-[10px] text-gray-500">Приложение № 24 към Заповед № РД 11-1696/24.07.2020 г. (Образец KХ № 24)</div>
-      <div className="text-center mt-3 text-[12px]">ДО ИЗПЪЛНИТЕЛНИЯ ДИРЕКТОР НА<br />БЪЛГАРСКАТА АГЕНЦИЯ ПО БЕЗОПАСНОСТ НА ХРАНИТЕ, ГР. СОФИЯ</div>
-      <h3 className="text-center font-bold mt-3">З А Я В Л Е Н И Е</h3>
-      <p className="text-center text-[12px]">ЗА ПУСКАНЕ НА ПАЗАРА НА ХРАНИТЕЛНА ДОБАВКА И/ИЛИ ХРАНА, ПРЕДНАЗНАЧЕНА ЗА УПОТРЕБА ПРИ ИНТЕНЗИВНО МУСКУЛНО НАТОВАРВАНЕ</p>
-      <p className="mt-3">От <b>{reg.manager}</b>, в качеството му на <b>управител</b> на фирма <b>{reg.name}</b>, адрес на управление: {reg.address}, ЕИК/БУЛСТАТ {reg.eik}, Телефон: {FILING_CONTACT.phone}, e-mail: {FILING_CONTACT.email}</p>
-      <p className="mt-2">{mode === "cvetita" ? "Производител в Република България:  Х" : "Търговец:  Х"}</p>
-      <p className="mt-2">Моля да бъдат регистрирани по чл. 79 от Закона за храните:</p>
-      <p>{product.product_type === "supplement" ? "Х  хранителни добавки — 1 бр." : "Х  храни, предназначени за употреба при интензивно мускулно натоварване — 1 бр."}</p>
-      <p className="mt-2">Вид и адрес на обекта за дистрибуция: {distributionAddr || "……………"}</p>
-      <p className="mt-2">Търговия с храни от разстояние: <b>{remote ? "Х да" : "Х не"}</b></p>
+    <div className={`${paperCls} ${hidden ? "hidden" : ""}`} style={paperStyle}>
+      <div style={{ fontSize: 11 }}>
+        Приложение № 24 към Заповед № РД 11-1696/24.07.2020 г. на изп. директор на БАБХ <b>(Образец KХ № 24)</b><br />
+        <span style={{ fontSize: 10, color: "#444" }}>Изменен със Заповед № РД 11-1206/10.06.2021 г., Заповед № РД 11-1477/29.06.2021 г. и Заповед № РД 11-43/14.01.2022 г. на изпълнителния директор на БАБХ</span>
+      </div>
+      <div style={{ marginTop: 22, fontWeight: 700 }}>ДО<br />ИЗПЪЛНИТЕЛНИЯ ДИРЕКТОР НА<br />БЪЛГАРСКАТА АГЕНЦИЯ ПО БЕЗОПАСНОСТ НА ХРАНИТЕ ГР. СОФИЯ</div>
+
+      <h3 style={{ textAlign: "center", fontWeight: 700, letterSpacing: 4, marginTop: 26 }}>З А Я В Л Е Н И Е</h3>
+      <p style={{ textAlign: "center" }}>ЗА ПУСКАНЕ НА ПАЗАРА НА ХРАНИТЕЛНА ДОБАВКА И/ИЛИ<br />ХРАНА, ПРЕДНАЗНАЧЕНА ЗА УПОТРЕБА ПРИ ИНТЕНЗИВНО МУСКУЛНО НАТОВАРВАНЕ</p>
+
+      <p style={{ textAlign: "center", marginTop: 18 }}>От {reg.manager}</p>
+      <p style={{ textAlign: "center", fontSize: 12, color: "#555" }}>(трите имена)</p>
+      <p style={{ marginTop: 6 }}>В качеството му на  УПРАВИТЕЛ</p>
+      <p style={{ fontSize: 12, color: "#555" }}>(управител, упълномощено лице)</p>
+      <p style={{ marginTop: 4 }}>на фирма {reg.name} адрес на управление: {reg.address} тел {FILING_CONTACT.phone} ЕИК/БУЛСТАТ {reg.eik}</p>
+      <p>Телефон: {FILING_CONTACT.phone} e-mail: {FILING_CONTACT.email}</p>
+      <p style={{ marginTop: 4 }}>Производител в Република България <Box on={!isTrader} /> &nbsp;&nbsp;&nbsp; Търговец <Box on={isTrader} /></p>
+      <p style={{ textAlign: "center", fontSize: 12, color: "#555" }}>(вярното се отбелязва с Х)</p>
+
+      <p style={{ textAlign: "center", fontWeight: 700, marginTop: 18 }}>УВАЖАЕМИ ГОСПОДИН ИЗПЪЛНИТЕЛЕН ДИРЕКТОР,</p>
+
+      <p style={{ marginTop: 14 }}>Моля да бъдат регистрирани по чл. 79 от Закона за храните:</p>
+      <p style={{ marginTop: 6 }}><Box on={supplement} /> хранителни добавки {supplement ? "1" : "…"} бр.,</p>
+      <p style={{ marginTop: 6 }}><Box on={!supplement} /> храни, предназначени за употреба при интензивно мускулно натоварване {!supplement ? "1" : "……"} бр.,</p>
+      <p style={{ fontSize: 12, color: "#555" }}>(вярното се отбелязва с Х и се попълва приложение с данни за всяка хранителна добавка по отделно)</p>
+
+      <p style={{ marginTop: 8 }}>и законно се предлагат на пазара на друга държава членка на ЕС <Box on /> не; <Box /> да; <Box /> само някои на територията на ......................................................................</p>
+      <p style={{ marginTop: 8 }}>Вид и адрес на обекта за дистрибуция: {distributionAddr || "……………………………"}</p>
+
+      <p style={{ marginTop: 10 }}>Търговия с храни от разстояние <Box on={!!remote} /> да; <Box on={!remote} /> не;</p>
+      <p style={{ fontSize: 12, color: "#555" }}>Ако отговора е „да“ - описание на начина на търговия с храни от разстояние, включително средствата за комуникация: електронен адрес, интернет страница, телефонен номер, пощенски адрес, електронна поща и други, които ще се използват:</p>
       {remote && (
-        <p className="text-[12px]">Описание: чрез поръчки в интернет страница, по телефон или имейл. {company?.remote_website ? `Интернет страница: ${company.remote_website}. ` : ""}{company?.remote_email ? `Имейл: ${company.remote_email}. ` : ""}{company?.remote_phone ? `Телефон: ${company.remote_phone}.` : ""}</p>
+        <div style={{ marginTop: 4 }}>
+          <p>Описание: чрез постъпили поръчки в интернет страница, по телефон или по имейл адрес.</p>
+          {remote.website && <p>Интернет страница: {remote.website}</p>}
+          {remote.phone && <p>Телефонен номер: {remote.phone}</p>}
+          {remote.email && <p>Електронна поща: {remote.email}</p>}
+        </div>
       )}
-      <p className="mt-2">Продуктът ще бъде пуснат на пазара на територията на Република България на: <b>{marketDate(submitDate)}</b> <span className="text-[11px] text-gray-500">(не по-рано от 14 дни от подаване)</span></p>
-      <div className="mt-6 flex justify-between text-[12px]">
-        <div>гр. {mode === "cvetita" ? "Бургас" : "………"}<br />Дата: {bgDate(submitDate)}</div>
-        <div>ЗАЯВИТЕЛ: ………………………<br />/подпис/</div>
+
+      {/* --- страница 2 --- */}
+      <div style={{ pageBreakBefore: "always", marginTop: 26 }} />
+      <p>Хранителната/ите добавка/и и/или храната/ите, предназначена/и за употреба при интензивно мускулно натоварване ще бъдат пуснати на пазара на територията на Република България на: дата</p>
+      <div style={{ textAlign: "center" }}><DateCells date={marketDate(submitDate)} /></div>
+      <p style={{ textAlign: "center", fontSize: 12, color: "#555" }}>(дата на пускане на пазара, която не може да бъде по-рано от 14 дни от подаване на заявлението)</p>
+
+      <p style={{ marginTop: 14, fontWeight: 700 }}>Прилагам следните документи /отбелязва се с Х/:</p>
+      <p style={{ marginTop: 6 }}><Box on /> 1. Приложение списък на хранителните добавки или храната, предназначена за употреба при интензивно мускулно натоварване;</p>
+      <p style={{ marginTop: 6 }}><Box on /> 2. Етикет, с който хранителната добавка или храната ще бъде пусната на пазара на територията на Република България – за всеки продукт по отделно;</p>
+      <p style={{ marginTop: 6 }}><Box /> 3. Оригинален етикет - когато продуктът не е българско производство – за всеки по отделно;</p>
+      <p style={{ marginTop: 6 }}><Box /> 4. Доброволна декларация по чл. 4 от Регламент (ЕС) 2019/515;</p>
+      <p style={{ marginTop: 6 }}><Box /> 5. Други, вкл. по чл. 79, ал. 6 от Закон за храните (опиши) ......................................</p>
+
+      <p style={{ marginTop: 14 }}><b><i>ЗАБЕЛЕЖКА:</i></b> <i>Когато заявлението се подава от упълномощено лице към документите, посочени по-горе задължително се прилага оригинал или нотариално заверено копие на <b>пълномощно</b>.</i></p>
+
+      <p style={{ textAlign: "center", fontWeight: 700, marginTop: 16 }}>ДЕКЛАРИРАМ, ЧЕ:</p>
+      <ol style={{ marginTop: 8, paddingLeft: 22, listStyleType: "decimal" }}>
+        <li style={{ marginBottom: 4 }}>съм запознат с нормативните изисквания, посочени в Закона за храните и подзаконовите нормативни актове, издадени по прилагането му, свързани с дейността, която ще осъществявам;</li>
+        <li style={{ marginBottom: 4 }}>съм запознат с приложимото европейско законодателство, свързано с дейността, която ще осъществявам;</li>
+        <li style={{ marginBottom: 4 }}>съставът на хранителната добавка/храната, предназначена за употреба при интензивно мускулно натоварване, съответства с информацията на етикета, на изискванията на Наредба за хранителните добавки (Обн. ДВ. бр.106 от 15.12.2021 г.) и/или Наредба № 1 от 22.01.2018 г. за физиологичните норми за хранене на населението, Наредба за специфичните изисквания към храни, предназначени за употреба при интензивно мускулно натоварване, особено при спортисти, включително за отсъствие в състава на вещества, определени в Наредбата по чл. 81 от Закона за храните;</li>
+        <li style={{ marginBottom: 4 }}>ми е известно, че при подаване на невярна информация нося наказателна отговорност по чл. 313 от Наказателния кодекс.</li>
+        <li style={{ marginBottom: 4 }}>предоставям личните си данни доброволно и давам съгласието си Българската агенция по безопасност на храните да ги обработва, съхранява и използва за изпълнение на законните ѝ интереси и при спазване на разпоредбите на Регламент (ЕС) 2016/679.</li>
+      </ol>
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 26 }}>
+        <div>гр. {reg.city}<br />{bgDate(submitDate)} г.<br /><span style={{ fontSize: 12, color: "#555" }}>/дата/</span></div>
+        <div style={{ textAlign: "center" }}>ЗАЯВИТЕЛ : ……………………………………<br /><span style={{ fontSize: 12, color: "#555" }}>/подпис/</span></div>
       </div>
     </div>
   );
