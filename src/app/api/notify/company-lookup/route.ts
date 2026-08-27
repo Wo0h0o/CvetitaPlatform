@@ -43,10 +43,16 @@ async function lookupPapagal(eik: string): Promise<{ name: string; address: stri
     map[stripTags(m[1])] = m[2];
   }
   const address = map["Седалище адрес"] ? cleanAddr(map["Седалище адрес"]) : "";
-  let manager = "";
-  const repr = map["Представляващи"] ? stripTags(map["Представляващи"]) : "";
-  const mgrMatch = repr.match(/Управител:\s*([^(]+?)(?:\s*\(|$)/);
-  if (mgrMatch) manager = mgrMatch[1].trim();
+
+  // Управител: имената са <a href="/p/…">ИМЕ</a> връзки в блока „Представляващи".
+  const reprRaw = map["Представляващи"] || "";
+  const names = [...reprRaw.matchAll(/<a[^>]*href=['"]\/p\/[^'"]*['"][^>]*>([^<]+)<\/a>/g)].map((m) => m[1].trim()).filter(Boolean);
+  let manager = [...new Set(names)].join(", ");
+  if (!manager) {
+    // fallback: текстов формат „Управител: ИМЕ (свързан…)"
+    const mm = stripTags(reprRaw).match(/(?:Управител|Представляващ|Прокурист)[^:]*:\s*([^(]+?)(?:\s*\(|$)/);
+    if (mm) manager = mm[1].trim();
+  }
 
   return { name: String(hit.name_bg || hit.name_en || "").trim(), address, manager, has_vat: hit.has_vat };
 }
