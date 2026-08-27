@@ -242,7 +242,7 @@ function NotifyProductInner() {
     );
   }
 
-  function applyParsed(parsed: { product_name?: string; daily_dose?: string; dose_basis?: string; ingredients?: { name: string; amount: number | string; unit: string }[] }) {
+  function applyParsed(parsed: { product_name?: string; daily_dose?: string; dose_basis?: string; ingredients?: { name: string; amount: number | string; unit: string }[]; fillers?: string[] }) {
     if (parsed.product_name && !name) setName(parsed.product_name);
     if (parsed.daily_dose && !dailyDose) setDailyDose(parsed.daily_dose);
     if (parsed.dose_basis && !doseBasis) setDoseBasis(parsed.dose_basis);
@@ -254,15 +254,86 @@ function NotifyProductInner() {
       return { name_bg: p.name, name_lat: null, kind: "other", unit: p.unit || "mg", ref_value: null, amount: String(p.amount ?? "") };
     });
     if (mapped.length) setActive(mapped);
-    setImportNote(`Разчетени ${mapped.length} съставки. Провери количествата и % NRV.`);
+    if (parsed.fillers?.length) setAdditional((a) => [...new Set([...a, ...(parsed.fillers as string[])])]);
+    const parts = [mapped.length ? `${mapped.length} съставки` : "", parsed.fillers?.length ? `${parsed.fillers.length} пълнител(и)` : ""].filter(Boolean).join(" + ");
+    setImportNote(`Разчетени ${parts}. Провери количествата и % NRV.`);
+  }
+
+  // Локален парсер за поставена таблица (Excel/Word) — без AI, мигновено.
+  // Поддържа: (1) колонен Excel (табове) с колона „мг.в табл."; (2) прости редове „име 625 mg".
+  function parseCompositionText(text: string): { ingredients: { name: string; amount: string; unit: string }[]; fillers: string[] } {
+    const unitMap: Record<string, string> = { мг: "mg", mg: "mg", мкг: "µg", mcg: "µg", mkg: "µg", "µg": "µg", "μg": "µg", "µг": "µg", г: "g", гр: "g", g: "g" };
+    const rows = text.split(/\r?\n/).map((r) => r.replace(/ /g, " "));
+    const active: { name: string; amount: string; unit: string }[] = [];
+    const fillers: string[] = [];
+
+    // (1) Колонен формат: намери колоната с количество по заглавие
+    if (rows.filter((r) => r.includes("\t")).length >= 2) {
+      const grid = rows.map((r) => r.split("\t").map((c) => c.trim()));
+      let qtyCol = -1;
+      let headerIdx = -1;
+      let unit = "mg";
+      for (let i = 0; i < grid.length && qtyCol < 0; i++) {
+        for (let j = 0; j < grid[i].length; j++) {
+          const c = grid[i][j].toLowerCase();
+          if (/(мг|мкг|µg|mg)\s*\.?\s*в\s*(табл|капс|доза)/.test(c) || /количество\s*в\s*(табл|доза)/.test(c) || /mg\s*\/\s*(tab|табл)/.test(c)) {
+            qtyCol = j;
+            headerIdx = i;
+            unit = /мкг|µg|mcg/.test(c) ? "µg" : /г\b|(^|[^м])g\b/.test(c) && !/мг|mg/.test(c) ? "g" : "mg";
+            break;
+          }
+        }
+      }
+      if (qtyCol >= 0) {
+        for (let i = headerIdx + 1; i < grid.length; i++) {
+          const cells = grid[i];
+          if (cells.length <= qtyCol) continue;
+          // име = първата клетка с буква, която не е чисто число/процент (хваща и „Б6", „D3", „К2")
+          const nameCell = cells.find((c) => /[А-Яа-яA-Za-z]/.test(c) && !/^\d+([.,]\d+)?$/.test(c.trim()));
+          const nm = (nameCell || "").replace(/\s+/g, " ").trim();
+          const val = parseFloat((cells[qtyCol] || "").replace(",", "."));
+          if (!nm || !isFinite(val) || val <= 0) continue;
+          if (/пълнит/i.test(nm)) { fillers.push(nm); continue; }
+          active.push({ name: nm, amount: String(val), unit });
+        }
+        return { ingredients: active, fillers };
+      }
+    }
+
+    // (2) Прости редове „име – 625 mg"
+    const re = /([\d]+(?:[.,]\d+)?)\s*(мкг|mcg|mkg|µg|μg|µг|мг|mg|гр|г|g)\b/gi;
+    for (const raw of rows) {
+      const line = raw.trim();
+      if (!line) continue;
+      let last: RegExpExecArray | null = null;
+      let m: RegExpExecArray | null;
+      re.lastIndex = 0;
+      while ((m = re.exec(line))) last = m;
+      if (!last) continue;
+      const amount = last[1].replace(",", ".");
+      const unit = unitMap[last[2].toLowerCase()] || last[2];
+      const nm = line.slice(0, last.index).replace(/\t+/g, " ").replace(/[–\-:•]+\s*$/, "").replace(/\s+/g, " ").trim();
+      if (!nm || /^(съставк|ingredient|количество|мярка|name|табл|доза)/i.test(nm)) continue;
+      if (/пълнит/i.test(nm)) { fillers.push(nm); continue; }
+      active.push({ name: nm, amount, unit });
+    }
+    return { ingredients: active, fillers };
   }
 
   async function importComposition(fileBase64?: string, mediaType?: string) {
-    setImporting(true);
     setImportNote("");
+    // Текст (поставена таблица) → локално разпознаване, без AI
+    if (!fileBase64) {
+      const parsed = parseCompositionText(importText);
+      if (!parsed.ingredients.length && !parsed.fillers.length) { setImportNote("Не разпознах състав. Копирай редовете с имена и колоната с количеството (mg), или качи снимка."); return; }
+      applyParsed(parsed);
+      setShowImport(false);
+      return;
+    }
+    // Снимка/PDF → през Claude (нужен е кредит в Anthropic API)
+    setImporting(true);
     try {
-      const payload = fileBase64 ? { fileBase64, mediaType } : { text: importText };
-      const res = await fetch("/api/notify/parse-composition", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res = await fetch("/api/notify/parse-composition", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileBase64, mediaType }) });
       const j = await res.json();
       if (!res.ok || !j.result) { setImportNote(j.error || "Не успях да разчета състава."); return; }
       applyParsed(j.result);
