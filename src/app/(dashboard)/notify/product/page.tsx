@@ -24,6 +24,15 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const COMMON_PACKS = [10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 180, 200, 300, 365];
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const DEFAULT_REMOTE_DESC = "чрез постъпили поръчки в интернет страница, по телефон или по имейл адрес.";
+
+interface RemoteTrade {
+  on: boolean;
+  desc: string;
+  website: string;
+  phone: string;
+  email: string;
+}
 
 interface Refs {
   ingredients: (NzIngredient & { id: number })[];
@@ -68,11 +77,14 @@ function NotifyProductInner() {
   const [mode, setMode] = useState<"cvetita" | "ishleme">("cvetita");
   const [companyId, setCompanyId] = useState<number | null>(null);
   const [siteId, setSiteId] = useState<number | null>(null);
+  const [distAddr, setDistAddr] = useState("");
   const [submitDate, setSubmitDate] = useState(todayISO());
   const [eikInput, setEikInput] = useState("");
   const [looking, setLooking] = useState(false);
   const [lookupNote, setLookupNote] = useState("");
   const [company, setCompany] = useState<NzCompany | null>(null);
+  const [savingCompany, setSavingCompany] = useState(false);
+  const [remote, setRemote] = useState<RemoteTrade>({ on: true, desc: DEFAULT_REMOTE_DESC, website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email });
 
   const [ingPick, setIngPick] = useState("");
   const [printOnly, setPrintOnly] = useState<null | "label" | "list" | "app">(null);
@@ -120,6 +132,53 @@ function NotifyProductInner() {
       if (site) setSiteId(site.id);
     }
   }, [refs, mode]);
+
+  // адрес на дистрибуция: Цветита = фиксиран производствен адрес; ишлеме = избран склад или свободен текст
+  useEffect(() => {
+    if (mode === "cvetita") setDistAddr(PRODUCER.siteAddress);
+    else setDistAddr("");
+  }, [mode]);
+
+  // prefill remote-trade block when mode or company identity changes
+  useEffect(() => {
+    if (mode === "cvetita") {
+      setRemote({ on: true, desc: DEFAULT_REMOTE_DESC, website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email });
+    } else {
+      const w = company?.remote_website || "";
+      const p = company?.remote_phone || "";
+      const e = company?.remote_email || "";
+      setRemote({ on: !!(w || p || e), desc: DEFAULT_REMOTE_DESC, website: w, phone: p, email: e });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, company?.eik]);
+
+  async function saveCompany() {
+    if (!company?.eik || !company?.name) { setLookupNote("Попълни поне ЕИК и име на фирмата."); return; }
+    setSavingCompany(true);
+    try {
+      const res = await fetch("/api/notify/refs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "company",
+          eik: company.eik,
+          name: company.name,
+          manager: company.manager || "",
+          address: company.address || "",
+          reg_role: "trader",
+          remote_website: remote.on ? remote.website : "",
+          remote_phone: remote.on ? remote.phone : "",
+          remote_email: remote.on ? remote.email : "",
+        }),
+      });
+      const j = await res.json();
+      if (j.item?.id) { setCompany(j.item); setCompanyId(j.item.id); }
+      setLookupNote("Фирмата е запазена.");
+      mutateRefs();
+    } finally {
+      setSavingCompany(false);
+    }
+  }
 
   const options = refs?.options ?? [];
   const doseOpts = options.filter((o) => o.kind === "dose").map((o) => o.value);
@@ -248,12 +307,6 @@ function NotifyProductInner() {
     }, 60);
   }
 
-  const isTrader = mode === "ishleme";
-  const distributionSite = refs?.sites.find((s) => s.id === siteId);
-  const distributionAddr = isTrader
-    ? distributionSite?.address || ""
-    : PRODUCER.siteAddress;
-
   return (
     <div>
       <div className="no-print">
@@ -304,25 +357,45 @@ function NotifyProductInner() {
               </div>
               {lookupNote && <div className="text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2">{lookupNote}</div>}
               {company && (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div><Label>Фирма</Label><input value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className={inputCls} /></div>
-                  <div><Label>Управител (трите имена)</Label><input value={company.manager || ""} onChange={(e) => setCompany({ ...company, manager: e.target.value })} className={inputCls} /></div>
-                  <div className="sm:col-span-2"><Label>Адрес на управление</Label><input value={company.address || ""} onChange={(e) => setCompany({ ...company, address: e.target.value })} className={inputCls} /></div>
-                  <div><Label>Интернет страница (търговия от разстояние)</Label><input value={company.remote_website || ""} onChange={(e) => setCompany({ ...company, remote_website: e.target.value })} className={inputCls} placeholder="ако има" /></div>
-                  <div><Label>Имейл / телефон (от разстояние)</Label><input value={company.remote_email || company.remote_phone || ""} onChange={(e) => setCompany({ ...company, remote_email: e.target.value })} className={inputCls} placeholder="ако има" /></div>
-                </div>
+                <>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div><Label>Фирма</Label><input value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className={inputCls} placeholder="напр. КОККОЛИС ЕООД" /></div>
+                    <div><Label>Управител (трите имена)</Label><input value={company.manager || ""} onChange={(e) => setCompany({ ...company, manager: e.target.value })} className={inputCls} /></div>
+                    <div className="sm:col-span-2"><Label>Адрес на управление</Label><input value={company.address || ""} onChange={(e) => setCompany({ ...company, address: e.target.value })} className={inputCls} /></div>
+                  </div>
+
+                  {/* Търговия от разстояние — редактируемо за ишлеме */}
+                  <div className="rounded-lg border border-border p-3 mt-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Label>Търговия с храни от разстояние</Label>
+                      <div className="flex gap-1.5 -mt-1">
+                        <button onClick={() => setRemote((r) => ({ ...r, on: true }))} className={`px-3 py-1 rounded-md text-[12px] border ${remote.on ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>да</button>
+                        <button onClick={() => setRemote((r) => ({ ...r, on: false }))} className={`px-3 py-1 rounded-md text-[12px] border ${!remote.on ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>не</button>
+                      </div>
+                    </div>
+                    {remote.on && (
+                      <div className="grid gap-2">
+                        <div><Label>Описание</Label><input value={remote.desc} onChange={(e) => setRemote((r) => ({ ...r, desc: e.target.value }))} className={inputCls} /></div>
+                        <div className="grid sm:grid-cols-3 gap-2">
+                          <div><Label>Интернет страница</Label><input value={remote.website} onChange={(e) => setRemote((r) => ({ ...r, website: e.target.value }))} className={inputCls} placeholder="www…" /></div>
+                          <div><Label>Телефонен номер</Label><input value={remote.phone} onChange={(e) => setRemote((r) => ({ ...r, phone: e.target.value }))} className={inputCls} /></div>
+                          <div><Label>Електронна поща</Label><input value={remote.email} onChange={(e) => setRemote((r) => ({ ...r, email: e.target.value }))} className={inputCls} /></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button onClick={saveCompany} disabled={savingCompany} className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer disabled:opacity-50">
+                      {savingCompany ? <Loader2 size={14} className="animate-spin" /> : <Building2 size={14} />} Запази фирмата
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
 
-          <div className="grid sm:grid-cols-3 gap-3 mt-3">
-            <div>
-              <Label>Обект за дистрибуция</Label>
-              <select className={inputCls} value={siteId ?? ""} onChange={(e) => setSiteId(Number(e.target.value) || null)}>
-                <option value="">— избери склад —</option>
-                {refs?.sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
+          <div className="grid sm:grid-cols-2 gap-3 mt-3">
             <div>
               <Label>Дата на подаване</Label>
               <input type="date" value={submitDate} onChange={(e) => setSubmitDate(e.target.value)} className={inputCls} />
@@ -331,6 +404,30 @@ function NotifyProductInner() {
               <Label>Дата на пускане (+14 дни)</Label>
               <input readOnly value={marketDate(submitDate)} className={inputCls + " bg-surface-2"} />
             </div>
+          </div>
+
+          <div className="mt-3">
+            <Label>Обект за дистрибуция</Label>
+            <select
+              className={inputCls + " mb-2"}
+              value={siteId ?? ""}
+              onChange={(e) => {
+                const id = Number(e.target.value) || null;
+                setSiteId(id);
+                const s = refs?.sites.find((x) => x.id === id);
+                if (s) setDistAddr(s.address);
+              }}
+            >
+              <option value="">— избери склад (или пиши свободно долу) —</option>
+              {refs?.sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <textarea
+              value={distAddr}
+              onChange={(e) => setDistAddr(e.target.value)}
+              rows={2}
+              className={inputCls + " resize-y"}
+              placeholder="Вид и адрес на обекта за дистрибуция — избери от списъка или напиши ръчно"
+            />
           </div>
         </Card>
 
@@ -490,7 +587,8 @@ function NotifyProductInner() {
           product={product}
           mode={mode}
           company={company}
-          distributionAddr={distributionAddr}
+          distributionAddr={distAddr}
+          remote={remote}
           submitDate={submitDate}
           hidden={printOnly !== null && printOnly !== "app"}
         />
@@ -586,9 +684,9 @@ function DocList({ product, companyName, hidden }: { product: NzProduct; company
 }
 
 function DocApplication({
-  product, mode, company, distributionAddr, submitDate, hidden,
+  product, mode, company, distributionAddr, remote, submitDate, hidden,
 }: {
-  product: NzProduct; mode: "cvetita" | "ishleme"; company: NzCompany | null; distributionAddr: string; submitDate: string; hidden: boolean;
+  product: NzProduct; mode: "cvetita" | "ishleme"; company: NzCompany | null; distributionAddr: string; remote: RemoteTrade; submitDate: string; hidden: boolean;
 }) {
   const isTrader = mode === "ishleme";
   const reg = mode === "cvetita"
@@ -600,11 +698,6 @@ function DocApplication({
         eik: company?.eik || "…………………",
         city: (company?.address || "").match(/гр\.?\s*([А-Яа-яЁё\-]+)/)?.[1] || "………",
       };
-  const remote = mode === "cvetita"
-    ? { website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email }
-    : company?.remote_website || company?.remote_email || company?.remote_phone
-    ? { website: company?.remote_website || "", phone: company?.remote_phone || "", email: company?.remote_email || "" }
-    : null;
   const supplement = product.product_type === "supplement";
 
   return (
@@ -637,11 +730,11 @@ function DocApplication({
       <p style={{ marginTop: 8 }}>и законно се предлагат на пазара на друга държава членка на ЕС <Box on /> не; <Box /> да; <Box /> само някои на територията на ......................................................................</p>
       <p style={{ marginTop: 8 }}>Вид и адрес на обекта за дистрибуция: {distributionAddr || "……………………………"}</p>
 
-      <p style={{ marginTop: 10 }}>Търговия с храни от разстояние <Box on={!!remote} /> да; <Box on={!remote} /> не;</p>
+      <p style={{ marginTop: 10 }}>Търговия с храни от разстояние <Box on={remote.on} /> да; <Box on={!remote.on} /> не;</p>
       <p style={{ fontSize: 12, color: "#555" }}>Ако отговора е „да“ - описание на начина на търговия с храни от разстояние, включително средствата за комуникация: електронен адрес, интернет страница, телефонен номер, пощенски адрес, електронна поща и други, които ще се използват:</p>
-      {remote && (
+      {remote.on && (
         <div style={{ marginTop: 4 }}>
-          <p>Описание: чрез постъпили поръчки в интернет страница, по телефон или по имейл адрес.</p>
+          {remote.desc && <p>Описание: {remote.desc}</p>}
           {remote.website && <p>Интернет страница: {remote.website}</p>}
           {remote.phone && <p>Телефонен номер: {remote.phone}</p>}
           {remote.email && <p>Електронна поща: {remote.email}</p>}

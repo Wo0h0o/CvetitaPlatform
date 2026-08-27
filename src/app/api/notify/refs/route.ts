@@ -47,7 +47,12 @@ export async function POST(req: NextRequest) {
   if (!table) return NextResponse.json({ error: "Unknown type" }, { status: 400 });
   const { type: _t, ...fields } = body;
   void _t;
-  const { data, error } = await supabaseAdmin.from(table).insert(fields).select().single();
+  // Companies upsert on eik so "save company" also updates an existing one.
+  const query =
+    type === "company" && fields.eik
+      ? supabaseAdmin.from(table).upsert(fields, { onConflict: "eik" })
+      : supabaseAdmin.from(table).insert(fields);
+  const { data, error } = await query.select().single();
   if (error) {
     logger.error("notify/refs POST failed", { error: error.message, table });
     return NextResponse.json({ error: error.message }, { status: 500 });
