@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface SaleItem { item_id: string; name: string; sku: string; qty: number }
-interface Sale { num: string; date: string; partner: string; items: SaleItem[] }
+interface Sale { num: string; date: string; partner: string; partner_eik?: string; items: SaleItem[] }
 
 const nf = (x: number) => x.toLocaleString("bg-BG");
 const fmt = (s: string) => (s ? s.split("-").reverse().join(".") : "—");
@@ -37,7 +37,8 @@ export default function IshlemeSalesPage() {
 
   const createLetter = (sale: Sale) => {
     const sel = sale.items.map((it) => `${it.item_id}~${it.qty}`).join(",");
-    router.push(`/production/zayavka?sel=${encodeURIComponent(sel)}&so=${encodeURIComponent(sale.num)}`);
+    const firma = sale.partner_eik ? `&firma=${encodeURIComponent(sale.partner_eik)}` : "";
+    router.push(`/production/zayavka?sel=${encodeURIComponent(sel)}&so=${encodeURIComponent(sale.num)}${firma}`);
   };
 
   return (

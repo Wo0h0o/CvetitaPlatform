@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
 
-  let body: { letter_no?: string; issued_date?: string; items?: OrderItem[]; note?: string };
+  let body: { letter_no?: string; issued_date?: string; items?: OrderItem[]; note?: string; firma?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       issued_date: body.issued_date ?? undefined,
       items,
       note: body.note ?? null,
+      firma: body.firma ?? null,
     })
     .select()
     .single();

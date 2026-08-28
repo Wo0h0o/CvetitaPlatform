@@ -196,11 +196,11 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
   // 2) издърпай ВСИЧКИ редове на тези продажби (не само ишлеме — една продажба
   //    може да съдържа и наши СТОКИ продукти или нови още некласифицирани артикули)
   const SERVICE_RE = /транспорт|доставка|^\s*услуг|допълнителни разходи/i;
-  const salesByNum = new Map<string, { num: string; date: string; partner: string; items: { item_id: string; name: string; sku: string; qty: number }[] }>();
+  const salesByNum = new Map<string, { num: string; date: string; partner: string; partner_id: string; partner_eik: string; items: { item_id: string; name: string; sku: string; qty: number }[] }>();
   if (saleNums.length) {
     const salesRes = await prim.callTool<{ data?: string }>("DataAnalyses-getRowsData", {
       types: ["so"],
-      select: [{ col: "num" }, { col: "for_date" }, { col: "partner_nm" }, { col: "item_id" }, { col: "item_nm" }, { col: "quantity" }],
+      select: [{ col: "num" }, { col: "for_date" }, { col: "partner_nm" }, { col: "item_id" }, { col: "item_nm" }, { col: "quantity" }, { col: "partner_id" }],
       where: [
         { col: "num", op: "in", value: saleNums },
         { col: "quantity", op: ">", value: "0" },
@@ -210,11 +210,24 @@ export async function refreshForecast(): Promise<{ ok: boolean; singles: number;
       limit: 5000,
     });
     for (const c of tsv(salesRes)) {
-      const [num, date, partner, item_id, item_nm, quantity] = c;
+      const [num, date, partner, item_id, item_nm, quantity, partner_id] = c;
       if (!num || SERVICE_RE.test(item_nm)) continue; // прескачаме транспорт/услуги
-      if (!salesByNum.has(num)) salesByNum.set(num, { num, date, partner, items: [] });
+      if (!salesByNum.has(num)) salesByNum.set(num, { num, date, partner, partner_id: partner_id || "", partner_eik: "", items: [] });
       const it = allItems.get(item_id);
       salesByNum.get(num)!.items.push({ item_id, name: item_nm, sku: it ? String(it.sku) : "", qty: +quantity });
+    }
+    // ЕИК на клиента по partner_id (за възлагателното писмо)
+    const partnerIds = [...new Set([...salesByNum.values()].map((s) => s.partner_id).filter(Boolean))];
+    if (partnerIds.length) {
+      try {
+        const pres = await prim.callTool<{ result?: { id: number; eik: number | string }[] }>("Partners-get", {
+          data: partnerIds.map((id) => ({ id: Number(id) })),
+        });
+        const eikById = new Map((pres.result ?? []).map((p) => [String(p.id), String(p.eik ?? "")]));
+        for (const s of salesByNum.values()) s.partner_eik = eikById.get(s.partner_id) || "";
+      } catch (e) {
+        logger.warn("prim-forecast: partner eik lookup failed", { error: String(e) });
+      }
     }
   }
   const ishlemeSales = [...salesByNum.values()].filter((s) => s.items.length > 0).sort((a, b) => b.date.localeCompare(a.date));

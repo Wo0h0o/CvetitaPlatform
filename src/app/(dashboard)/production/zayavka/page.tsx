@@ -18,6 +18,7 @@ interface Row {
 interface Snapshot { singles: Row[]; bundles?: Row[]; ishleme?: Row[]; rawStock?: Record<string, number> }
 interface Component { name: string; measure: string; qty_per_batch: number; kind: string }
 interface Recipe { item_id: string; batch_qty: number; wo_num: string; components: Component[] }
+interface Firma { eik: string; name: string; manager?: string; address?: string }
 
 const nf = (x: number, dp = 0) =>
   x.toLocaleString("bg-BG", { minimumFractionDigits: dp, maximumFractionDigits: dp });
@@ -81,13 +82,27 @@ function ZayavkaInner() {
     { revalidateOnFocus: false }
   );
   const { data: oData, isLoading: l3 } = useSWR<{
-    orders: { id: number; letter_no: string | null; issued_date: string; note?: string | null; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
+    orders: { id: number; letter_no: string | null; issued_date: string; note?: string | null; firma?: Firma | null; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
   }>(orderId ? "/api/production/orders" : null, fetcher, { revalidateOnFocus: false });
+
+  const firmaEik = params.get("firma"); // ЕИК на ишлеме клиента (възложител)
+  const { data: refsData } = useSWR<{ companies: Firma[] }>(
+    firmaEik ? "/api/notify/refs" : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
 
   const snap = fData?.snapshot ?? null;
   const recipes = useMemo(() => rData?.recipes ?? {}, [rData]);
   const rawStock = useMemo(() => snap?.rawStock ?? {}, [snap]);
   const savedOrder = orderId ? oData?.orders?.find((o) => String(o.id) === orderId) ?? null : null;
+
+  // Възложител (ишлеме клиент): от запазеното писмо или намерен по ЕИК в базата с фирми
+  const firma: Firma | null = useMemo(() => {
+    if (savedOrder?.firma) return savedOrder.firma;
+    if (firmaEik && refsData?.companies) return refsData.companies.find((c) => String(c.eik) === String(firmaEik)) ?? null;
+    return null;
+  }, [savedOrder, firmaEik, refsData]);
 
   const items = useMemo(() => {
     // 1) вече издадена заявка -> от запазените данни
@@ -176,6 +191,7 @@ function ZayavkaInner() {
       const payload = {
         letter_no: letterNo || null,
         note,
+        firma,
         items: items.map(({ row, qty }) => {
           const p = parsePack(row.name);
           return { item_id: row.id, sku: String(row.sku), name: row.name, qty, size: p.size, unit: p.unit };
@@ -271,9 +287,13 @@ function ZayavkaInner() {
           </p>
           <p className="mb-2">и</p>
           <p className="mb-3">
-            2. ..............................., вписано в Търговския регистър под ЕИК ...................., със
-            седалище и адрес на управление: гр. София, бул. България Б №81, представлявано от ....................
-            от друга страна като <b>ВЪЗЛОЖИТЕЛ,</b>
+            2. {firma ? (
+              <>
+                <b>{firma.name}</b>, вписано в Търговския регистър под ЕИК {firma.eik}, със седалище и адрес на управление: {firma.address || "…………………………"}, представлявано от {firma.manager || "…………………………"}
+              </>
+            ) : (
+              <>..............................., вписано в Търговския регистър под ЕИК ...................., със седалище и адрес на управление: ..............................., представлявано от ....................</>
+            )} от друга страна като <b>ВЪЗЛОЖИТЕЛ,</b>
           </p>
           <p className="mb-3">
             Наричани по–долу общо СТРАНИТЕ, се подписа настоящото възлагателно писмо, с което СТРАНИТЕ се
