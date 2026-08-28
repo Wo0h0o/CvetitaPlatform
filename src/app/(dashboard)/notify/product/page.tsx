@@ -242,10 +242,12 @@ function NotifyProductInner() {
     );
   }
 
-  function applyParsed(parsed: { product_name?: string; daily_dose?: string; dose_basis?: string; ingredients?: { name: string; amount: number | string; unit: string }[]; fillers?: string[] }) {
+  function applyParsed(parsed: { product_name?: string; daily_dose?: string; dose_basis?: string; dose_form?: string; pack_size?: number | null; ingredients?: { name: string; amount: number | string; unit: string }[]; fillers?: string[] }) {
     if (parsed.product_name && !name) setName(parsed.product_name);
     if (parsed.daily_dose && !dailyDose) setDailyDose(parsed.daily_dose);
     if (parsed.dose_basis && !doseBasis) setDoseBasis(parsed.dose_basis);
+    if (parsed.dose_form) setDoseForm(parsed.dose_form);
+    if (parsed.pack_size && parsed.pack_size > 0) setPackSizes((p) => (p.includes(parsed.pack_size as number) ? p : [...p, parsed.pack_size as number].sort((a, b) => a - b)));
     const mapped: NzIngredient[] = (parsed.ingredients || []).map((p) => {
       const ref = matchRef(p.name);
       if (ref) {
@@ -345,12 +347,34 @@ function NotifyProductInner() {
     }
   }
 
+  async function importXlsx(fileBase64: string) {
+    setImporting(true);
+    setImportNote("");
+    try {
+      const res = await fetch("/api/notify/parse-xlsx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileBase64 }) });
+      const j = await res.json();
+      if (!res.ok || !j.result) { setImportNote(j.error || "Не успях да разчета файла."); return; }
+      applyParsed(j.result);
+      setShowImport(false);
+    } catch {
+      setImportNote("Грешка при четене на файла.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function onImportFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isXlsx = /\.xlsx?$/i.test(file.name) || file.type.includes("spreadsheet") || file.type.includes("excel");
     const reader = new FileReader();
-    reader.onload = () => importComposition(String(reader.result), file.type);
+    reader.onload = () => {
+      const data = String(reader.result);
+      if (isXlsx) importXlsx(data);
+      else importComposition(data, file.type); // снимка/PDF → Claude
+    };
     reader.readAsDataURL(file);
+    e.target.value = "";
   }
 
   async function addCustomIngredient() {
@@ -644,16 +668,20 @@ function NotifyProductInner() {
               <Label>Постави таблицата със състава (копирай от Word/Excel) или качи снимка/PDF</Label>
               <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={4} className={inputCls + " resize-y"} placeholder={"напр.\nМагнезиев цитрат\t625 mg\nВитамин D\t50 µg"} />
               <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <button onClick={() => importComposition()} disabled={importing || !importText.trim()} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg bg-accent text-white disabled:opacity-50 cursor-pointer">
-                  {importing ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} Разчети текста
+                <label className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer">
+                  <Upload size={15} /> Качи Excel (.xlsx)
+                  <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={onImportFile} className="hidden" />
+                </label>
+                <button onClick={() => importComposition()} disabled={importing || !importText.trim()} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 disabled:opacity-50 cursor-pointer">
+                  {importing ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} Разчети поставения текст
                 </button>
                 <label className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
-                  <Upload size={15} /> Качи снимка/PDF
+                  <Upload size={15} /> Снимка/PDF
                   <input type="file" accept="image/*,application/pdf" onChange={onImportFile} className="hidden" />
                 </label>
                 {importing && <span className="text-[12px] text-text-3">Разчитам…</span>}
               </div>
-              <p className="text-[11px] text-text-4 mt-1.5">Съставките се разпознават автоматично; познатите (соли/витамини) идват с латинско име, % NRV и елементарен минерал.</p>
+              <p className="text-[11px] text-text-4 mt-1.5">Excel и поставена таблица се четат локално (без ограничения). Снимка/PDF минава през AI (нужен е кредит в Anthropic). Познатите съставки идват с латинско име, % NRV и елементарен минерал.</p>
             </div>
           )}
           {importNote && <div className="mb-3 text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2">{importNote}</div>}
