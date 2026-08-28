@@ -115,14 +115,15 @@ function NotifyProductInner() {
     setRemote({ on: true, desc: DEFAULT_REMOTE_DESC, website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email });
   }
   function chooseMode(m: "cvetita" | "ishleme") {
+    if (m === mode) return; // клик върху вече активния таб → не пипай данните
     setMode(m);
-    if (m === "cvetita") applyCvetita();
-    else {
-      setCompany({ eik: "", name: "", manager: "", address: "" });
-      setCompanyId(null);
-      setDistAddr("");
-      setRemote({ on: false, desc: DEFAULT_REMOTE_DESC, website: "", phone: "", email: "" });
-    }
+    if (m === "cvetita") { applyCvetita(); return; }
+    // → Ишлеме: запази вече въведена/възстановена ишлеме фирма; нулирай само ако идваме от Цветита
+    if (company && company.reg_role !== "producer" && (company.eik || company.name)) return;
+    setCompany({ eik: "", name: "", manager: "", address: "" });
+    setCompanyId(null);
+    setDistAddr("");
+    setRemote({ on: false, desc: DEFAULT_REMOTE_DESC, website: "", phone: "", email: "" });
   }
   function applyCompany(c: NzCompany & { id?: number }) {
     setCompany(c);
