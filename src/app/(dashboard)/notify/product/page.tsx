@@ -231,6 +231,21 @@ function NotifyProductInner() {
   function updateActive(idx: number, patch: Partial<NzIngredient>) {
     setActive((a) => a.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
+
+  // Смяна на името на съставка: ако съвпадне точно с база → закача вид/латинско/%NRV/фактори.
+  function setIngredientName(idx: number, newName: string) {
+    const n = newName.toLowerCase().replace(/\s+/g, " ").trim();
+    const ref = refs?.ingredients.find((i) => i.name_bg.toLowerCase().replace(/\s+/g, " ").trim() === n) || null;
+    setActive((a) =>
+      a.map((it, i) => {
+        if (i !== idx) return it;
+        if (ref) {
+          return { ...it, name_bg: ref.name_bg, name_lat: ref.name_lat, kind: ref.kind, unit: it.unit || ref.unit, ref_value: ref.ref_value ?? null, elem_element: ref.elem_element ?? null, elem_factor: ref.elem_factor ?? null, elem_ref: ref.elem_ref ?? null };
+        }
+        return { ...it, name_bg: newName };
+      })
+    );
+  }
   // намери съставка в базата по име (за да вземе вид/латинско/референтни/фактори)
   function matchRef(rawName: string) {
     if (!refs) return null;
@@ -748,9 +763,7 @@ function NotifyProductInner() {
               return (
                 <div key={idx} className="bg-surface-2 rounded-lg px-3 py-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex-1 min-w-[160px] text-[13px] text-text">
-                      {ing.name_bg}{ing.kind === "herb" && ing.name_lat ? <span className="text-text-3 italic"> ({ing.name_lat})</span> : ""}
-                    </div>
+                    <input list="active-ings-list" value={ing.name_bg} onChange={(e) => setIngredientName(idx, e.target.value)} className="flex-1 min-w-[160px] px-2 py-1 rounded-md border border-border text-[13px] bg-surface" placeholder="име на съставка" />
                     <input value={String(ing.amount)} onChange={(e) => updateActive(idx, { amount: e.target.value })} placeholder={isCompound ? "сол" : "кол-во"} className="w-[90px] px-2 py-1 rounded-md border border-border text-[13px] bg-surface" />
                     <span className="text-[12px] text-text-3 w-[40px]">{ing.unit}</span>
                     {hasNrv ? (
@@ -775,6 +788,7 @@ function NotifyProductInner() {
             })}
             {active.length === 0 && <div className="text-[12px] text-text-3">Няма добавени съставки.</div>}
           </div>
+          <datalist id="active-ings-list">{refs?.ingredients.map((i) => <option key={i.id} value={i.name_bg} />)}</datalist>
         </Card>
 
         {/* ===== Допълнителни съставки ===== */}

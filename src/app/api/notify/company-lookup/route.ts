@@ -26,15 +26,34 @@ const cleanAddr = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+// Пълен браузърски набор хедъри — за да мине Cloudflare филтъра от сървъра (Vercel IP).
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": UA,
+  "Accept-Language": "bg-BG,bg;q=0.9,en;q=0.8",
+  "sec-ch-ua": '"Chromium";v="126", "Google Chrome";v="126", "Not.A/Brand";v="24"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "Upgrade-Insecure-Requests": "1",
+};
+
 /** Trade-Register catalogue (papagal.bg): EIK → {name, address, manager}. */
 async function lookupPapagal(eik: string): Promise<{ name: string; address: string; manager: string; has_vat?: boolean } | null> {
-  const common = { "User-Agent": UA, Accept: "application/json, text/html", Referer: "https://papagal.bg/", "X-Requested-With": "XMLHttpRequest" };
-  const acRes = await fetchWithTimeout(`https://papagal.bg/autocomplete/?query=${eik}`, { headers: common }, 12000);
+  const acRes = await fetchWithTimeout(
+    `https://papagal.bg/autocomplete/?query=${eik}`,
+    { headers: { ...BROWSER_HEADERS, Accept: "application/json, text/javascript, */*; q=0.01", Referer: "https://papagal.bg/", "X-Requested-With": "XMLHttpRequest", "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin" } },
+    12000
+  );
+  if (!acRes.ok) throw new Error(`papagal autocomplete ${acRes.status}`);
   const ac = await acRes.json();
   const hit = ac?.companies?.[0];
   if (!hit?.url) return null;
 
-  const pageRes = await fetchWithTimeout(`https://papagal.bg${hit.url}`, { headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://papagal.bg/" } }, 12000);
+  const pageRes = await fetchWithTimeout(
+    `https://papagal.bg${hit.url}`,
+    { headers: { ...BROWSER_HEADERS, Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", Referer: "https://papagal.bg/", "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-User": "?1" } },
+    12000
+  );
+  if (!pageRes.ok) throw new Error(`papagal page ${pageRes.status}`);
   const html = await pageRes.text();
 
   // Definition list: <dt>label</dt><dd>value</dd>
