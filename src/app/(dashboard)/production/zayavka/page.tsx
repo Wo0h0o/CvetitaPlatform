@@ -82,7 +82,7 @@ function ZayavkaInner() {
     { revalidateOnFocus: false }
   );
   const { data: oData, isLoading: l3 } = useSWR<{
-    orders: { id: number; letter_no: string | null; issued_date: string; note?: string | null; firma?: Firma | null; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
+    orders: { id: number; letter_no: string | null; issued_date: string; note?: string | null; firma?: Firma | null; invoice_no?: string | null; invoice_date?: string | null; items: { item_id: string; sku?: string; name: string; qty: number }[] }[];
   }>(orderId ? "/api/production/orders" : null, fetcher, { revalidateOnFocus: false });
 
   const firmaEik = params.get("firma"); // ЕИК на ишлеме клиента (възложител)
@@ -176,8 +176,16 @@ function ZayavkaInner() {
 
   const [letterNo, setLetterNo] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState(false);
+
+  // Фактура и дата за Чл. 3/4 (дата по подразбиране = датата на издаване на писмото)
+  const issueISO = savedOrder?.issued_date || fData?.as_of || new Date().toISOString().slice(0, 10);
+  const invNo = (savedOrder ? savedOrder.invoice_no : invoiceNo) || "";
+  const invDateISO = (savedOrder ? savedOrder.invoice_date : invoiceDate) || issueISO;
+  const invNoDisplay = invNo || "……………………";
+  const invDateDisplay = invDateISO ? invDateISO.split("-").reverse().join(".") : "……………";
 
   // ред за референция в писмото (продажба / фактура)
   const refLine = savedOrder
@@ -192,6 +200,8 @@ function ZayavkaInner() {
         letter_no: letterNo || null,
         note,
         firma,
+        invoice_no: invoiceNo || null,
+        invoice_date: invoiceDate || issueISO,
         items: items.map(({ row, qty }) => {
           const p = parsePack(row.name);
           return { item_id: row.id, sku: String(row.sku), name: row.name, qty, size: p.size, unit: p.unit };
@@ -248,8 +258,15 @@ function ZayavkaInner() {
               <input
                 value={invoiceNo}
                 onChange={(e) => setInvoiceNo(e.target.value)}
-                placeholder="№ на фактура (по избор)"
+                placeholder="№ на фактура"
                 className="w-44 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
+              />
+              <input
+                type="date"
+                value={invoiceDate || issueISO}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+                title="Дата на фактурата"
+                className="w-40 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface"
               />
             </>
           )}
@@ -300,7 +317,7 @@ function ZayavkaInner() {
             договориха за следното:
           </p>
           <p className="mb-3">
-            <b>Чл.1.</b> {'ВЪЗЛОЖИТЕЛЯТ възлага, а ИЗПЪЛНИТЕЛЯТ приема срещу заплащане да произведе следните хранителни добавки, наричани по-долу „Продукти", както следва:'}
+            <b>Чл. 1.</b> {'ВЪЗЛОЖИТЕЛЯТ възлага, а ИЗПЪЛНИТЕЛЯТ приема срещу заплащане и при условията на настоящото възлагателно писмо да произведе следните хранителни добавки /диетична храна за специални медицински цели, наричана по-долу „Продукти", както следва:'}
           </p>
 
           <table className="w-full border-collapse mb-4 text-[12px]">
@@ -333,15 +350,29 @@ function ZayavkaInner() {
           </table>
 
           <p className="mb-1">
-            <b>Чл. 2.</b> /1/ Продуктът ще се изработва със суровини предоставени от ИЗПЪЛНИТЕЛЯ
+            <b>Чл. 2.</b> /1/ Продуктът, предмет на настоящото възлагателно писмо ще се изработва със суровини предоставени от ИЗПЪЛНИТЕЛЯ
           </p>
-          <p className="mb-1">/2/ На готовия продукт се поставя етикет, съгласно условията на договора.</p>
+          <p className="mb-1">/2/ На готовия продукт се поставя етикет, съгласно договорените условия.</p>
           <p className="mb-3">/3/ Готовата продукция се опакова в подходящи кашони за транспортиране.</p>
+
+          <p className="mb-3">
+            <b>Чл. 3.</b> /1/ За изработването на продукта, предмет на настоящия договор ВЪЗЛОЖИТЕЛЯТ заплаща на ИЗПЪЛНИТЕЛЯ възнаграждение съгласно Фактура № {invNoDisplay} издадена на {invDateDisplay} г.
+          </p>
+
+          <p className="mb-1">
+            <b>Чл. 4.</b> /1/ Настоящото възлагане е със срок на изпълнение 60 дни.
+          </p>
+          <p className="mb-3">/2/ Срокът за изпълнение тече след получаване на плащане по Фактура № {invNoDisplay} издадена на {invDateDisplay} г. и при всички налични суровини и етикети.</p>
+
           <p className="mb-6">Настоящото възлагателно писмо се подписа в два еднообразни екземпляра, по един за всяка страна.</p>
 
-          <div className="flex flex-col items-center gap-6 mb-2">
-            <div className="text-center">За Изпълнителя: ______________________<div className="text-[10px] text-gray-500">/подпис/</div></div>
-            <div className="text-center">За Възложителя: ______________________<div className="text-[10px] text-gray-500">/подпис/</div></div>
+          <div className="flex flex-col gap-6 mb-2 mt-8">
+            <div>За Изпълнителя: ______________________ <span className="text-[10px] text-gray-500">/подпис/</span>
+              <div className="mt-1 text-[11px] text-gray-500">_______________________________________________<br />/саморъчно изписване на трите имена/</div>
+            </div>
+            <div>За Възложителя: ______________________ <span className="text-[10px] text-gray-500">/подпис/</span>
+              <div className="mt-1 text-[11px] text-gray-500">_______________________________________________<br />/саморъчно изписване на трите имена/</div>
+            </div>
           </div>
 
           {/* Приложение — рецепта и проверка на суровини */}
