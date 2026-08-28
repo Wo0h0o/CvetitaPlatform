@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense, type CSSProperties, type ReactNode, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense, type CSSProperties, type ReactNode, type ChangeEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
@@ -102,7 +102,35 @@ function NotifyProductInner() {
   const emptyNewIng = { name_bg: "", kind: "other" as NzIngredient["kind"], unit: "mg", name_lat: "", ref_value: "", elem_element: "", elem_factor: "", elem_ref: "" };
   const [newIng, setNewIng] = useState(emptyNewIng);
 
-  // load existing product
+  const restoredRef = useRef(false);
+
+  // Цветита контекст (заявител-производител + производствен адрес + собствен сайт)
+  function applyCvetita(r: Refs | undefined = refs) {
+    const c = r?.companies.find((x) => x.reg_role === "producer") || r?.companies[0] || null;
+    setCompany(c);
+    setCompanyId(c?.id ?? null);
+    const site = r?.sites.find((s) => s.is_default) || r?.sites[0];
+    setSiteId(site?.id ?? null);
+    setDistAddr(PRODUCER.siteAddress);
+    setRemote({ on: true, desc: DEFAULT_REMOTE_DESC, website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email });
+  }
+  function chooseMode(m: "cvetita" | "ishleme") {
+    setMode(m);
+    if (m === "cvetita") applyCvetita();
+    else {
+      setCompany({ eik: "", name: "", manager: "", address: "" });
+      setCompanyId(null);
+      setDistAddr("");
+      setRemote({ on: false, desc: DEFAULT_REMOTE_DESC, website: "", phone: "", email: "" });
+    }
+  }
+  function applyCompany(c: NzCompany & { id?: number }) {
+    setCompany(c);
+    setCompanyId(c.id ?? null);
+    setRemote({ on: !!(c.remote_website || c.remote_phone || c.remote_email), desc: DEFAULT_REMOTE_DESC, website: c.remote_website || "", phone: c.remote_phone || "", email: c.remote_email || "" });
+  }
+
+  // load existing product (+ запазен контекст на заявлението)
   useEffect(() => {
     if (!editId) return;
     fetch(`/api/notify/products?id=${editId}`)
@@ -124,49 +152,26 @@ function NotifyProductInner() {
         setRegNumber(p.reg_number || "");
         setRegDate(p.reg_date || "");
         setSavedId(p.id);
+        const s = p.submission;
+        if (s) {
+          restoredRef.current = true;
+          setMode(s.mode || "cvetita");
+          if (s.company) { setCompany(s.company); setCompanyId(s.company.id ?? null); }
+          if (s.dist_addr != null) setDistAddr(s.dist_addr);
+          if (s.remote) setRemote(s.remote);
+          if (s.count) setCount(s.count);
+          if (s.submit_date) setSubmitDate(s.submit_date);
+          if (s.site_id != null) setSiteId(s.site_id);
+        }
       });
   }, [editId]);
 
-  // default company = Цветита when refs load and mode=cvetita
+  // По подразбиране Цветита за НОВ продукт, щом заредят refs (без да пипа възстановено запазено)
   useEffect(() => {
-    if (!refs) return;
-    if (mode === "cvetita") {
-      const c = refs.companies.find((x) => x.reg_role === "producer") || refs.companies[0];
-      if (c) {
-        setCompany(c);
-        setCompanyId(c.id);
-      }
-      const site = refs.sites.find((s) => s.is_default) || refs.sites[0];
-      if (site) setSiteId(site.id);
-    }
-  }, [refs, mode]);
-
-  // адрес на дистрибуция: Цветита = фиксиран производствен адрес; ишлеме = избран склад или свободен текст
-  useEffect(() => {
-    if (mode === "cvetita") setDistAddr(PRODUCER.siteAddress);
-    else setDistAddr("");
-  }, [mode]);
-
-  // при Ишлеме показвай веднага празни фирмени полета (без да чакаш lookup)
-  useEffect(() => {
-    if (mode === "ishleme") {
-      setCompany((c) => (c && c.reg_role !== "producer" ? c : { eik: "", name: "", manager: "", address: "" }));
-      setCompanyId(null);
-    }
-  }, [mode]);
-
-  // prefill remote-trade block when mode or company identity changes
-  useEffect(() => {
-    if (mode === "cvetita") {
-      setRemote({ on: true, desc: DEFAULT_REMOTE_DESC, website: CVETITA_REMOTE.website, phone: CVETITA_REMOTE.phone, email: CVETITA_REMOTE.email });
-    } else {
-      const w = company?.remote_website || "";
-      const p = company?.remote_phone || "";
-      const e = company?.remote_email || "";
-      setRemote({ on: !!(w || p || e), desc: DEFAULT_REMOTE_DESC, website: w, phone: p, email: e });
-    }
+    if (!refs || restoredRef.current) return;
+    if (mode === "cvetita" && !company) applyCvetita(refs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, company?.eik]);
+  }, [refs, mode, company]);
 
   async function saveCompany() {
     if (!company?.eik || !company?.name) { setLookupNote("Попълни поне ЕИК и име на фирмата."); return; }
@@ -428,8 +433,12 @@ function NotifyProductInner() {
       if (!res.ok) { setLookupNote(`Грешка ${res.status}. Опитай пак след минута.`); return; }
       const r = await res.json();
       if (r.company && r.company.name) {
-        setCompany((c) => ({ eik, name: "", manager: "", address: "", ...c, ...r.company }));
-        setCompanyId(r.company.id ?? null);
+        if (r.source === "saved") {
+          applyCompany(r.company); // запазена фирма → зарежда и remote блока
+        } else {
+          setCompany((c) => ({ eik, name: "", manager: "", address: "", ...c, ...r.company }));
+          setCompanyId(r.company.id ?? null);
+        }
         const src = r.source === "saved" ? "запазена фирма" : r.source === "papagal" ? "Търговския регистър" : "VIES";
         setLookupNote(`Извадено от ${src} — провери данните и натисни „Запази фирмата“.`);
       } else {
@@ -460,6 +469,15 @@ function NotifyProductInner() {
         sweetener,
         reg_number: regNumber,
         reg_date: regDate || null,
+        submission: {
+          mode,
+          company,
+          site_id: siteId,
+          dist_addr: distAddr,
+          remote,
+          count,
+          submit_date: submitDate,
+        },
       };
       let res;
       if (savedId) {
@@ -505,10 +523,10 @@ function NotifyProductInner() {
         <Card className="p-4 mb-4">
           <Label>Шаблон на заявлението</Label>
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setMode("cvetita")} className={`px-4 py-2 rounded-lg text-[13px] border ${mode === "cvetita" ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>
+            <button onClick={() => chooseMode("cvetita")} className={`px-4 py-2 rounded-lg text-[13px] border ${mode === "cvetita" ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>
               Цветита (производител)
             </button>
-            <button onClick={() => setMode("ishleme")} className={`px-4 py-2 rounded-lg text-[13px] border ${mode === "ishleme" ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>
+            <button onClick={() => chooseMode("ishleme")} className={`px-4 py-2 rounded-lg text-[13px] border ${mode === "ishleme" ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>
               Ишлеме (за друга фирма)
             </button>
           </div>
@@ -522,7 +540,7 @@ function NotifyProductInner() {
               {refs && refs.companies.filter((c) => c.reg_role !== "producer").length > 0 && (
                 <div>
                   <Label>Избери запазена фирма</Label>
-                  <select className={inputCls} value={companyId ?? ""} onChange={(e) => { const c = refs.companies.find((x) => String(x.id) === e.target.value); if (c) { setCompany(c); setCompanyId(c.id); } else { setCompany({ eik: "", name: "", manager: "", address: "" }); setCompanyId(null); } }}>
+                  <select className={inputCls} value={companyId ?? ""} onChange={(e) => { const c = refs.companies.find((x) => String(x.id) === e.target.value); if (c) { applyCompany(c); } else { setCompany({ eik: "", name: "", manager: "", address: "" }); setCompanyId(null); } }}>
                     <option value="">— нова фирма —</option>
                     {refs.companies.filter((c) => c.reg_role !== "producer").map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
