@@ -33,7 +33,7 @@ interface Order {
 }
 interface WO { item_id: string; wo_num: string; date: string; qty: number }
 
-const LEAD_WORKDAYS = 14;
+const LEAD_WORKDAYS = 20;
 
 function addWorkdays(iso: string, n: number): Date {
   const d = new Date(iso + "T00:00:00Z");
