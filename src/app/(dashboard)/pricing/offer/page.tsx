@@ -79,9 +79,18 @@ function OfferInner() {
   function updateIng(idx: number, patch: Partial<PlIngredient>) {
     setIngredients((a) => a.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
-  function pickMaterial(idx: number, itemId: string) {
-    const m = refs?.materials.find((x) => String(x.item_id) === itemId);
-    if (m) updateIng(idx, { item_id: m.item_id, name: m.name, price_eur: m.price_eur != null ? m.price_eur : "" });
+  // Име на суровина: съвпадне ли с PRIM суровина → взима item_id + доставната цена;
+  // иначе е ръчна суровина (пишеш име и цена сам).
+  function setIngredientName(idx: number, name: string) {
+    const key = name.toLowerCase().replace(/\s+/g, " ").trim();
+    const m = refs?.materials.find((x) => x.name.toLowerCase().replace(/\s+/g, " ").trim() === key);
+    setIngredients((a) =>
+      a.map((it, i) => {
+        if (i !== idx) return it;
+        if (m) return { ...it, name: m.name, item_id: m.item_id, price_eur: m.price_eur != null ? m.price_eur : it.price_eur || "" };
+        return { ...it, name, item_id: undefined };
+      })
+    );
   }
   function updateOp(idx: number, unit_price: string) {
     setOperations((a) => a.map((op, i) => (i === idx ? { ...op, unit_price } : op)));
@@ -180,10 +189,7 @@ function OfferInner() {
               {ingredients.map((ing, idx) => (
                 <tr key={idx} className="border-t border-border">
                   <td className="px-2 py-1.5 min-w-[220px]">
-                    <select value={ing.item_id ? String(ing.item_id) : ""} onChange={(e) => pickMaterial(idx, e.target.value)} className={inputCls + " py-1.5"}>
-                      <option value="">— избери суровина —</option>
-                      {refs?.materials.map((m) => <option key={m.item_id} value={m.item_id}>{m.name}{m.price_eur == null ? " (без цена)" : ""}</option>)}
-                    </select>
+                    <input list="pl-materials" value={ing.name} onChange={(e) => setIngredientName(idx, e.target.value)} className={inputCls + " py-1.5"} placeholder="избери или напиши суровина" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input
@@ -217,6 +223,7 @@ function OfferInner() {
             )}
           </table>
         </div>
+        <datalist id="pl-materials">{refs?.materials.map((m) => <option key={m.item_id} value={m.name} />)}</datalist>
         {ingredients.some((i) => Number(i.price_eur) === 0 && i.item_id) && (
           <p className="text-[11px] text-amber-600 mt-2">Някои суровини нямат доставна цена в PRIM — впиши я ръчно в полето €/кг (или натисни „Синк цени“).</p>
         )}
