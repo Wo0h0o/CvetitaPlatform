@@ -1,0 +1,78 @@
+import { connectPrim } from "@/lib/prim";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
+
+/**
+ * Refresh the raw-material catalogue for the Private-Label pricing module.
+ * Pulls all raw materials (tp="material", measured in kg) from PRIM and their
+ * last purchase price (€/kg) from the `__SAVED_PO_PRICES__` price list, then
+ * upserts them into `pl_materials`.
+ */
+
+interface PrimItem {
+  id: number | string;
+  sku: number | string;
+  name: string;
+  tp?: string;
+  measures?: { code?: string; name?: string }[];
+}
+interface PriceRow {
+  sku: number | string;
+  price: number | string;
+  currency?: string;
+  measure_code?: string;
+}
+
+const chunk = <T,>(arr: T[], n: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+};
+
+export async function refreshMaterials(): Promise<{ ok: boolean; materials: number; priced: number }> {
+  const prim = await connectPrim();
+
+  const itemsRes = await prim.callTool<{ result?: PrimItem[] }>("Items-get", { limit: 10000 });
+  const materials = (itemsRes.result ?? []).filter(
+    (i) => i.tp === "material" && (i.measures ?? []).some((m) => m.code === "kg")
+  );
+
+  // последна доставна цена €/кг от ценова листа __SAVED_PO_PRICES__ (на партиди)
+  const priceBySku = new Map<string, { price: number; currency: string }>();
+  const skus = materials.map((m) => String(m.sku)).filter(Boolean);
+  for (const part of chunk(skus, 100)) {
+    try {
+      const pr = await prim.callTool<{ result?: PriceRow[] }>("Prices-get", {
+        data: part.map((sku) => ({ sku, pricelist_code: "__SAVED_PO_PRICES__" })),
+      });
+      for (const p of pr.result ?? []) {
+        priceBySku.set(String(p.sku), { price: parseFloat(String(p.price)), currency: p.currency || "EUR" });
+      }
+    } catch (e) {
+      logger.warn("pricing: price chunk failed", { error: String(e) });
+    }
+  }
+
+  const now = new Date().toISOString();
+  const rows = materials.map((m) => {
+    const p = priceBySku.get(String(m.sku));
+    return {
+      item_id: Number(m.id),
+      sku: String(m.sku),
+      name: m.name,
+      unit: "kg",
+      price_eur: p ? p.price : null,
+      price_updated: p ? now : null,
+      updated_at: now,
+    };
+  });
+
+  if (rows.length) {
+    const { error } = await supabaseAdmin.from("pl_materials").upsert(rows, { onConflict: "item_id" });
+    if (error) throw new Error(`pl_materials upsert: ${error.message}`);
+  }
+
+  const priced = rows.filter((r) => r.price_eur != null).length;
+  logger.info("pricing materials refreshed", { materials: rows.length, priced });
+  return { ok: true, materials: rows.length, priced };
+}
