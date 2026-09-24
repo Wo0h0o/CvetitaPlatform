@@ -13,8 +13,10 @@ import {
   computeTotals,
   eur,
   PRIM_MARKUP,
+  PL_TYPES,
   type PlIngredient,
   type PlOperation,
+  type PlProductType,
 } from "@/lib/pricing";
 
 type Mode = "standard" | "key";
@@ -42,6 +44,7 @@ function Inner({ mode }: { mode: Mode }) {
 
   const [productName, setProductName] = useState("");
   const [client, setClient] = useState("");
+  const [productType, setProductType] = useState<PlProductType>("tablet");
   const [tabsPerPack, setTabsPerPack] = useState<string>("");
   const [ingredients, setIngredients] = useState<PlIngredient[]>([]);
   const [operations, setOperations] = useState<PlOperation[]>([]);
@@ -51,11 +54,22 @@ function Inner({ mode }: { mode: Mode }) {
   const [note, setNote] = useState("");
   const [opsInit, setOpsInit] = useState(false);
 
+  // Операции по подразбиране за даден вид продукт (tablet → от PRIM, останалите → фиксирани).
+  const opsForType = (t: PlProductType): PlOperation[] =>
+    t === "tablet"
+      ? (refs?.operations ?? []).map((o) => ({ name: o.name, unit_price: o.unit_price, kind: o.kind, is_input: o.is_input, is_labor: o.is_labor }))
+      : PL_TYPES[t].defaultOps.map((o) => ({ ...o }));
+
   useEffect(() => {
     if (!refs || opsInit || editId) return;
-    setOperations(refs.operations.map((o) => ({ name: o.name, unit_price: o.unit_price, kind: o.kind, is_input: o.is_input, is_labor: o.is_labor })));
+    setOperations(opsForType("tablet"));
     setOpsInit(true);
-  }, [refs, opsInit, editId]);
+  }, [refs, opsInit, editId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function changeType(t: PlProductType) {
+    setProductType(t);
+    if (!editId) setOperations(opsForType(t)); // смяна на вида → нови операции по подразбиране
+  }
 
   useEffect(() => {
     if (!editId) return;
@@ -63,6 +77,7 @@ function Inner({ mode }: { mode: Mode }) {
       if (!o) return;
       setProductName(o.product_name || "");
       setClient(o.client || "");
+      setProductType((o.product_type as PlProductType) || "tablet");
       setTabsPerPack(o.tabs_per_pack != null ? String(o.tabs_per_pack) : "");
       setIngredients(o.ingredients || []);
       setOperations(o.operations || []);
@@ -71,7 +86,9 @@ function Inner({ mode }: { mode: Mode }) {
     });
   }, [editId, mode]);
 
-  const totals = useMemo(() => computeTotals(ingredients, operations, tabsPerPack), [ingredients, operations, tabsPerPack]);
+  const typeCfg = PL_TYPES[productType];
+  const divisor = typeCfg.divisor;
+  const totals = useMemo(() => computeTotals(ingredients, operations, tabsPerPack, divisor), [ingredients, operations, tabsPerPack, divisor]);
   const tpp = tabsPerPack;
 
   function addIngredient() {
@@ -93,6 +110,12 @@ function Inner({ mode }: { mode: Mode }) {
   }
   function updateOp(idx: number, unit_price: string) {
     setOperations((a) => a.map((op, i) => (i === idx ? { ...op, unit_price } : op)));
+  }
+  function updateOpField(idx: number, patch: Partial<PlOperation>) {
+    setOperations((a) => a.map((op, i) => (i === idx ? { ...op, ...patch } : op)));
+  }
+  function addOp() {
+    setOperations((a) => [...a, { name: "", unit_price: 0, kind: "per_pack", is_labor: false }]);
   }
   function setOpCapsule(idx: number, itemId: string) {
     const c = refs?.capsules.find((x) => String(x.item_id) === itemId);
@@ -127,6 +150,7 @@ function Inner({ mode }: { mode: Mode }) {
       const payload: Record<string, unknown> = {
         product_name: productName,
         client: client || null,
+        product_type: productType,
         tabs_per_pack: tabsPerPack ? Number(tabsPerPack) : null,
         ingredients,
         operations,
@@ -165,10 +189,16 @@ function Inner({ mode }: { mode: Mode }) {
       </div>
       {note && <div className="text-[12px] text-text-2 bg-surface-2 rounded-lg px-3 py-2 mb-4">{note}</div>}
 
-      <Card className="p-4 mb-4 grid sm:grid-cols-3 gap-3">
+      <Card className="p-4 mb-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div><Label>Продукт</Label><input value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="напр. Продукт за сън 60 капс" /></div>
+        <div>
+          <Label>Вид продукт</Label>
+          <select value={productType} onChange={(e) => changeType(e.target.value as PlProductType)} className={inputCls}>
+            {(Object.keys(PL_TYPES) as PlProductType[]).map((t) => <option key={t} value={t}>{PL_TYPES[t].label}</option>)}
+          </select>
+        </div>
         <div><Label>Клиент (по избор)</Label><input value={client} onChange={(e) => setClient(e.target.value)} className={inputCls} placeholder="напр. Сапфир Нутришън" /></div>
-        <div><Label>Брой в опаковка (табл/капс)</Label><input value={tabsPerPack} onChange={(e) => setTabsPerPack(e.target.value.replace(/[^\d]/g, ""))} className={inputCls} placeholder="напр. 60" /></div>
+        <div><Label>{typeCfg.packLabel}</Label><input value={tabsPerPack} onChange={(e) => setTabsPerPack(e.target.value.replace(/[^\d.,]/g, ""))} className={inputCls} placeholder="напр. 60" /></div>
       </Card>
 
       <Card className="p-4 mb-4">
@@ -182,8 +212,8 @@ function Inner({ mode }: { mode: Mode }) {
               <tr className="text-[10px] uppercase tracking-wider text-text-3">
                 <th className="text-left font-medium px-2 py-1.5">Суровина</th>
                 <th className="text-right font-medium px-2 py-1.5">{priceHeader}</th>
-                <th className="text-right font-medium px-2 py-1.5">Мг в табл.</th>
-                <th className="text-right font-medium px-2 py-1.5">€/табл.</th>
+                <th className="text-right font-medium px-2 py-1.5">{typeCfg.doseLabel}</th>
+                <th className="text-right font-medium px-2 py-1.5">{typeCfg.perUnitLabel}</th>
                 <th className="text-right font-medium px-2 py-1.5">€/опаковка</th>
                 <th></th>
               </tr>
@@ -197,9 +227,9 @@ function Inner({ mode }: { mode: Mode }) {
                   <td className="px-2 py-1.5 text-right">
                     <input value={ing.price_eur === "" || ing.price_eur == null ? "" : String(ing.price_eur)} onChange={(e) => updateIng(idx, { price_eur: e.target.value })} className="w-[90px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right tabular-nums" placeholder="€/кг" />
                   </td>
-                  <td className="px-2 py-1.5"><input value={String(ing.mg_per_tablet)} onChange={(e) => updateIng(idx, { mg_per_tablet: e.target.value })} className="w-[80px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right" placeholder="мг" /></td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-text-3 whitespace-nowrap">{eur(pricePerTablet(ing), 5)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-text whitespace-nowrap">{eur(pricePerPack(ing, tpp), 4)}</td>
+                  <td className="px-2 py-1.5"><input value={String(ing.mg_per_tablet)} onChange={(e) => updateIng(idx, { mg_per_tablet: e.target.value })} className="w-[80px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right" placeholder={typeCfg.doseUnit} /></td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-text-3 whitespace-nowrap">{eur(pricePerTablet(ing, divisor), 5)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-text whitespace-nowrap">{eur(pricePerPack(ing, tpp, divisor), 4)}</td>
                   <td className="px-2 py-1.5"><button onClick={() => setIngredients((a) => a.filter((_, i) => i !== idx))} className="text-text-3 hover:text-red-500"><X size={14} /></button></td>
                 </tr>
               ))}
@@ -223,22 +253,31 @@ function Inner({ mode }: { mode: Mode }) {
       </Card>
 
       <Card className="p-4 mb-4">
-        <div className="text-[13px] font-semibold text-text mb-3">Модул 2 · Операции</div>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[13px] font-semibold text-text">Модул 2 · Операции</span>
+          <button onClick={addOp} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg border border-border hover:bg-surface-2 cursor-pointer"><Plus size={14} /> Добави операция</button>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px] min-w-[620px]">
+          <table className="w-full text-[12px] min-w-[720px]">
             <thead>
               <tr className="text-[10px] uppercase tracking-wider text-text-3">
                 <th className="text-left font-medium px-2 py-1.5">Операция</th>
                 <th className="text-right font-medium px-2 py-1.5">Единична цена €</th>
                 <th className="text-left font-medium px-2 py-1.5">Начин</th>
+                <th className="text-center font-medium px-2 py-1.5">Труд</th>
                 <th className="text-right font-medium px-2 py-1.5">€/опаковка</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {operations.map((op, idx) => (
                 <tr key={idx} className="border-t border-border">
-                  <td className="px-2 py-1.5">
-                    <div>{op.name}{op.is_input ? <span className="text-[10px] text-accent ml-1">(въвежда се)</span> : ""}</div>
+                  <td className="px-2 py-1.5 min-w-[200px]">
+                    {op.is_input ? (
+                      <div>{op.name}<span className="text-[10px] text-accent ml-1">(въвежда се)</span></div>
+                    ) : (
+                      <input value={op.name} onChange={(e) => updateOpField(idx, { name: e.target.value })} className={inputCls + " py-1.5"} placeholder="име на операция" />
+                    )}
                     {op.is_input && (refs?.capsules?.length ?? 0) > 0 && (
                       <select value={refs?.capsules.find((c) => c.name === op.capsule)?.item_id ?? ""} onChange={(e) => setOpCapsule(idx, e.target.value)} className="mt-1 w-full max-w-[280px] px-2 py-1 rounded-md border border-border text-[11px] bg-surface">
                         <option value="">— избери вид капсула —</option>
@@ -247,19 +286,28 @@ function Inner({ mode }: { mode: Mode }) {
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-right"><input value={String(op.unit_price)} onChange={(e) => updateOp(idx, e.target.value)} className="w-[110px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right tabular-nums" /></td>
-                  <td className="px-2 py-1.5 text-[11px] text-text-3">{op.kind === "per_unit" ? "× брой в опаковка" : "фиксирана"}</td>
+                  <td className="px-2 py-1.5">
+                    <select value={op.kind} onChange={(e) => updateOpField(idx, { kind: e.target.value as "per_unit" | "per_pack" })} className="px-2 py-1 rounded-md border border-border text-[11px] bg-surface">
+                      <option value="per_pack">фиксирана</option>
+                      <option value="per_unit">× брой в опаковка</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-1.5 text-center"><input type="checkbox" checked={!!op.is_labor} onChange={(e) => updateOpField(idx, { is_labor: e.target.checked })} /></td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">{eur(opPerPack(op, tpp), 4)}</td>
+                  <td className="px-2 py-1.5"><button onClick={() => setOperations((a) => a.filter((_, i) => i !== idx))} className="text-text-3 hover:text-red-500" title="Премахни"><X size={14} /></button></td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t border-border text-text-2">
-                <td colSpan={3} className="px-2 py-1.5 text-right">Труд (броене + таблетиране + лепене):</td>
+                <td colSpan={4} className="px-2 py-1.5 text-right">Труд (операциите, маркирани като ръчен труд):</td>
                 <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{eur(totals.labor, 4)} €</td>
+                <td></td>
               </tr>
               <tr className="border-t-2 border-border">
-                <td colSpan={3} className="px-2 py-2 text-right font-semibold">Тотал операции за опаковка:</td>
+                <td colSpan={4} className="px-2 py-2 text-right font-semibold">Тотал операции за опаковка:</td>
                 <td className="px-2 py-2 text-right font-bold text-accent tabular-nums whitespace-nowrap">{eur(totals.totalOps, 4)} €</td>
+                <td></td>
               </tr>
             </tfoot>
           </table>
