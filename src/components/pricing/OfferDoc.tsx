@@ -30,6 +30,12 @@ const DEFAULT_NOTES = [
   "Обозначение на кашоните с вида продукт и количество в кашон;",
   "Издаване на сертификат за качество;",
 ];
+const DEFAULT_NOT_INCLUDED = [
+  "Цена за фолио на продукта;",
+  "Цена за кутия;",
+  "Транспортни опаковки;",
+  "Транспорт на готов продукт;",
+];
 
 // малко поле, което на екран има подчертаване, а на печат е чисто
 const fld = "bg-transparent border-0 border-b border-dashed border-gray-300 print:border-0 focus:outline-none focus:border-accent px-0.5";
@@ -50,6 +56,7 @@ function Inner({ mode }: { mode: Mode }) {
   const [term, setTerm] = useState("обикновена поръчка – 30 работни дни");
   const [validity, setValidity] = useState("30 дни");
   const [notes, setNotes] = useState<string[]>(DEFAULT_NOTES);
+  const [notesNot, setNotesNot] = useState<string[]>(DEFAULT_NOT_INCLUDED);
   const [rows, setRows] = useState<DocRow[]>([]);
   const [init, setInit] = useState(false);
 
@@ -161,6 +168,27 @@ function Inner({ mode }: { mode: Mode }) {
               </div>
             ))}
             <button onClick={() => setNotes((a) => [...a, ""])} className="no-print mt-1 flex items-center gap-1 text-[12px] text-accent"><Plus size={12} /> ред</button>
+          </div>
+
+          <p className="font-bold mt-4">Цената не включва:</p>
+          <div>
+            {notesNot.map((nt, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <span>*</span>
+                <input value={nt} onChange={(e) => setNotesNot((a) => a.map((x, j) => (j === i ? e.target.value : x)))} className={fld + " flex-1"} />
+                <button onClick={() => setNotesNot((a) => a.filter((_, j) => j !== i))} className="no-print text-gray-400 hover:text-red-500"><X size={12} /></button>
+              </div>
+            ))}
+            <button onClick={() => setNotesNot((a) => [...a, ""])} className="no-print mt-1 flex items-center gap-1 text-[12px] text-accent"><Plus size={12} /> ред</button>
+          </div>
+
+          {/* Футър — С уважение + печат */}
+          <div className="flex justify-end mt-12">
+            <div className="relative" style={{ width: 380 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/cvetita-stamp.png" alt="печат Цветита Хербал" style={{ position: "absolute", right: 30, top: -46, width: 150, height: "auto" }} />
+              <div className="pt-2">С уважение: …………………………………………</div>
+            </div>
           </div>
         </div>
       )}
