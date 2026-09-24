@@ -81,7 +81,7 @@ function OfferInner() {
   }
   function pickMaterial(idx: number, itemId: string) {
     const m = refs?.materials.find((x) => String(x.item_id) === itemId);
-    if (m) updateIng(idx, { item_id: m.item_id, name: m.name, price_eur: m.price_eur ?? 0 });
+    if (m) updateIng(idx, { item_id: m.item_id, name: m.name, price_eur: m.price_eur != null ? m.price_eur : "" });
   }
   function updateOp(idx: number, unit_price: string) {
     setOperations((a) => a.map((op, i) => (i === idx ? { ...op, unit_price } : op)));
@@ -185,7 +185,14 @@ function OfferInner() {
                       {refs?.materials.map((m) => <option key={m.item_id} value={m.item_id}>{m.name}{m.price_eur == null ? " (без цена)" : ""}</option>)}
                     </select>
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-text-2 whitespace-nowrap">{eur(Number(ing.price_eur) || 0, 2)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    <input
+                      value={ing.price_eur === "" || ing.price_eur == null ? "" : String(ing.price_eur)}
+                      onChange={(e) => updateIng(idx, { price_eur: e.target.value })}
+                      className="w-[90px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right tabular-nums"
+                      placeholder="€/кг"
+                    />
+                  </td>
                   <td className="px-2 py-1.5">
                     <select value={ing.markup} onChange={(e) => updateIng(idx, { markup: Number(e.target.value) })} className={inputCls + " py-1.5 w-[130px]"}>
                       {MARKUPS.map((mk) => <option key={mk.v} value={mk.v}>{mk.label}</option>)}
@@ -211,7 +218,7 @@ function OfferInner() {
           </table>
         </div>
         {ingredients.some((i) => Number(i.price_eur) === 0 && i.item_id) && (
-          <p className="text-[11px] text-amber-600 mt-2">Някои суровини са без доставна цена в PRIM — натисни „Синк цени“ или провери в PRIM.</p>
+          <p className="text-[11px] text-amber-600 mt-2">Някои суровини нямат доставна цена в PRIM — впиши я ръчно в полето €/кг (или натисни „Синк цени“).</p>
         )}
       </Card>
 
