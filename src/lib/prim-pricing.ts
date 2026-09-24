@@ -37,7 +37,9 @@ export async function refreshMaterials(): Promise<{ ok: boolean; materials: numb
 
   const all = (await prim.callTool<{ result?: PrimItem[] }>("Items-get", { limit: 10000 })).result ?? [];
   const materials = all.filter((i) => i.tp === "material" && (i.measures ?? []).some((m) => m.code === "kg"));
-  const capsules = all.filter((i) => i.tp === "material" && String(i.group?.id ?? "") === CAPSULE_GROUP);
+  const capsules = all.filter(
+    (i) => i.tp === "material" && String(i.group?.id ?? "") === CAPSULE_GROUP && /^\s*капсула/i.test(i.name || "")
+  );
 
   // последна доставна цена от ценова листа __SAVED_PO_PRICES__ (на партиди)
   const priceBySku = new Map<string, { price: number; currency: string }>();
