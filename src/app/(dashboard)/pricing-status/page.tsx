@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { ListChecks, Plus, Loader2, Trash2, Phone, Mail, Check } from "lucide-react";
+import { ListChecks, Plus, Loader2, Trash2, Phone, Mail, Check, CheckCircle2, Link2 } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -35,8 +35,25 @@ const statusCls: Record<string, string> = {
 export default function PricingStatusPage() {
   const { data, isLoading, mutate } = useSWR<{ followups: Followup[] }>("/api/pricing/followups", fetcher, { revalidateOnFocus: false });
   const list = data?.followups ?? [];
+  const { data: gstatus, mutate: mutateG } = useSWR<{ connected: boolean; email: string | null }>("/api/google/status", fetcher, { revalidateOnFocus: false });
   const [adding, setAdding] = useState(false);
   const [nf, setNf] = useState({ client: "", client_email: "", subject: "", sent_date: todayISO() });
+  const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    const g = new URLSearchParams(window.location.search).get("google");
+    if (!g) return;
+    const msg: Record<string, string> = {
+      connected: "✓ Google е свързан — офертите вече автоматично добавят напомняния в календара и Gmail чернова.",
+      denied: "Свързването е отказано.",
+      no_refresh: "Google не върна refresh token. Пробвай пак — в екрана за съгласие натисни „Разреши“ за всички права.",
+      error: "Възникна грешка при свързването с Google. Пробвай пак.",
+      missing_code: "Липсва код от Google. Пробвай пак.",
+    };
+    setFlash(msg[g] || null);
+    mutateG();
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [mutateG]);
 
   async function patch(id: number, fields: Record<string, unknown>) {
     await fetch("/api/pricing/followups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...fields }) });
@@ -68,7 +85,20 @@ export default function PricingStatusPage() {
           <Plus size={16} /> Нов запис
         </button>
       </PageHeader>
-      <p className="text-[13px] text-text-3 mb-5">Проследяване на изпратени оферти: с кой клиент докъде сме и кои стъпки (обаждане/имейл) са свършени. Отмятай задачите, за да не се забравят.</p>
+      <p className="text-[13px] text-text-3 mb-3">Проследяване на изпратени оферти: с кой клиент докъде сме и кои стъпки (обаждане/имейл) са свършени. Отмятай задачите, за да не се забравят.</p>
+
+      {flash && <div className="mb-4 px-4 py-2.5 rounded-lg bg-accent-soft text-accent text-[13px]">{flash}</div>}
+
+      <Card className="p-3 mb-5 flex items-center gap-3 flex-wrap">
+        {gstatus?.connected ? (
+          <span className="flex items-center gap-2 text-[13px] text-accent"><CheckCircle2 size={16} /> Google свързан{gstatus.email ? ` — ${gstatus.email}` : ""}. Напомнянията и черновите се създават автоматично.</span>
+        ) : (
+          <>
+            <span className="text-[13px] text-text-2">За <b>автоматични</b> напомняния в календара + Gmail чернова свържи Google акаунта (препоръчително: cherbal.marketing@gmail.com).</span>
+            <a href="/api/google/connect" className="ml-auto flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer"><Link2 size={15} /> Свържи Google</a>
+          </>
+        )}
+      </Card>
 
       {adding && (
         <Card className="p-4 mb-4 grid sm:grid-cols-4 gap-3">

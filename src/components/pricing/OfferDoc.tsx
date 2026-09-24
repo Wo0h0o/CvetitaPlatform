@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
-import { ArrowLeft, Printer, Loader2, Plus, X, Mail, CalendarPlus } from "lucide-react";
+import { ArrowLeft, Printer, Loader2, Plus, X, Mail, CalendarPlus, CheckCircle2, Link2 } from "lucide-react";
 import { eur } from "@/lib/pricing";
 
 type Mode = "standard" | "key";
@@ -60,7 +60,11 @@ function Inner({ mode }: { mode: Mode }) {
   const [rows, setRows] = useState<DocRow[]>([]);
   const [clientEmail, setClientEmail] = useState("");
   const [trackNote, setTrackNote] = useState("");
+  const [busy, setBusy] = useState(false);
   const [init, setInit] = useState(false);
+
+  const { data: gstatus } = useSWR<{ connected: boolean; email: string | null }>("/api/google/status", fetcher, { revalidateOnFocus: false });
+  const googleConnected = !!gstatus?.connected;
 
   useEffect(() => {
     if (init || !selected.length) return;
@@ -85,14 +89,17 @@ function Inner({ mode }: { mode: Mode }) {
   const productsStr = rows.map((r) => r.name).filter(Boolean).join(", ");
   const salut = greet || attention || "господине/госпожо";
 
-  function gmailUrl() {
-    const su = "Ценова оферта — ЦВЕТИТА ХЕРБАЛ ЕООД";
-    const body =
+  const emailSubject = "Ценова оферта — ЦВЕТИТА ХЕРБАЛ ЕООД";
+  function emailBody() {
+    return (
       `Уважаеми/а ${salut},\n\n` +
       `Във връзка с Вашето запитване за производство, прилагаме нашата ценова оферта${productsStr ? ` за: ${productsStr}` : ""} (виж прикачения PDF файл).\n\n` +
       `Офертата е валидна ${validity}. Оставаме на разположение за въпроси и уточнения.\n\n` +
-      `С уважение,\nЦВЕТИТА ХЕРБАЛ ЕООД\nгр. Бургас, ул. „Граф Игнатиев“ № 17`;
-    return `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(clientEmail)}&su=${enc(su)}&body=${enc(body)}`;
+      `С уважение,\nЦВЕТИТА ХЕРБАЛ ЕООД\nгр. Бургас, ул. „Граф Игнатиев“ № 17`
+    );
+  }
+  function gmailUrl() {
+    return `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(clientEmail)}&su=${enc(emailSubject)}&body=${enc(emailBody())}`;
   }
   function calUrl(title: string, offsetDays: number) {
     const d = new Date();
@@ -104,20 +111,39 @@ function Inner({ mode }: { mode: Mode }) {
     const details = `Оферта до ${doCompany || "клиент"}${productsStr ? ` — ${productsStr}` : ""}.${clientEmail ? ` Имейл: ${clientEmail}.` : ""}`;
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${enc(title)}&dates=${s}/${eStr}&details=${enc(details)}`;
   }
-  // При изпращане на имейл: автоматично създава проследяване (3 стъпки) в „Оферти — статуси".
+  // При изпращане: създава проследяване (3 стъпки) + ако Google е свързан — авто 3 събития
+  // в календара на колежката и Gmail чернова (0 прозорци). Ако не е свързан → отваря Gmail compose.
   async function prepareEmail() {
-    if (!clientEmail) return;
+    if (!clientEmail || busy) return;
+    setBusy(true);
+    let connected = false;
     try {
-      await fetch("/api/pricing/followups", {
+      const res = await fetch("/api/pricing/calendar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ module: mode, client: doCompany || null, client_email: clientEmail || null, subject: productsStr || null, sent_date: new Date().toISOString().slice(0, 10), status: "изпратена" }),
+        body: JSON.stringify({
+          module: mode,
+          client: doCompany || null,
+          client_email: clientEmail || null,
+          subject: productsStr || null,
+          body_text: emailBody(),
+          sent_date: new Date().toISOString().slice(0, 10),
+        }),
       });
-      setTrackNote("✓ Създадено проследяване — виж „Оферти — статуси“.");
+      const j = await res.json();
+      connected = !!j.connected;
+      if (connected) {
+        setTrackNote(`✓ Готово: ${j.events || 0} напомняния в календара${j.draft ? " + Gmail чернова" : ""}${j.email ? ` (${j.email})` : ""}. Отвори Gmail → Чернови.`);
+      } else {
+        setTrackNote("✓ Създадено проследяване. Google не е свързан — отварям Gmail и линковете за календара.");
+      }
     } catch {
-      /* дори проследяването да не стане, отваряме имейла */
+      setTrackNote("Проследяването не се създаде, но отварям имейла.");
+    } finally {
+      setBusy(false);
     }
-    window.open(gmailUrl(), "_blank", "noopener");
+    // Без свързан Google → падаме към ръчния имейл (черновата иначе е вече в Gmail).
+    if (!connected) window.open(gmailUrl(), "_blank", "noopener");
   }
 
   const co = doCompany || "клиент";
@@ -145,21 +171,32 @@ function Inner({ mode }: { mode: Mode }) {
         <div className="flex items-center gap-3 flex-wrap mb-2">
           <Link href={base} className="flex items-center gap-2 text-[13px] text-text-2 hover:text-text"><ArrowLeft size={16} /> Назад</Link>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
-            <button onClick={prepareEmail} disabled={!clientEmail} title={clientEmail ? "Създава проследяване и отваря имейла" : "Впиши имейл на клиента в блока „ДО“"} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer disabled:opacity-50">
-              <Mail size={15} /> Подготви имейл + проследяване
+            {googleConnected ? (
+              <span className="flex items-center gap-1.5 text-[12px] text-accent" title={gstatus?.email ? `Свързан: ${gstatus.email}` : "Google е свързан"}>
+                <CheckCircle2 size={15} /> Google свързан{gstatus?.email ? ` (${gstatus.email})` : ""}
+              </span>
+            ) : (
+              <a href="/api/google/connect" className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer" title="Свържи Google акаунт за автоматични напомняния + чернова">
+                <Link2 size={15} /> Свържи Google
+              </a>
+            )}
+            <button onClick={prepareEmail} disabled={!clientEmail || busy} title={clientEmail ? (googleConnected ? "Създава проследяване + авто напомняния в календара + Gmail чернова" : "Създава проследяване и отваря имейла") : "Впиши имейл на клиента в блока „ДО“"} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer disabled:opacity-50">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />} {googleConnected ? "Изпрати + авто проследяване" : "Подготви имейл + проследяване"}
             </button>
             <button onClick={() => window.print()} className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer">
               <Printer size={16} /> Печат / PDF
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap text-[12px] text-text-3">
-          <span className="flex items-center gap-1"><CalendarPlus size={14} /> Напомняния в календара:</span>
-          {reminders.map((r) => (
-            <a key={r.label} href={r.url} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 rounded-md border border-border hover:bg-surface-2 text-text-2 cursor-pointer">{r.label}</a>
-          ))}
-          {trackNote && <span className="text-accent ml-2">{trackNote}</span>}
-        </div>
+        {!googleConnected && (
+          <div className="flex items-center gap-2 flex-wrap text-[12px] text-text-3">
+            <span className="flex items-center gap-1"><CalendarPlus size={14} /> Напомняния в календара:</span>
+            {reminders.map((r) => (
+              <a key={r.label} href={r.url} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 rounded-md border border-border hover:bg-surface-2 text-text-2 cursor-pointer">{r.label}</a>
+            ))}
+          </div>
+        )}
+        {trackNote && <div className="text-[12px] text-accent mt-1">{trackNote}</div>}
       </div>
 
       {selected.length === 0 ? (
