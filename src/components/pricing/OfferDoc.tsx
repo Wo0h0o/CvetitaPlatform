@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
-import { ArrowLeft, Printer, Loader2, Plus, X, Mail, CalendarPlus, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, Printer, Loader2, Plus, X, Mail, CalendarPlus } from "lucide-react";
 import { eur } from "@/lib/pricing";
 
 type Mode = "standard" | "key";
@@ -104,6 +104,22 @@ function Inner({ mode }: { mode: Mode }) {
     const details = `Оферта до ${doCompany || "клиент"}${productsStr ? ` — ${productsStr}` : ""}.${clientEmail ? ` Имейл: ${clientEmail}.` : ""}`;
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${enc(title)}&dates=${s}/${eStr}&details=${enc(details)}`;
   }
+  // При изпращане на имейл: автоматично създава проследяване (3 стъпки) в „Оферти — статуси".
+  async function prepareEmail() {
+    if (!clientEmail) return;
+    try {
+      await fetch("/api/pricing/followups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ module: mode, client: doCompany || null, client_email: clientEmail || null, subject: productsStr || null, sent_date: new Date().toISOString().slice(0, 10), status: "изпратена" }),
+      });
+      setTrackNote("✓ Създадено проследяване — виж „Оферти — статуси“.");
+    } catch {
+      /* дори проследяването да не стане, отваряме имейла */
+    }
+    window.open(gmailUrl(), "_blank", "noopener");
+  }
+
   const co = doCompany || "клиент";
   const reminders = [
     { label: "📞 днес", url: calUrl(`📞 Обади се — ${co} (пусната оферта)`, 0) },
@@ -111,18 +127,6 @@ function Inner({ mode }: { mode: Mode }) {
     { label: "📞 +5 дни", url: calUrl(`📞 Обади се на ${co} (ако няма отговор)`, 5) },
   ];
 
-  async function startTracking() {
-    try {
-      await fetch("/api/pricing/followups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ module: mode, client: doCompany || null, client_email: clientEmail || null, subject: productsStr || null, sent_date: new Date().toISOString().slice(0, 10), status: "изпратена" }),
-      });
-      setTrackNote("Добавено в „Оферти — статуси“ с 3-те напомняния.");
-    } catch {
-      setTrackNote("Грешка при добавяне в статусите.");
-    }
-  }
 
   if (isLoading)
     return <div className="flex items-center gap-2 text-text-3 py-12 justify-center"><Loader2 className="animate-spin" size={18} /> Зареждане…</div>;
@@ -141,11 +145,8 @@ function Inner({ mode }: { mode: Mode }) {
         <div className="flex items-center gap-3 flex-wrap mb-2">
           <Link href={base} className="flex items-center gap-2 text-[13px] text-text-2 hover:text-text"><ArrowLeft size={16} /> Назад</Link>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
-            <a href={clientEmail ? gmailUrl() : undefined} target="_blank" rel="noopener noreferrer" title={clientEmail ? "" : "Впиши имейл на клиента в блока „ДО“"} className={`flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 ${clientEmail ? "cursor-pointer" : "opacity-50 pointer-events-none"}`}>
-              <Mail size={15} /> Подготви имейл
-            </a>
-            <button onClick={startTracking} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
-              <ClipboardCheck size={15} /> Стартирай проследяване
+            <button onClick={prepareEmail} disabled={!clientEmail} title={clientEmail ? "Създава проследяване и отваря имейла" : "Впиши имейл на клиента в блока „ДО“"} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer disabled:opacity-50">
+              <Mail size={15} /> Подготви имейл + проследяване
             </button>
             <button onClick={() => window.print()} className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer">
               <Printer size={16} /> Печат / PDF
