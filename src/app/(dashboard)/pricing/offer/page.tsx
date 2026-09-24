@@ -12,9 +12,12 @@ import {
   opPerPack,
   computeTotals,
   eur,
+  PRIM_MARKUP,
   type PlIngredient,
   type PlOperation,
 } from "@/lib/pricing";
+
+const withMarkup = (price: number) => Math.round(price * PRIM_MARKUP * 10000) / 10000;
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -23,11 +26,6 @@ interface OpRef { id: number; name: string; unit_price: number; kind: "per_unit"
 interface Capsule { item_id: number; name: string; price_eur: number | null }
 interface Refs { materials: Material[]; operations: OpRef[]; capsules: Capsule[] }
 
-const MARKUPS = [
-  { v: 1, label: "×1 (доставна)" },
-  { v: 1.2, label: "×1,2" },
-  { v: 2, label: "×2" },
-];
 const inputCls = "w-full px-3 py-2 rounded-lg border border-border bg-surface text-[13px] text-text focus:outline-none focus:ring-2 focus:ring-accent/40";
 function Label({ children }: { children: React.ReactNode }) {
   return <label className="block text-[11px] font-medium uppercase tracking-wider text-text-3 mb-1">{children}</label>;
@@ -75,7 +73,7 @@ function OfferInner() {
   const totals = useMemo(() => computeTotals(ingredients, operations, tabsPerPack), [ingredients, operations, tabsPerPack]);
 
   function addIngredient() {
-    setIngredients((a) => [...a, { item_id: undefined, name: "", price_eur: 0, markup: 1, mg_per_tablet: "" }]);
+    setIngredients((a) => [...a, { item_id: undefined, name: "", price_eur: "", mg_per_tablet: "" }]);
   }
   function updateIng(idx: number, patch: Partial<PlIngredient>) {
     setIngredients((a) => a.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -88,7 +86,7 @@ function OfferInner() {
     setIngredients((a) =>
       a.map((it, i) => {
         if (i !== idx) return it;
-        if (m) return { ...it, name: m.name, item_id: m.item_id, price_eur: m.price_eur != null ? m.price_eur : it.price_eur || "" };
+        if (m) return { ...it, name: m.name, item_id: m.item_id, price_eur: m.price_eur != null ? withMarkup(m.price_eur) : it.price_eur || "" };
         return { ...it, name, item_id: undefined };
       })
     );
@@ -110,7 +108,11 @@ function OfferInner() {
       // опресни цените на вече избраните съставки от новите данни
       if (fresh?.materials) {
         const byId = new Map(fresh.materials.map((m) => [String(m.item_id), m.price_eur]));
-        setIngredients((a) => a.map((ing) => (ing.item_id && byId.has(String(ing.item_id)) ? { ...ing, price_eur: byId.get(String(ing.item_id)) ?? ing.price_eur } : ing)));
+        setIngredients((a) => a.map((ing) => {
+          if (!ing.item_id || !byId.has(String(ing.item_id))) return ing;
+          const p = byId.get(String(ing.item_id));
+          return { ...ing, price_eur: p != null ? withMarkup(p) : ing.price_eur };
+        }));
       }
       setNote(r.materials ? `Обновени ${r.materials} суровини (${r.priced} с цена).` : r.error || "Обновено.");
     } catch {
@@ -182,8 +184,7 @@ function OfferInner() {
             <thead>
               <tr className="text-[10px] uppercase tracking-wider text-text-3">
                 <th className="text-left font-medium px-2 py-1.5">Суровина</th>
-                <th className="text-right font-medium px-2 py-1.5">€/кг (доставна)</th>
-                <th className="text-left font-medium px-2 py-1.5">Надценка</th>
+                <th className="text-right font-medium px-2 py-1.5">€/кг (доставна +20%)</th>
                 <th className="text-right font-medium px-2 py-1.5">Мг в табл.</th>
                 <th className="text-right font-medium px-2 py-1.5">€/табл.</th>
                 <th className="text-right font-medium px-2 py-1.5">€/опаковка</th>
@@ -204,11 +205,6 @@ function OfferInner() {
                       placeholder="€/кг"
                     />
                   </td>
-                  <td className="px-2 py-1.5">
-                    <select value={ing.markup} onChange={(e) => updateIng(idx, { markup: Number(e.target.value) })} className={inputCls + " py-1.5 w-[130px]"}>
-                      {MARKUPS.map((mk) => <option key={mk.v} value={mk.v}>{mk.label}</option>)}
-                    </select>
-                  </td>
                   <td className="px-2 py-1.5"><input value={String(ing.mg_per_tablet)} onChange={(e) => updateIng(idx, { mg_per_tablet: e.target.value })} className="w-[80px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right" placeholder="мг" /></td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-text-3 whitespace-nowrap">{eur(pricePerTablet(ing), 5)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-text whitespace-nowrap">{eur(pricePerPack(ing, tpp), 4)}</td>
@@ -220,7 +216,7 @@ function OfferInner() {
             {ingredients.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-border">
-                  <td colSpan={5} className="px-2 py-2 text-right font-semibold">Тотал суровини за опаковка:</td>
+                  <td colSpan={4} className="px-2 py-2 text-right font-semibold">Тотал суровини за опаковка:</td>
                   <td className="px-2 py-2 text-right font-bold text-accent tabular-nums whitespace-nowrap">{eur(totals.totalRaw, 4)} €</td>
                   <td></td>
                 </tr>

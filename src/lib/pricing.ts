@@ -6,10 +6,13 @@
 export interface PlIngredient {
   item_id?: number;
   name: string;
-  price_eur: number | string; // последна доставна €/кг
-  markup: number; // 1 | 1.2 | 2
+  price_eur: number | string; // €/кг (доставната от PRIM вече е +20%; полето е редактируемо)
+  markup?: number; // (запазено за стари оферти, вече не се ползва)
   mg_per_tablet: number | string; // мг в таблетка/капсула
 }
+
+/** Надценка над доставната цена от PRIM (по подразбиране +20%). */
+export const PRIM_MARKUP = 1.2;
 export interface PlOperation {
   name: string;
   unit_price: number | string;
@@ -25,8 +28,8 @@ const n = (v: number | string | null | undefined): number => {
   return isFinite(x) ? x : 0;
 };
 
-/** Ефективна цена €/кг след надценка. */
-export const effPricePerKg = (ing: PlIngredient) => n(ing.price_eur) * (ing.markup || 1);
+/** Ефективна цена €/кг (стойността в полето е крайната, вкл. +20% при PRIM цените). */
+export const effPricePerKg = (ing: PlIngredient) => n(ing.price_eur);
 /** Цена за 1 таблетка/капсула от тази съставка (€). */
 export const pricePerTablet = (ing: PlIngredient) => (effPricePerKg(ing) / 1_000_000) * n(ing.mg_per_tablet);
 /** Цена за цялата опаковка от тази съставка (€). */
