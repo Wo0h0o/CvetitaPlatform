@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
-import { ArrowLeft, Printer, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Printer, Loader2, Plus, X, Mail, CalendarPlus, ClipboardCheck } from "lucide-react";
 import { eur } from "@/lib/pricing";
 
 type Mode = "standard" | "key";
@@ -58,6 +58,8 @@ function Inner({ mode }: { mode: Mode }) {
   const [notes, setNotes] = useState<string[]>(DEFAULT_NOTES);
   const [notesNot, setNotesNot] = useState<string[]>(DEFAULT_NOT_INCLUDED);
   const [rows, setRows] = useState<DocRow[]>([]);
+  const [clientEmail, setClientEmail] = useState("");
+  const [trackNote, setTrackNote] = useState("");
   const [init, setInit] = useState(false);
 
   useEffect(() => {
@@ -79,6 +81,49 @@ function Inner({ mode }: { mode: Mode }) {
 
   const upd = (i: number, patch: Partial<DocRow>) => setRows((a) => a.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
+  const enc = encodeURIComponent;
+  const productsStr = rows.map((r) => r.name).filter(Boolean).join(", ");
+  const salut = greet || attention || "господине/госпожо";
+
+  function gmailUrl() {
+    const su = "Ценова оферта — ЦВЕТИТА ХЕРБАЛ ЕООД";
+    const body =
+      `Уважаеми/а ${salut},\n\n` +
+      `Във връзка с Вашето запитване за производство, прилагаме нашата ценова оферта${productsStr ? ` за: ${productsStr}` : ""} (виж прикачения PDF файл).\n\n` +
+      `Офертата е валидна ${validity}. Оставаме на разположение за въпроси и уточнения.\n\n` +
+      `С уважение,\nЦВЕТИТА ХЕРБАЛ ЕООД\nгр. Бургас, ул. „Граф Игнатиев“ № 17`;
+    return `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(clientEmail)}&su=${enc(su)}&body=${enc(body)}`;
+  }
+  function calUrl(title: string, offsetDays: number) {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const s = d.toISOString().slice(0, 10).replace(/-/g, "");
+    const e = new Date(d);
+    e.setDate(e.getDate() + 1);
+    const eStr = e.toISOString().slice(0, 10).replace(/-/g, "");
+    const details = `Оферта до ${doCompany || "клиент"}${productsStr ? ` — ${productsStr}` : ""}.${clientEmail ? ` Имейл: ${clientEmail}.` : ""}`;
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${enc(title)}&dates=${s}/${eStr}&details=${enc(details)}`;
+  }
+  const co = doCompany || "клиент";
+  const reminders = [
+    { label: "📞 днес", url: calUrl(`📞 Обади се — ${co} (пусната оферта)`, 0) },
+    { label: "✉️ +3 дни", url: calUrl(`✉️ Имейл до ${co} (ако няма отговор)`, 3) },
+    { label: "📞 +5 дни", url: calUrl(`📞 Обади се на ${co} (ако няма отговор)`, 5) },
+  ];
+
+  async function startTracking() {
+    try {
+      await fetch("/api/pricing/followups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ module: mode, client: doCompany || null, client_email: clientEmail || null, subject: productsStr || null, sent_date: new Date().toISOString().slice(0, 10), status: "изпратена" }),
+      });
+      setTrackNote("Добавено в „Оферти — статуси“ с 3-те напомняния.");
+    } catch {
+      setTrackNote("Грешка при добавяне в статусите.");
+    }
+  }
+
   if (isLoading)
     return <div className="flex items-center gap-2 text-text-3 py-12 justify-center"><Loader2 className="animate-spin" size={18} /> Зареждане…</div>;
 
@@ -92,11 +137,29 @@ function Inner({ mode }: { mode: Mode }) {
         .no-print { display: none !important; }
       }`}</style>
 
-      <div className="no-print flex items-center justify-between mb-5 gap-3 flex-wrap">
-        <Link href={base} className="flex items-center gap-2 text-[13px] text-text-2 hover:text-text"><ArrowLeft size={16} /> Назад</Link>
-        <button onClick={() => window.print()} className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer">
-          <Printer size={16} /> Печат / PDF
-        </button>
+      <div className="no-print mb-5">
+        <div className="flex items-center gap-3 flex-wrap mb-2">
+          <Link href={base} className="flex items-center gap-2 text-[13px] text-text-2 hover:text-text"><ArrowLeft size={16} /> Назад</Link>
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="имейл на клиента" className="w-52 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface" />
+            <a href={clientEmail ? gmailUrl() : undefined} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 ${clientEmail ? "cursor-pointer" : "opacity-50 pointer-events-none"}`}>
+              <Mail size={15} /> Подготви имейл
+            </a>
+            <button onClick={startTracking} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
+              <ClipboardCheck size={15} /> Стартирай проследяване
+            </button>
+            <button onClick={() => window.print()} className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 cursor-pointer">
+              <Printer size={16} /> Печат / PDF
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap text-[12px] text-text-3">
+          <span className="flex items-center gap-1"><CalendarPlus size={14} /> Напомняния в календара:</span>
+          {reminders.map((r) => (
+            <a key={r.label} href={r.url} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 rounded-md border border-border hover:bg-surface-2 text-text-2 cursor-pointer">{r.label}</a>
+          ))}
+          {trackNote && <span className="text-accent ml-2">{trackNote}</span>}
+        </div>
       </div>
 
       {selected.length === 0 ? (
