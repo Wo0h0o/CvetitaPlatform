@@ -13,7 +13,7 @@ const addDays = (iso: string, n: number) => {
 };
 
 /** Стандартните 3 стъпки от датата на изпращане. */
-export function defaultTasks(baseISO: string) {
+function defaultTasks(baseISO: string) {
   return [
     { kind: "call", label: "Обади се на клиента — пусната оферта", due: addDays(baseISO, 0), done: false, done_at: null },
     { kind: "email", label: "Изпрати нов имейл (ако няма отговор)", due: addDays(baseISO, 3), done: false, done_at: null },
