@@ -3,12 +3,15 @@ import type { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { requirePlUnlock } from "@/lib/pricing-lock";
 
 /** Private-Label offers: GET list/one, POST create, PATCH update, DELETE. */
 
 export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
+  const locked = await requirePlUnlock();
+  if (locked) return locked;
   const id = new URL(req.url).searchParams.get("id");
   if (id) {
     const { data, error } = await supabaseAdmin.from("pl_offers").select("*").eq("id", Number(id)).maybeSingle();
@@ -23,6 +26,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
+  const locked = await requirePlUnlock();
+  if (locked) return locked;
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -40,6 +45,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
+  const locked = await requirePlUnlock();
+  if (locked) return locked;
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -59,6 +66,8 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
+  const locked = await requirePlUnlock();
+  if (locked) return locked;
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   const { error } = await supabaseAdmin.from("pl_offers").delete().eq("id", Number(id));
