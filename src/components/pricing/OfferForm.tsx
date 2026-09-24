@@ -147,7 +147,7 @@ function Inner({ mode }: { mode: Mode }) {
     }
   }
 
-  const priceHeader = mode === "key" ? "€/кг (себестойност)" : "€/кг (доставна +20%)";
+  const priceHeader = mode === "key" ? "€/кг (себестойност)" : "€/кг (доставна)";
 
   return (
     <div>
