@@ -24,6 +24,7 @@ import {
   ClipboardList,
   BadgeCheck,
   Calculator,
+  ListChecks,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -103,6 +104,7 @@ const fullNavSections: NavSection[] = [
       { href: "/notify", icon: BadgeCheck, label: "Уведомления БАБХ" },
       { href: "/pricing", icon: Calculator, label: "Оферти — Private Label" },
       { href: "/pricing-key", icon: Calculator, label: "Оферти — Ключови клиенти" },
+      { href: "/pricing-status", icon: ListChecks, label: "Оферти — статуси" },
     ],
   },
   {
