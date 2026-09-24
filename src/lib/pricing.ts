@@ -16,6 +16,7 @@ export interface PlOperation {
   kind: "per_unit" | "per_pack"; // per_unit = × брой в опаковка; per_pack = фиксирана
   is_input?: boolean;
   is_labor?: boolean;
+  capsule?: string; // избран вид капсула (за „Капсули цена")
 }
 
 const n = (v: number | string | null | undefined): number => {

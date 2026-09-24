@@ -7,9 +7,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 export async function GET(req: NextRequest) {
   const authError = await requireAuth(req);
   if (authError) return authError;
-  const [mats, ops] = await Promise.all([
+  const [mats, ops, caps] = await Promise.all([
     supabaseAdmin.from("pl_materials").select("item_id, sku, name, unit, price_eur, price_updated").order("name"),
     supabaseAdmin.from("pl_operations").select("*").order("sort"),
+    supabaseAdmin.from("pl_capsules").select("item_id, name, price_eur").order("name"),
   ]);
-  return NextResponse.json({ materials: mats.data ?? [], operations: ops.data ?? [] });
+  return NextResponse.json({ materials: mats.data ?? [], operations: ops.data ?? [], capsules: caps.data ?? [] });
 }

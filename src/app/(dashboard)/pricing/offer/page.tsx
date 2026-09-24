@@ -20,7 +20,8 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 interface Material { item_id: number; sku: string; name: string; unit: string; price_eur: number | null; price_updated: string | null }
 interface OpRef { id: number; name: string; unit_price: number; kind: "per_unit" | "per_pack"; is_input: boolean; is_labor: boolean; sort: number }
-interface Refs { materials: Material[]; operations: OpRef[] }
+interface Capsule { item_id: number; name: string; price_eur: number | null }
+interface Refs { materials: Material[]; operations: OpRef[]; capsules: Capsule[] }
 
 const MARKUPS = [
   { v: 1, label: "×1 (доставна)" },
@@ -94,6 +95,10 @@ function OfferInner() {
   }
   function updateOp(idx: number, unit_price: string) {
     setOperations((a) => a.map((op, i) => (i === idx ? { ...op, unit_price } : op)));
+  }
+  function setOpCapsule(idx: number, itemId: string) {
+    const c = refs?.capsules.find((x) => String(x.item_id) === itemId);
+    setOperations((a) => a.map((op, i) => (i === idx ? { ...op, capsule: c ? c.name : "", unit_price: c && c.price_eur != null ? c.price_eur : op.unit_price } : op)));
   }
 
   async function syncPrices() {
@@ -245,7 +250,19 @@ function OfferInner() {
             <tbody>
               {operations.map((op, idx) => (
                 <tr key={idx} className="border-t border-border">
-                  <td className="px-2 py-1.5">{op.name}{op.is_input ? <span className="text-[10px] text-accent ml-1">(въвежда се)</span> : ""}</td>
+                  <td className="px-2 py-1.5">
+                    <div>{op.name}{op.is_input ? <span className="text-[10px] text-accent ml-1">(въвежда се)</span> : ""}</div>
+                    {op.is_input && (refs?.capsules?.length ?? 0) > 0 && (
+                      <select
+                        value={refs?.capsules.find((c) => c.name === op.capsule)?.item_id ?? ""}
+                        onChange={(e) => setOpCapsule(idx, e.target.value)}
+                        className="mt-1 w-full max-w-[280px] px-2 py-1 rounded-md border border-border text-[11px] bg-surface"
+                      >
+                        <option value="">— избери вид капсула —</option>
+                        {refs?.capsules.map((c) => <option key={c.item_id} value={c.item_id}>{c.name}{c.price_eur != null ? ` — ${eur(c.price_eur, 4)} €` : " (без цена)"}</option>)}
+                      </select>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5 text-right"><input value={String(op.unit_price)} onChange={(e) => updateOp(idx, e.target.value)} className="w-[110px] px-2 py-1 rounded-md border border-border text-[12px] bg-surface text-right tabular-nums" /></td>
                   <td className="px-2 py-1.5 text-[11px] text-text-3">{op.kind === "per_unit" ? "× брой в опаковка" : "фиксирана"}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">{eur(opPerPack(op, tpp), 4)}</td>
