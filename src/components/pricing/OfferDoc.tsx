@@ -141,8 +141,7 @@ function Inner({ mode }: { mode: Mode }) {
         <div className="flex items-center gap-3 flex-wrap mb-2">
           <Link href={base} className="flex items-center gap-2 text-[13px] text-text-2 hover:text-text"><ArrowLeft size={16} /> Назад</Link>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
-            <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="имейл на клиента" className="w-52 px-3 py-2 text-[13px] rounded-lg border border-border bg-surface" />
-            <a href={clientEmail ? gmailUrl() : undefined} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 ${clientEmail ? "cursor-pointer" : "opacity-50 pointer-events-none"}`}>
+            <a href={clientEmail ? gmailUrl() : undefined} target="_blank" rel="noopener noreferrer" title={clientEmail ? "" : "Впиши имейл на клиента в блока „ДО“"} className={`flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 ${clientEmail ? "cursor-pointer" : "opacity-50 pointer-events-none"}`}>
               <Mail size={15} /> Подготви имейл
             </a>
             <button onClick={startTracking} className="flex items-center gap-1.5 text-[13px] px-3 py-2 rounded-lg border border-border hover:bg-surface-2 cursor-pointer">
@@ -174,6 +173,7 @@ function Inner({ mode }: { mode: Mode }) {
               <input value={doCompany} onChange={(e) => setDoCompany(e.target.value)} className={fld + " w-full font-bold"} placeholder="ФИРМА НА КЛИЕНТА" />
               <div className="mt-3">На Вниманието на:</div>
               <input value={attention} onChange={(e) => setAttention(e.target.value)} className={fld + " w-full font-bold"} placeholder="име на лице" />
+              <div className="mt-2">Имейл: <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className={fld + " w-56"} placeholder="имейл на клиента" /></div>
             </div>
             <div>
               <div className="font-bold mb-1">ОТ:</div>
