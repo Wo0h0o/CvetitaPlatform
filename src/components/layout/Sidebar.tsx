@@ -74,9 +74,15 @@ const fullNavSections: NavSection[] = [
     ],
   },
   {
-    label: "Отчети",
+    label: "Продажби",
     items: [
       { href: "/sales", icon: DollarSign, label: "Продажби" },
+      { href: "/customers", icon: Users, label: "Клиенти" },
+    ],
+  },
+  {
+    label: "Продукти и производство",
+    items: [
       { href: "/products", icon: ShoppingBag, label: "Продукти" },
       {
         href: "/production",
@@ -89,9 +95,19 @@ const fullNavSections: NavSection[] = [
         ],
       },
       { href: "/production/orders", icon: ClipboardList, label: "Възлагателни писма" },
+    ],
+  },
+  {
+    label: "Регулация и оферти",
+    items: [
       { href: "/notify", icon: BadgeCheck, label: "Уведомления БАБХ" },
-      { href: "/pricing", icon: Calculator, label: "Оферти (Private Label)" },
-      { href: "/customers", icon: Users, label: "Клиенти" },
+      { href: "/pricing", icon: Calculator, label: "Оферти — Private Label" },
+      { href: "/pricing-key", icon: Calculator, label: "Оферти — Ключови клиенти" },
+    ],
+  },
+  {
+    label: "Маркетинг",
+    items: [
       { href: "/traffic", icon: BarChart3, label: "Трафик & SEO" },
       { href: "/email", icon: Mail, label: "Имейли" },
       {

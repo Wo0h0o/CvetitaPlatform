@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { refreshMaterials } from "@/lib/prim-pricing";
 import { logger } from "@/lib/logger";
-import { requirePlUnlock } from "@/lib/pricing-lock";
+import { requirePlUnlock, plModule } from "@/lib/pricing-lock";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   }
   const authError = await requireAuth(req);
   if (authError) return authError;
-  const locked = await requirePlUnlock();
+  const locked = await requirePlUnlock(plModule(new URL(req.url).searchParams.get("module")));
   if (locked) return locked;
   try {
     return await run();
