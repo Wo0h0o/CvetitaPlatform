@@ -25,7 +25,8 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 interface Material { item_id: number; sku: string; name: string; unit: string; price_eur: number | null; price_updated: string | null }
 interface OpRef { id: number; name: string; unit_price: number; kind: "per_unit" | "per_pack"; is_input: boolean; is_labor: boolean; sort: number }
 interface Capsule { item_id: number; name: string; price_eur: number | null }
-interface Refs { materials: Material[]; operations: OpRef[]; capsules: Capsule[] }
+interface Packaging { item_id: number; name: string; category: string | null; price_eur: number | null }
+interface Refs { materials: Material[]; operations: OpRef[]; capsules: Capsule[]; packaging: Packaging[] }
 
 const inputCls = "w-full px-3 py-2 rounded-lg border border-border bg-surface text-[13px] text-text focus:outline-none focus:ring-2 focus:ring-accent/40";
 function Label({ children }: { children: React.ReactNode }) {
@@ -121,6 +122,10 @@ function Inner({ mode }: { mode: Mode }) {
     const c = refs?.capsules.find((x) => String(x.item_id) === itemId);
     setOperations((a) => a.map((op, i) => (i === idx ? { ...op, capsule: c ? c.name : "", unit_price: c && c.price_eur != null ? c.price_eur : op.unit_price } : op)));
   }
+  function setOpPackaging(idx: number, itemId: string) {
+    const p = refs?.packaging.find((x) => String(x.item_id) === itemId);
+    setOperations((a) => a.map((op, i) => (i === idx ? { ...op, packaging: p ? p.name : "", unit_price: p && p.price_eur != null ? p.price_eur : op.unit_price } : op)));
+  }
 
   async function syncPrices() {
     setSyncing(true);
@@ -136,7 +141,7 @@ function Inner({ mode }: { mode: Mode }) {
           return { ...ing, price_eur: p != null ? applyMarkup(p) : ing.price_eur };
         }));
       }
-      setNote(r.materials ? `Обновени ${r.materials} суровини (${r.priced} с цена).` : r.error || "Обновено.");
+      setNote(r.materials ? `Обновени ${r.materials} суровини (${r.priced} с цена), ${r.capsules ?? 0} капсули, ${r.packaging ?? 0} опаковки.` : r.error || "Обновено.");
     } catch {
       setNote("Грешка при синк.");
     } finally {
@@ -282,6 +287,12 @@ function Inner({ mode }: { mode: Mode }) {
                       <select value={refs?.capsules.find((c) => c.name === op.capsule)?.item_id ?? ""} onChange={(e) => setOpCapsule(idx, e.target.value)} className="mt-1 w-full max-w-[280px] px-2 py-1 rounded-md border border-border text-[11px] bg-surface">
                         <option value="">— избери вид капсула —</option>
                         {refs?.capsules.map((c) => <option key={c.item_id} value={c.item_id}>{c.name}{c.price_eur != null ? ` — ${eur(c.price_eur, 4)} €` : " (без цена)"}</option>)}
+                      </select>
+                    )}
+                    {!op.is_input && !op.is_labor && (refs?.packaging?.length ?? 0) > 0 && (
+                      <select value={refs?.packaging.find((p) => p.name === op.packaging)?.item_id ?? ""} onChange={(e) => setOpPackaging(idx, e.target.value)} className="mt-1 w-full max-w-[320px] px-2 py-1 rounded-md border border-border text-[11px] bg-surface text-text-2" title="Свържи с опаковъчен артикул от ПРИМ (цената идва сама)">
+                        <option value="">— опаковка от ПРИМ (по избор) —</option>
+                        {refs?.packaging.map((p) => <option key={p.item_id} value={p.item_id}>{p.name}{p.price_eur != null ? ` — ${eur(p.price_eur, 4)} €` : " (без цена)"}</option>)}
                       </select>
                     )}
                   </td>

@@ -19,6 +19,11 @@ interface PrimItem {
 }
 
 const CAPSULE_GROUP = "81000110737150"; // „КАПСУЛИ и СИЛИГА ГЕЛ" — празни капсули
+// Опаковъчни материали (флакони/капачки/чашки/лъжички + етикети/кутии) — за операциите.
+const PACKAGING_GROUPS: Record<string, string> = {
+  "81000110737324": "Флакони, капачки",
+  "81000110736948": "Етикети и кутии",
+};
 interface PriceRow {
   sku: number | string;
   price: number | string;
@@ -32,7 +37,7 @@ const chunk = <T,>(arr: T[], n: number): T[][] => {
   return out;
 };
 
-export async function refreshMaterials(): Promise<{ ok: boolean; materials: number; priced: number; capsules: number }> {
+export async function refreshMaterials(): Promise<{ ok: boolean; materials: number; priced: number; capsules: number; packaging: number }> {
   const prim = await connectPrim();
 
   const all = (await prim.callTool<{ result?: PrimItem[] }>("Items-get", { limit: 10000 })).result ?? [];
@@ -40,10 +45,11 @@ export async function refreshMaterials(): Promise<{ ok: boolean; materials: numb
   const capsules = all.filter(
     (i) => i.tp === "material" && String(i.group?.id ?? "") === CAPSULE_GROUP && /^\s*капсула/i.test(i.name || "")
   );
+  const packaging = all.filter((i) => i.tp === "material" && !!PACKAGING_GROUPS[String(i.group?.id ?? "")]);
 
   // последна доставна цена от ценова листа __SAVED_PO_PRICES__ (на партиди)
   const priceBySku = new Map<string, { price: number; currency: string }>();
-  const skus = [...new Set([...materials, ...capsules].map((m) => String(m.sku)).filter(Boolean))];
+  const skus = [...new Set([...materials, ...capsules, ...packaging].map((m) => String(m.sku)).filter(Boolean))];
   for (const part of chunk(skus, 100)) {
     try {
       const pr = await prim.callTool<{ result?: PriceRow[] }>("Prices-get", {
@@ -86,7 +92,24 @@ export async function refreshMaterials(): Promise<{ ok: boolean; materials: numb
     if (error) throw new Error(`pl_capsules upsert: ${error.message}`);
   }
 
+  // опаковки (цена за 1 бр)
+  const packRows = packaging.map((c) => {
+    const p = priceBySku.get(String(c.sku));
+    return {
+      item_id: Number(c.id),
+      sku: String(c.sku),
+      name: c.name,
+      category: PACKAGING_GROUPS[String(c.group?.id ?? "")] ?? null,
+      price_eur: p ? p.price : null,
+      updated_at: now,
+    };
+  });
+  if (packRows.length) {
+    const { error } = await supabaseAdmin.from("pl_packaging").upsert(packRows, { onConflict: "item_id" });
+    if (error) throw new Error(`pl_packaging upsert: ${error.message}`);
+  }
+
   const priced = rows.filter((r) => r.price_eur != null).length;
-  logger.info("pricing materials refreshed", { materials: rows.length, priced, capsules: capRows.length });
-  return { ok: true, materials: rows.length, priced, capsules: capRows.length };
+  logger.info("pricing materials refreshed", { materials: rows.length, priced, capsules: capRows.length, packaging: packRows.length });
+  return { ok: true, materials: rows.length, priced, capsules: capRows.length, packaging: packRows.length };
 }

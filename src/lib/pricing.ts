@@ -20,6 +20,7 @@ export interface PlOperation {
   is_input?: boolean;
   is_labor?: boolean;
   capsule?: string; // избран вид капсула (за „Капсули цена")
+  packaging?: string; // избран опаковъчен артикул от ПРИМ (флакон/капачка/етикет/кутия…)
 }
 
 /** Видове продукти — всеки лист от „система за цени.xlsx". */
