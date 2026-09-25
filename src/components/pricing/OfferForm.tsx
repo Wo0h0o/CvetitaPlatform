@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
-import { ArrowLeft, Plus, X, Save, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, X, Save, Loader2, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import {
   pricePerTablet,
@@ -49,6 +49,10 @@ function Inner({ mode }: { mode: Mode }) {
   const [tabsPerPack, setTabsPerPack] = useState<string>("");
   const [ingredients, setIngredients] = useState<PlIngredient[]>([]);
   const [operations, setOperations] = useState<PlOperation[]>([]);
+  const [finalPrice, setFinalPrice] = useState<string>("");
+  const [p500, setP500] = useState<string>("");
+  const [p1000, setP1000] = useState<string>("");
+  const [p5000, setP5000] = useState<string>("");
   const [savedId, setSavedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -82,6 +86,10 @@ function Inner({ mode }: { mode: Mode }) {
       setTabsPerPack(o.tabs_per_pack != null ? String(o.tabs_per_pack) : "");
       setIngredients(o.ingredients || []);
       setOperations(o.operations || []);
+      setFinalPrice(o.final_price != null ? String(o.final_price) : "");
+      setP500(o.price_500 != null ? String(o.price_500) : "");
+      setP1000(o.price_1000 != null ? String(o.price_1000) : "");
+      setP5000(o.price_5000 != null ? String(o.price_5000) : "");
       setSavedId(o.id);
       setOpsInit(true);
     });
@@ -91,6 +99,11 @@ function Inner({ mode }: { mode: Mode }) {
   const divisor = typeCfg.divisor;
   // Сума на количествата (доза): общо активни в 1 доза → в мг (и в г за сашета/прахове)
   const num = (v: number | string) => parseFloat(String(v).replace(",", ".")) || 0;
+  const toNum = (v: string): number | null => {
+    const x = parseFloat(String(v).replace(",", "."));
+    return v.trim() !== "" && isFinite(x) ? x : null;
+  };
+  const priceFilter = (v: string) => v.replace(/[^\d.,]/g, "");
   const doseWord: Record<PlProductType, string> = { tablet: "1 табл./капс.", sachet: "1 саше", powder: "1 доза", liquid: "1 мл" };
   const doseSumNative = useMemo(() => ingredients.reduce((s, ing) => s + num(ing.mg_per_tablet), 0), [ingredients]);
   const doseSumMg = typeCfg.doseUnit === "г" ? doseSumNative * 1000 : doseSumNative;
@@ -135,7 +148,8 @@ function Inner({ mode }: { mode: Mode }) {
   }
   function setOpPackaging(idx: number, itemId: string) {
     const p = refs?.packaging.find((x) => String(x.item_id) === itemId);
-    setOperations((a) => a.map((op, i) => (i === idx ? { ...op, packaging: p ? p.name : "", unit_price: p && p.price_eur != null ? p.price_eur : op.unit_price } : op)));
+    // Private Label → доставната цена +20% (както суровините); Ключови клиенти → без надценка.
+    setOperations((a) => a.map((op, i) => (i === idx ? { ...op, packaging: p ? p.name : "", unit_price: p && p.price_eur != null ? applyMarkup(p.price_eur) : op.unit_price } : op)));
   }
 
   async function syncPrices() {
@@ -173,6 +187,10 @@ function Inner({ mode }: { mode: Mode }) {
         total_raw: totals.totalRaw,
         total_ops: totals.totalOps,
         total: totals.total,
+        final_price: toNum(finalPrice),
+        price_500: toNum(p500),
+        price_1000: toNum(p1000),
+        price_5000: toNum(p5000),
       };
       let res;
       if (savedId) res = await fetch(`/api/pricing/offers?module=${mode}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: savedId, ...payload }) });
@@ -189,6 +207,17 @@ function Inner({ mode }: { mode: Mode }) {
 
   const priceHeader = mode === "key" ? "€/кг (себестойност)" : "€/кг (доставна)";
 
+  const [exporting, setExporting] = useState(false);
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await save(); // записва последните промени преди експорт
+      if (savedId) window.open(`/api/pricing/offers/export?module=${mode}&id=${savedId}`, "_blank");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-5">
@@ -200,6 +229,9 @@ function Inner({ mode }: { mode: Mode }) {
           </button>
           <button onClick={save} disabled={saving || !productName} className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:opacity-90 disabled:opacity-50 cursor-pointer">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Запази
+          </button>
+          <button onClick={exportExcel} disabled={exporting || !savedId} title={savedId ? "Записва и сваля Excel с колона „Надценка %“ за проверка" : "Първо запази офертата"} className="flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-lg border border-border hover:bg-surface-2 disabled:opacity-50 cursor-pointer">
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />} Excel
           </button>
         </div>
       </div>
@@ -353,6 +385,23 @@ function Inner({ mode }: { mode: Mode }) {
           <div className="text-[11px] text-text-3">суровини {eur(totals.totalRaw, 3)} € + операции {eur(totals.totalOps, 3)} €</div>
         </div>
         <div className="text-[28px] font-bold text-accent tabular-nums">{eur(totals.total, 3)} €</div>
+      </Card>
+
+      <Card className="p-5 mb-4">
+        <div className="text-[13px] font-semibold text-text mb-1">Ценообразуване към клиента</div>
+        <div className="text-[11px] text-text-3 mb-3">Сметнатата себестойност/цена е <b>{eur(totals.total, 3)} €</b> на опаковка. Тук впиши крайните цени, ако слагаш надценка. (Полетата за 500/1000/5000 бр са ръчни засега.)</div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <Label>Финална цена / бр (€)</Label>
+            <input value={finalPrice} onChange={(e) => setFinalPrice(priceFilter(e.target.value))} className={inputCls} placeholder={eur(totals.total, 3)} />
+            {toNum(finalPrice) != null && totals.total > 0 && (
+              <div className="text-[11px] text-text-3 mt-1">надценка спрямо себестойност: <b className="text-accent">{fmt((toNum(finalPrice)! / totals.total - 1) * 100, 1)} %</b></div>
+            )}
+          </div>
+          <div><Label>Цена за 500 бр (€)</Label><input value={p500} onChange={(e) => setP500(priceFilter(e.target.value))} className={inputCls} placeholder="—" /></div>
+          <div><Label>Цена за 1000 бр (€)</Label><input value={p1000} onChange={(e) => setP1000(priceFilter(e.target.value))} className={inputCls} placeholder="—" /></div>
+          <div><Label>Цена за 5000 бр (€)</Label><input value={p5000} onChange={(e) => setP5000(priceFilter(e.target.value))} className={inputCls} placeholder="—" /></div>
+        </div>
       </Card>
     </div>
   );
