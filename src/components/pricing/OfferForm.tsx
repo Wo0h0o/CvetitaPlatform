@@ -89,6 +89,11 @@ function Inner({ mode }: { mode: Mode }) {
 
   const typeCfg = PL_TYPES[productType];
   const divisor = typeCfg.divisor;
+  // категории опаковки за optgroup-ите (Флакони,капачки преди Етикети,кутии)
+  const packagingCats = useMemo(() => {
+    const set = new Set((refs?.packaging ?? []).map((p) => p.category || "Други"));
+    return [...set].sort((a, b) => (a === "Флакони, капачки" ? -1 : b === "Флакони, капачки" ? 1 : a.localeCompare(b, "bg")));
+  }, [refs]);
   const totals = useMemo(() => computeTotals(ingredients, operations, tabsPerPack, divisor), [ingredients, operations, tabsPerPack, divisor]);
   const tpp = tabsPerPack;
 
@@ -292,7 +297,13 @@ function Inner({ mode }: { mode: Mode }) {
                     {!op.is_input && !op.is_labor && (refs?.packaging?.length ?? 0) > 0 && (
                       <select value={refs?.packaging.find((p) => p.name === op.packaging)?.item_id ?? ""} onChange={(e) => setOpPackaging(idx, e.target.value)} className="mt-1 w-full max-w-[320px] px-2 py-1 rounded-md border border-border text-[11px] bg-surface text-text-2" title="Свържи с опаковъчен артикул от ПРИМ (цената идва сама)">
                         <option value="">— опаковка от ПРИМ (по избор) —</option>
-                        {refs?.packaging.map((p) => <option key={p.item_id} value={p.item_id}>{p.name}{p.price_eur != null ? ` — ${eur(p.price_eur, 4)} €` : " (без цена)"}</option>)}
+                        {packagingCats.map((cat) => (
+                          <optgroup key={cat} label={cat}>
+                            {refs!.packaging.filter((p) => (p.category || "Други") === cat).map((p) => (
+                              <option key={p.item_id} value={p.item_id}>{p.name}{p.price_eur != null ? ` — ${eur(p.price_eur, 4)} €` : " (без цена)"}</option>
+                            ))}
+                          </optgroup>
+                        ))}
                       </select>
                     )}
                   </td>
