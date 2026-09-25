@@ -133,7 +133,7 @@ function Inner({ mode }: { mode: Mode }) {
       const j = await res.json();
       connected = !!j.connected;
       if (connected) {
-        setTrackNote(`✓ Готово: ${j.events || 0} напомняния в календара${j.draft ? " + Gmail чернова" : ""}${j.email ? ` (${j.email})` : ""}. Отвори Gmail → Чернови.`);
+        setTrackNote(`✓ ${j.events || 0} напомняния добавени в календара${j.email ? ` (${j.email})` : ""}. Отварям имейла — прикачи PDF-а и прати.`);
       } else {
         setTrackNote("✓ Създадено проследяване. Google не е свързан — отварям Gmail и линковете за календара.");
       }
@@ -142,8 +142,8 @@ function Inner({ mode }: { mode: Mode }) {
     } finally {
       setBusy(false);
     }
-    // Без свързан Google → падаме към ръчния имейл (черновата иначе е вече в Gmail).
-    if (!connected) window.open(gmailUrl(), "_blank", "noopener");
+    // Имейлът винаги минава през Gmail compose (готов текст) — там се прикача PDF-ът и се праща.
+    window.open(gmailUrl(), "_blank", "noopener");
   }
 
   const co = doCompany || "клиент";

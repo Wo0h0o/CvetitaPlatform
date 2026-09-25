@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { getGoogleAuth, insertCalendarEvent, createGmailDraft } from "@/lib/google";
+import { getGoogleAuth, insertCalendarEvent } from "@/lib/google";
 import { logger } from "@/lib/logger";
 
 /**
@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
   const client = (body.client as string) || "клиент";
   const clientEmail = (body.client_email as string) || "";
   const subject = (body.subject as string) || `Оферта — ${client}`;
-  const bodyText = (body.body_text as string) || "";
   const moduleName = (body.module as string) || "standard";
   const base = (body.sent_date as string) || new Date().toISOString().slice(0, 10);
 
@@ -69,7 +68,6 @@ export async function POST(req: NextRequest) {
   }
 
   let events = 0;
-  let draft = false;
   const details = `Оферта: ${subject}\nКлиент: ${client}${clientEmail ? ` (${clientEmail})` : ""}`;
   try {
     for (const t of tasks) {
@@ -79,14 +77,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     logger.error("pricing/calendar events failed", { error: e instanceof Error ? e.message : String(e) });
   }
-  try {
-    if (clientEmail) {
-      await createGmailDraft(clientEmail, subject, bodyText);
-      draft = true;
-    }
-  } catch (e) {
-    logger.error("pricing/calendar draft failed", { error: e instanceof Error ? e.message : String(e) });
-  }
 
-  return NextResponse.json({ ok: true, connected: true, email: auth.email, events, draft, followup });
+  // Имейлът НЕ се прави през Gmail API (restricted scope) — фронтендът отваря compose URL.
+  return NextResponse.json({ ok: true, connected: true, email: auth.email, events, draft: false, followup });
 }

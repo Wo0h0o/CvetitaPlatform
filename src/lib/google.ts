@@ -11,11 +11,12 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 const CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GA4_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GA4_CLIENT_SECRET;
 
+// Само Calendar (sensitive) — работи в production без Google верификация. Gmail права
+// (restricted) искат пълна верификация, затова имейлът минава през compose URL, не API.
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
   "https://www.googleapis.com/auth/calendar.events",
-  "https://www.googleapis.com/auth/gmail.compose",
 ].join(" ");
 
 export function authUrl(redirectUri: string): string {
