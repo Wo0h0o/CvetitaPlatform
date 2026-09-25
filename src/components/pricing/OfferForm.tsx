@@ -89,6 +89,12 @@ function Inner({ mode }: { mode: Mode }) {
 
   const typeCfg = PL_TYPES[productType];
   const divisor = typeCfg.divisor;
+  // Сума на количествата (доза): общо активни в 1 доза → в мг (и в г за сашета/прахове)
+  const num = (v: number | string) => parseFloat(String(v).replace(",", ".")) || 0;
+  const doseWord: Record<PlProductType, string> = { tablet: "1 табл./капс.", sachet: "1 саше", powder: "1 доза", liquid: "1 мл" };
+  const doseSumNative = useMemo(() => ingredients.reduce((s, ing) => s + num(ing.mg_per_tablet), 0), [ingredients]);
+  const doseSumMg = typeCfg.doseUnit === "г" ? doseSumNative * 1000 : doseSumNative;
+  const fmt = (v: number, dp: number) => v.toLocaleString("bg-BG", { maximumFractionDigits: dp });
   // категории опаковки за optgroup-ите (Флакони,капачки преди Етикети,кутии)
   const packagingCats = useMemo(() => {
     const set = new Set((refs?.packaging ?? []).map((p) => p.category || "Други"));
@@ -247,6 +253,11 @@ function Inner({ mode }: { mode: Mode }) {
             </tbody>
             {ingredients.length > 0 && (
               <tfoot>
+                <tr className="border-t border-border text-text-2">
+                  <td colSpan={4} className="px-2 py-1.5 text-right">Общо активни в {doseWord[productType]}:</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{fmt(doseSumMg, 2)} мг{typeCfg.doseUnit === "г" ? ` (${fmt(doseSumNative, 3)} г)` : ""}</td>
+                  <td></td>
+                </tr>
                 <tr className="border-t-2 border-border">
                   <td colSpan={4} className="px-2 py-2 text-right font-semibold">Тотал суровини за опаковка:</td>
                   <td className="px-2 py-2 text-right font-bold text-accent tabular-nums whitespace-nowrap">{eur(totals.totalRaw, 4)} €</td>

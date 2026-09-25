@@ -73,6 +73,7 @@ export const PL_TYPES: Record<PlProductType, PlTypeConfig> = {
     divisor: 1000,
     defaultOps: [
       { name: "Флакон/Кутия", unit_price: 0, kind: "per_pack" },
+      { name: "Капачка", unit_price: 0, kind: "per_pack" },
       { name: "Етикет", unit_price: 0, kind: "per_pack" },
       { name: "Пълнене във флакон", unit_price: 1, kind: "per_pack", is_labor: true },
       { name: "Лепене на етикет", unit_price: 0.5, kind: "per_pack", is_labor: true },
