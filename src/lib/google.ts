@@ -6,8 +6,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
  * (cherbal.marketing@gmail.com), пазен в таблица `google_auth`.
  */
 
-const CLIENT_ID = process.env.GA4_CLIENT_ID;
-const CLIENT_SECRET = process.env.GA4_CLIENT_SECRET;
+// Собствен Web-application OAuth клиент за Gmail+Calendar (GA4 клиентът е Desktop и не
+// приема уеб redirect). Fallback към GA4 само ако новите променливи липсват.
+const CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GA4_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GA4_CLIENT_SECRET;
 
 export const GOOGLE_SCOPES = [
   "openid",
