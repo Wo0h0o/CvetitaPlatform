@@ -159,9 +159,13 @@ export async function GET(req: NextRequest) {
     if (val != null) r.getCell(9).numFmt = money;
   };
   priceRow("Финална цена / бр (ръчна)", offer.final_price);
-  priceRow("Цена за 500 бр", offer.price_500);
+  if (offer.tier_pct != null) {
+    const rp = ws.addRow(["", "% нагоре на всяко по-малко ниво", "", "", "", "", "", "", Number(offer.tier_pct)]);
+    rp.getCell(9).numFmt = '0.0 "%"';
+  }
+  priceRow("Цена за 5000 бр (базова)", offer.price_5000);
   priceRow("Цена за 1000 бр", offer.price_1000);
-  priceRow("Цена за 5000 бр", offer.price_5000);
+  priceRow("Цена за 500 бр", offer.price_500);
 
   // ширини на колоните
   ws.columns.forEach((c, i) => (c.width = i === 1 || i === 2 ? 34 : 16));

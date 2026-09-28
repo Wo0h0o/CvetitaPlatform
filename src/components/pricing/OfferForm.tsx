@@ -50,9 +50,8 @@ function Inner({ mode }: { mode: Mode }) {
   const [ingredients, setIngredients] = useState<PlIngredient[]>([]);
   const [operations, setOperations] = useState<PlOperation[]>([]);
   const [finalPrice, setFinalPrice] = useState<string>("");
-  const [p500, setP500] = useState<string>("");
-  const [p1000, setP1000] = useState<string>("");
-  const [p5000, setP5000] = useState<string>("");
+  const [p5000, setP5000] = useState<string>(""); // базова цена за 5000 бр
+  const [tierPct, setTierPct] = useState<string>(""); // % нагоре на всяко по-малко ниво
   const [savedId, setSavedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -87,9 +86,8 @@ function Inner({ mode }: { mode: Mode }) {
       setIngredients(o.ingredients || []);
       setOperations(o.operations || []);
       setFinalPrice(o.final_price != null ? String(o.final_price) : "");
-      setP500(o.price_500 != null ? String(o.price_500) : "");
-      setP1000(o.price_1000 != null ? String(o.price_1000) : "");
       setP5000(o.price_5000 != null ? String(o.price_5000) : "");
+      setTierPct(o.tier_pct != null ? String(o.tier_pct) : "");
       setSavedId(o.id);
       setOpsInit(true);
     });
@@ -104,6 +102,11 @@ function Inner({ mode }: { mode: Mode }) {
     return v.trim() !== "" && isFinite(x) ? x : null;
   };
   const priceFilter = (v: string) => v.replace(/[^\d.,]/g, "");
+  // Тарифни цени: база = 5000 бр; всяко по-малко количество е с tierPct% по-скъпо (натрупващо се).
+  const base5000 = toNum(p5000);
+  const stepPct = toNum(tierPct);
+  const c1000 = base5000 == null ? null : stepPct == null ? base5000 : base5000 * (1 + stepPct / 100);
+  const c500 = c1000 == null ? null : stepPct == null ? c1000 : c1000 * (1 + stepPct / 100);
   const doseWord: Record<PlProductType, string> = { tablet: "1 табл./капс.", sachet: "1 саше", powder: "1 доза", liquid: "1 мл" };
   const doseSumNative = useMemo(() => ingredients.reduce((s, ing) => s + num(ing.mg_per_tablet), 0), [ingredients]);
   const doseSumMg = typeCfg.doseUnit === "г" ? doseSumNative * 1000 : doseSumNative;
@@ -188,9 +191,10 @@ function Inner({ mode }: { mode: Mode }) {
         total_ops: totals.totalOps,
         total: totals.total,
         final_price: toNum(finalPrice),
-        price_500: toNum(p500),
-        price_1000: toNum(p1000),
-        price_5000: toNum(p5000),
+        price_5000: base5000,
+        tier_pct: stepPct,
+        price_1000: c1000,
+        price_500: c500,
       };
       let res;
       if (savedId) res = await fetch(`/api/pricing/offers?module=${mode}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: savedId, ...payload }) });
@@ -389,8 +393,8 @@ function Inner({ mode }: { mode: Mode }) {
 
       <Card className="p-5 mb-4">
         <div className="text-[13px] font-semibold text-text mb-1">Ценообразуване към клиента</div>
-        <div className="text-[11px] text-text-3 mb-3">Сметнатата себестойност/цена е <b>{eur(totals.total, 3)} €</b> на опаковка. Тук впиши крайните цени, ако слагаш надценка. (Полетата за 500/1000/5000 бр са ръчни засега.)</div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="text-[11px] text-text-3 mb-3">Себестойност/цена: <b>{eur(totals.total, 3)} €</b>/бр. Впиши базовата цена за <b>5000 бр</b> и <b>%</b> нагоре — цените за 1000 и 500 бр се смятат сами (всяко по-малко количество е с този % по-скъпо).</div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
           <div>
             <Label>Финална цена / бр (€)</Label>
             <input value={finalPrice} onChange={(e) => setFinalPrice(priceFilter(e.target.value))} className={inputCls} placeholder={eur(totals.total, 3)} />
@@ -398,9 +402,20 @@ function Inner({ mode }: { mode: Mode }) {
               <div className="text-[11px] text-text-3 mt-1">надценка спрямо себестойност: <b className="text-accent">{fmt((toNum(finalPrice)! / totals.total - 1) * 100, 1)} %</b></div>
             )}
           </div>
-          <div><Label>Цена за 500 бр (€)</Label><input value={p500} onChange={(e) => setP500(priceFilter(e.target.value))} className={inputCls} placeholder="—" /></div>
-          <div><Label>Цена за 1000 бр (€)</Label><input value={p1000} onChange={(e) => setP1000(priceFilter(e.target.value))} className={inputCls} placeholder="—" /></div>
-          <div><Label>Цена за 5000 бр (€)</Label><input value={p5000} onChange={(e) => setP5000(priceFilter(e.target.value))} className={inputCls} placeholder="—" /></div>
+          <div><Label>Базова цена за 5000 бр (€)</Label><input value={p5000} onChange={(e) => setP5000(priceFilter(e.target.value))} className={inputCls} placeholder="напр. 1,20" /></div>
+          <div><Label>% нагоре на всяко ниво</Label><input value={tierPct} onChange={(e) => setTierPct(priceFilter(e.target.value))} className={inputCls} placeholder="напр. 20" /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { q: "5000 бр", v: base5000, note: "базова" },
+            { q: "1000 бр", v: c1000, note: stepPct != null ? `+${fmt(stepPct, 1)}%` : "" },
+            { q: "500 бр", v: c500, note: stepPct != null ? `+${fmt(stepPct, 1)}%` : "" },
+          ].map((t) => (
+            <div key={t.q} className="rounded-lg border border-border p-3 text-center bg-surface-2">
+              <div className="text-[11px] text-text-3">{t.q} {t.note && <span className="text-accent">({t.note})</span>}</div>
+              <div className="text-[18px] font-bold text-text tabular-nums mt-0.5">{t.v != null ? `${eur(t.v, 3)} €` : "—"}</div>
+            </div>
+          ))}
         </div>
       </Card>
     </div>
