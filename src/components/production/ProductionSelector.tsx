@@ -96,6 +96,11 @@ export function ProductionSelector({
     }
   }
 
+  // „Заявен" се показва само докато артикулът НЕ е произведен. Сигнал за произведено =
+  // има наличност (Своб. > 0) — щом цехът го направи (работна поръчка или преетикетиране
+  // на EN версия), се появява стока. Така EN артикулите без своя WO също отпадат.
+  const orderBadge = (r: Row) => ((r.free ?? 0) <= 0 ? pendingInOrder[r.id] : undefined);
+
   const [sel, setSel] = useState<Record<string, number>>({});
   const [sortBy, setSortBy] = useState<"cover" | "name" | "sales">("cover");
   const [query, setQuery] = useState("");
@@ -113,9 +118,9 @@ export function ProductionSelector({
     });
 
   const toggle = (r: Row) => {
-    if (sel[r.id] == null && pendingInOrder[r.id]) {
-      const o = pendingInOrder[r.id];
-      if (!confirm(`„${r.name}" вече е в заявка ${o.label} от ${fmtDate(o.date)} и още не е произведен напълно.\n\nСигурен ли си, че искаш да го добавиш в нова заявка?`)) return;
+    const ob = orderBadge(r);
+    if (sel[r.id] == null && ob) {
+      if (!confirm(`„${r.name}" вече е в заявка ${ob.label} от ${fmtDate(ob.date)} и още не е произведен (няма наличност).\n\nСигурен ли си, че искаш да го добавиш в нова заявка?`)) return;
     }
     setSel((s) => {
       const n = { ...s };
@@ -132,7 +137,7 @@ export function ProductionSelector({
   };
   const suggestAll = () => {
     const next: Record<string, number> = {};
-    for (const r of allRows) if ((r.prodQty ?? 0) > 0 && !pendingInOrder[r.id]) next[r.id] = r.prodQty!;
+    for (const r of allRows) if ((r.prodQty ?? 0) > 0 && !orderBadge(r)) next[r.id] = r.prodQty!;
     setSel(next);
   };
 
@@ -217,9 +222,9 @@ export function ProductionSelector({
                       <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${PILL[s.k]}`}>{s.t}</span>
                     </td>
                     <td className="px-4 py-2.5">
-                      {pendingInOrder[r.id] ? (
+                      {orderBadge(r) ? (
                         <Link href="/production/orders" className="inline-flex items-center gap-1 text-[12px] text-amber-600 hover:underline whitespace-nowrap" title="Отвори Възлагателни писма за статуса">
-                          📋 {fmtDate(pendingInOrder[r.id].date)} · {pendingInOrder[r.id].label}
+                          📋 {fmtDate(orderBadge(r)!.date)} · {orderBadge(r)!.label}
                         </Link>
                       ) : (
                         <span className="text-[12px] text-text-3">—</span>
