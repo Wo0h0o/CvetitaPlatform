@@ -4,7 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Calculator, Plus, Loader2, FileText, KeyRound, FileDown, Trash2, FolderInput, Folder, X } from "lucide-react";
+import { Calculator, Plus, Loader2, FileText, KeyRound, FileDown, Trash2, FolderInput, Folder, X, Search } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { eur, PL_TYPES, type PlProductType } from "@/lib/pricing";
@@ -31,6 +31,7 @@ export function OffersList({ mode }: { mode: "standard" | "key" }) {
   const offers = data?.offers ?? [];
   const [sel, setSel] = useState<number[]>([]);
   const [folder, setFolder] = useState<string | null>(null); // null = всички
+  const [query, setQuery] = useState("");
   const [moveTo, setMoveTo] = useState("");
   const [moving, setMoving] = useState(false);
 
@@ -43,7 +44,9 @@ export function OffersList({ mode }: { mode: "standard" | "key" }) {
   const clients = [...counts.keys()].filter((c) => c !== "").sort((a, b) => a.localeCompare(b, "bg"));
   const noneCount = counts.get("") || 0;
 
-  const shown = folder == null ? offers : folder === NONE ? offers.filter((o) => !(o.client || "").trim()) : offers.filter((o) => (o.client || "").trim() === folder);
+  const byFolder = folder == null ? offers : folder === NONE ? offers.filter((o) => !(o.client || "").trim()) : offers.filter((o) => (o.client || "").trim() === folder);
+  const q = query.trim().toLowerCase();
+  const shown = q ? byFolder.filter((o) => (o.product_name || "").toLowerCase().includes(q) || (o.client || "").toLowerCase().includes(q)) : byFolder;
 
   const toggle = (id: number) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const allChecked = shown.length > 0 && shown.every((o) => sel.includes(o.id));
@@ -111,6 +114,22 @@ export function OffersList({ mode }: { mode: "standard" | "key" }) {
           : "Цени за Private Label оферти: суровини (доставна цена от PRIM) + операции = крайна цена без ДДС."}
       </p>
 
+      {/* Търсачка */}
+      {offers.length > 0 && (
+        <div className="relative mb-4 max-w-sm">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-3" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Търси по продукт или клиент…"
+            className="w-full pl-9 pr-8 py-2 text-[13px] rounded-lg border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent/40"
+          />
+          {query && (
+            <button onClick={() => setQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-3 hover:text-text cursor-pointer" title="Изчисти"><X size={15} /></button>
+          )}
+        </div>
+      )}
+
       {/* Папки по клиент */}
       {offers.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap mb-4">
@@ -144,7 +163,10 @@ export function OffersList({ mode }: { mode: "standard" | "key" }) {
           Още няма оферти. Създай първата с <b>Нова оферта</b>.
         </Card>
       )}
-      {offers.length > 0 && (
+      {offers.length > 0 && shown.length === 0 && (
+        <Card className="p-6 text-[14px] text-text-2">Няма оферти по този филтър/търсене.</Card>
+      )}
+      {offers.length > 0 && shown.length > 0 && (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] min-w-[720px]">
