@@ -104,6 +104,7 @@ const fullNavSections: NavSection[] = [
     items: [
       { href: "/store", icon: Store, label: "Магазин — продажби" },
       { href: "/store/kasa", icon: CalendarDays, label: "Магазин — каса" },
+      { href: "/store/inventory", icon: Factory, label: "Магазин — наличности" },
       { href: "/store/restock", icon: ClipboardList, label: "Магазин — дозареждане" },
     ],
   },
@@ -159,6 +160,7 @@ function buildSections(role: string | null): NavSection[] {
       { label: "Магазин", items: [
         { href: "/store", icon: Store, label: "Продажби" },
         { href: "/store/kasa", icon: CalendarDays, label: "Каса" },
+        { href: "/store/inventory", icon: Factory, label: "Наличности / ревизия" },
         { href: "/store/restock", icon: ClipboardList, label: "Дозареждане" },
       ] },
       { label: "Профил", items: [{ href: "/settings", icon: Settings, label: "Моят профил" }] },
