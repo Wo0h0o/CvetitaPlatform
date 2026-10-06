@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Store, Plus, X, Loader2, Banknote, CreditCard, Search, Trash2, Save, Wallet } from "lucide-react";
+import { Store, Plus, X, Loader2, Banknote, CreditCard, Search, Trash2, Save, Wallet, Tag, Pencil } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 
@@ -14,7 +14,9 @@ const hhmm = (s: string) => (s ? new Date(s).toLocaleTimeString("bg-BG", { hour:
 interface StoreRow { id: number; name: string }
 interface Product { item_id: number; sku: string | null; barcode: string | null; name: string }
 interface Line { key: string; item_id: number | null; sku: string | null; name: string; qty: number; unit_price: string }
-interface Sale { id: number; items: { name: string; qty: number; unit_price: number; line_total: number }[]; payment: "cash" | "card"; total: number; note: string | null; created_at: string; cashier_name: string | null }
+type Pay = "cash" | "card" | "unmarked";
+interface Sale { id: number; items: { name: string; qty: number; unit_price: number; line_total: number }[]; payment: Pay; total: number; note: string | null; created_at: string; cashier_name: string | null }
+const PAY_LABEL: Record<Pay, string> = { cash: "брой", card: "карта", unmarked: "НМ" };
 
 const inputCls = "px-3 py-2 rounded-lg border border-border bg-surface text-[14px] text-text focus:outline-none focus:ring-2 focus:ring-accent/40";
 const lineTotal = (l: Line) => (Number(l.qty) || 0) * (parseFloat(String(l.unit_price).replace(",", ".")) || 0);
@@ -38,9 +40,10 @@ export function StorePortal() {
 
   // --- нова продажба (кошница) ---
   const [lines, setLines] = useState<Line[]>([]);
-  const [payment, setPayment] = useState<"cash" | "card">("cash");
+  const [payment, setPayment] = useState<Pay>("cash");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const { data: prodData } = useSWR<{ products: Product[] }>(q.trim() ? `/api/store/products?q=${encodeURIComponent(q.trim())}` : null, fetcher, { revalidateOnFocus: false });
   const results = prodData?.products ?? [];
@@ -54,17 +57,27 @@ export function StorePortal() {
   const updLine = (key: string, patch: Partial<Line>) => setLines((a) => a.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const rmLine = (key: string) => setLines((a) => a.filter((l) => l.key !== key));
 
+  function resetForm() { setLines([]); setNote(""); setPayment("cash"); setEditId(null); }
+  function startEdit(s: Sale) {
+    setEditId(s.id);
+    setLines(s.items.map((it) => ({ key: Math.random().toString(36).slice(2), item_id: null, sku: null, name: it.name, qty: it.qty, unit_price: String(it.unit_price) })));
+    setPayment(s.payment);
+    setNote(s.note || "");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   async function saveSale() {
     const valid = lines.filter((l) => l.name.trim() && lineTotal(l) >= 0);
-    if (!valid.length || !storeId || saving || closed) return;
+    if (!valid.length || !storeId || saving || (closed && !editId)) return;
     setSaving(true);
     try {
       const items = valid.map((l) => ({ item_id: l.item_id, sku: l.sku, name: l.name.trim(), qty: Number(l.qty) || 0, unit_price: parseFloat(String(l.unit_price).replace(",", ".")) || 0, line_total: lineTotal(l) }));
       const total = items.reduce((s, it) => s + it.line_total, 0);
-      await fetch("/api/store/sales", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ store_id: storeId, sold_at: date, items, payment, total, note: note || null }) });
-      setLines([]);
-      setNote("");
-      setPayment("cash");
+      if (editId) {
+        await fetch("/api/store/sales", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editId, items, payment, total, note: note || null }) });
+      } else {
+        await fetch("/api/store/sales", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ store_id: storeId, sold_at: date, items, payment, total, note: note || null }) });
+      }
+      resetForm();
       mutateSales();
     } finally {
       setSaving(false);
@@ -78,7 +91,8 @@ export function StorePortal() {
 
   const cashSales = sales.filter((s) => s.payment === "cash").reduce((s, x) => s + Number(x.total), 0);
   const cardSales = sales.filter((s) => s.payment === "card").reduce((s, x) => s + Number(x.total), 0);
-  const total = cashSales + cardSales;
+  const nmSales = sales.filter((s) => s.payment === "unmarked").reduce((s, x) => s + Number(x.total), 0);
+  const total = cashSales + cardSales + nmSales;
 
   // --- каса ---
   const [opening, setOpening] = useState("");
@@ -92,7 +106,7 @@ export function StorePortal() {
   }, [cashData]);
   const openingN = parseFloat(opening.replace(",", ".")) || 0;
   const countedN = counted.trim() ? parseFloat(counted.replace(",", ".")) || 0 : null;
-  const expected = openingN + cashSales;
+  const expected = openingN + cashSales + nmSales; // физическа каса = брой + НМ (ПОС не влиза)
   const diff = countedN != null ? countedN - expected : null;
   async function saveCash(closeFlag?: boolean) {
     if (!storeId) return;
@@ -110,9 +124,9 @@ export function StorePortal() {
     setDate(d.toISOString().slice(0, 10));
   };
 
-  const payBtn = (val: "cash" | "card", label: string, Icon: typeof Banknote) => (
-    <button onClick={() => setPayment(val)} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-[14px] font-medium border cursor-pointer ${payment === val ? "bg-accent text-white border-accent" : "border-border text-text-2 hover:bg-surface-2"}`}>
-      <Icon size={17} /> {label}
+  const payBtn = (val: Pay, label: string, Icon: typeof Banknote) => (
+    <button onClick={() => setPayment(val)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[13px] font-medium border cursor-pointer ${payment === val ? "bg-accent text-white border-accent" : "border-border text-text-2 hover:bg-surface-2"}`}>
+      <Icon size={16} /> {label}
     </button>
   );
 
@@ -139,12 +153,21 @@ export function StorePortal() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-5">
-        {/* Нова продажба */}
-        <Card className="p-4">
-          <div className="text-[14px] font-semibold text-text mb-3">Нова продажба</div>
+      {/* Овървю отгоре */}
+      <Card className="p-4 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div><div className="text-[11px] text-text-3 flex items-center justify-center gap-1"><Banknote size={13} /> В брой</div><div className="text-[18px] font-bold tabular-nums">{m(cashSales)}</div></div>
+          <div><div className="text-[11px] text-text-3 flex items-center justify-center gap-1"><CreditCard size={13} /> С карта</div><div className="text-[18px] font-bold tabular-nums">{m(cardSales)}</div></div>
+          <div><div className="text-[11px] text-text-3 flex items-center justify-center gap-1"><Tag size={13} /> НМ</div><div className="text-[18px] font-bold tabular-nums">{m(nmSales)}</div></div>
+          <div><div className="text-[11px] text-text-3">Общо ({sales.length})</div><div className="text-[18px] font-bold text-accent tabular-nums">{m(total)}</div></div>
+        </div>
+      </Card>
 
-          {closed ? (
+      {/* Нова продажба — цял екран */}
+      <Card className="p-4 mb-5">
+          <div className="text-[14px] font-semibold text-text mb-3">{editId ? "✏️ Редакция на продажба" : "Нова продажба"}</div>
+
+          {closed && !editId ? (
             <div className="text-[13px] text-text-3 py-8 text-center">🔒 Денят е приключен. Натисни „Отвори отново“, за да добавяш продажби.</div>
           ) : (
           <>
@@ -186,34 +209,27 @@ export function StorePortal() {
             <span className="text-[20px] font-bold text-accent tabular-nums">{m(cartTotal)}</span>
           </div>
 
-          <div className="flex gap-2 mb-3">{payBtn("cash", "В брой", Banknote)}{payBtn("card", "С карта", CreditCard)}</div>
+          <div className="flex gap-2 mb-3">{payBtn("cash", "В брой", Banknote)}{payBtn("card", "С карта", CreditCard)}{payBtn("unmarked", "Немаркирани", Tag)}</div>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="бележка (по избор)" className={inputCls + " w-full mb-3"} />
-          <button onClick={saveSale} disabled={saving || !lines.some((l) => l.name.trim())} className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer">
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} Запиши продажбата
-          </button>
+          <div className="flex gap-2">
+            <button onClick={saveSale} disabled={saving || !lines.some((l) => l.name.trim())} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer">
+              {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} {editId ? "Обнови продажбата" : "Запиши продажбата"}
+            </button>
+            {editId && <button onClick={resetForm} className="px-4 py-3 rounded-lg border border-border text-text-2 hover:bg-surface-2 font-medium cursor-pointer">Отказ</button>}
+          </div>
           </>
           )}
-        </Card>
+      </Card>
 
-        <div className="space-y-5">
-          {/* Тотали */}
-          <Card className="p-4">
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div><div className="text-[11px] text-text-3 flex items-center justify-center gap-1"><Banknote size={13} /> В брой</div><div className="text-[18px] font-bold tabular-nums">{m(cashSales)}</div></div>
-              <div><div className="text-[11px] text-text-3 flex items-center justify-center gap-1"><CreditCard size={13} /> С карта</div><div className="text-[18px] font-bold tabular-nums">{m(cardSales)}</div></div>
-              <div><div className="text-[11px] text-text-3">Общо ({sales.length})</div><div className="text-[18px] font-bold text-accent tabular-nums">{m(total)}</div></div>
-            </div>
-          </Card>
-
-          {/* Каса */}
-          <Card className="p-4">
+      {/* Каса */}
+      <Card className="p-4 mb-5">
             <div className="text-[14px] font-semibold text-text mb-3 flex items-center gap-2"><Wallet size={16} className="text-accent" /> Каса (край на деня)</div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div><label className="block text-[11px] text-text-3 mb-1">Начално салдо</label><input value={opening} onChange={(e) => setOpening(e.target.value.replace(/[^\d.,]/g, ""))} placeholder="0,00" className={inputCls + " w-full"} /></div>
               <div><label className="block text-[11px] text-text-3 mb-1">Преброено в касата</label><input value={counted} onChange={(e) => setCounted(e.target.value.replace(/[^\d.,]/g, ""))} placeholder="0,00" className={inputCls + " w-full"} /></div>
             </div>
             <div className="text-[13px] space-y-1 mb-3">
-              <div className="flex justify-between"><span className="text-text-3">+ Продажби в брой</span><span className="tabular-nums">{m(cashSales)}</span></div>
+              <div className="flex justify-between"><span className="text-text-3">+ Продажби в брой + НМ</span><span className="tabular-nums">{m(cashSales + nmSales)}</span></div>
               <div className="flex justify-between font-medium"><span>= Очаквано в касата</span><span className="tabular-nums">{m(expected)}</span></div>
               {diff != null && (
                 <div className={`flex justify-between font-bold ${Math.abs(diff) < 0.005 ? "text-accent" : "text-red-500"}`}>
@@ -233,8 +249,6 @@ export function StorePortal() {
               )}
             </div>
           </Card>
-        </div>
-      </div>
 
       {/* Продажби днес */}
       <Card className="p-4 mt-5">
@@ -245,15 +259,16 @@ export function StorePortal() {
           <div className="space-y-2">
             {sales.map((s) => (
               <div key={s.id} className="flex items-start gap-3 py-2 border-b border-border last:border-0">
-                <span className={`mt-0.5 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full ${s.payment === "cash" ? "bg-green-500/15 text-green-600" : "bg-blue-500/15 text-blue-600"}`}>
-                  {s.payment === "cash" ? <Banknote size={12} /> : <CreditCard size={12} />} {s.payment === "cash" ? "брой" : "карта"}
+                <span className={`mt-0.5 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full ${s.payment === "cash" ? "bg-green-500/15 text-green-600" : s.payment === "card" ? "bg-blue-500/15 text-blue-600" : "bg-amber-500/15 text-amber-600"}`}>
+                  {s.payment === "cash" ? <Banknote size={12} /> : s.payment === "card" ? <CreditCard size={12} /> : <Tag size={12} />} {PAY_LABEL[s.payment]}
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] text-text truncate">{s.items.map((it) => `${it.name} ×${it.qty}`).join(", ")}</div>
                   <div className="text-[11px] text-text-3">{hhmm(s.created_at)}{s.note ? ` · ${s.note}` : ""}{s.cashier_name ? ` · ${s.cashier_name}` : ""}</div>
                 </div>
                 <span className="text-[14px] font-semibold tabular-nums whitespace-nowrap">{m(s.total)}</span>
-                <button onClick={() => delSale(s.id)} className="text-text-3 hover:text-red-500 mt-0.5"><Trash2 size={15} /></button>
+                <button onClick={() => startEdit(s)} className="text-text-3 hover:text-accent mt-0.5" title="Редактирай"><Pencil size={15} /></button>
+                <button onClick={() => delSale(s.id)} className="text-text-3 hover:text-red-500 mt-0.5" title="Изтрий"><Trash2 size={15} /></button>
               </div>
             ))}
           </div>

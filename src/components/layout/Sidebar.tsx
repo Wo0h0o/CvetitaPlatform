@@ -103,6 +103,7 @@ const fullNavSections: NavSection[] = [
     label: "Магазини",
     items: [
       { href: "/store", icon: Store, label: "Магазин — продажби" },
+      { href: "/store/kasa", icon: CalendarDays, label: "Магазин — каса" },
     ],
   },
   {
@@ -154,7 +155,10 @@ function buildSections(role: string | null): NavSection[] {
   // Store staff = само магазинния портал + слим профил.
   if (role === "store") {
     return [
-      { label: "Магазин", items: [{ href: "/store", icon: Store, label: "Продажби" }] },
+      { label: "Магазин", items: [
+        { href: "/store", icon: Store, label: "Продажби" },
+        { href: "/store/kasa", icon: CalendarDays, label: "Каса" },
+      ] },
       { label: "Профил", items: [{ href: "/settings", icon: Settings, label: "Моят профил" }] },
     ];
   }

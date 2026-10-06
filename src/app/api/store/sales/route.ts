@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   }
   const store = resolveStore(ctx, (body.store_id as string) ?? null);
   if (!store) return NextResponse.json({ error: "store required" }, { status: 400 });
-  const payment = body.payment === "card" ? "card" : "cash";
+  const payment = body.payment === "card" || body.payment === "unmarked" ? body.payment : "cash";
   const items = Array.isArray(body.items) ? body.items : [];
   const total = Number(body.total) || items.reduce((s: number, it: { line_total?: number }) => s + (Number(it.line_total) || 0), 0);
   const row = {
@@ -57,6 +57,31 @@ export async function POST(req: NextRequest) {
     logger.error("store sale insert failed", { error: error.message });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  return NextResponse.json({ sale: data });
+}
+
+export async function PATCH(req: NextRequest) {
+  const ctx = await getStoreContext(req);
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const id = body.id;
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const items = Array.isArray(body.items) ? body.items : [];
+  const fields = {
+    items,
+    payment: body.payment === "card" || body.payment === "unmarked" ? body.payment : "cash",
+    total: Number(body.total) || items.reduce((s: number, it: { line_total?: number }) => s + (Number(it.line_total) || 0), 0),
+    note: (body.note as string) || null,
+  };
+  let q = supabaseAdmin.from("store_sales").update(fields).eq("id", Number(id));
+  if (!ctx.canAllStores) q = q.eq("store_id", ctx.storeId ?? -1);
+  const { data, error } = await q.select().single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ sale: data });
 }
 
