@@ -7,12 +7,11 @@ import { createServerClient } from "@supabase/ssr";
 // Workers can also visit /settings — but the settings page itself hides the
 // org-wide fields when role === 'worker', exposing only their HR profile.
 const WORKER_ALLOWED_PREFIXES = ["/hr", "/settings"];
+// Магазинните служители виждат само магазинния портал (+ профила си).
+const STORE_ALLOWED_PREFIXES = ["/store", "/settings"];
 
-function isWorkerAllowed(pathname: string): boolean {
-  if (pathname === "/") return false; // worker home is /hr, not /
-  return WORKER_ALLOWED_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
+function allowedFor(prefixes: string[], pathname: string): boolean {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
 export async function middleware(request: NextRequest) {
@@ -52,8 +51,11 @@ export async function middleware(request: NextRequest) {
   const role = member?.role ?? null;
   const pathname = request.nextUrl.pathname;
 
-  if (role === "worker" && !isWorkerAllowed(pathname)) {
+  if (role === "worker" && !(pathname !== "/" && allowedFor(WORKER_ALLOWED_PREFIXES, pathname))) {
     return NextResponse.redirect(new URL("/hr", request.url));
+  }
+  if (role === "store" && !allowedFor(STORE_ALLOWED_PREFIXES, pathname)) {
+    return NextResponse.redirect(new URL("/store", request.url));
   }
 
   // IMPORTANT: return supabaseResponse, not NextResponse.next()

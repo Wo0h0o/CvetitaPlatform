@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export type MemberRole = "admin" | "manager" | "viewer" | "agent" | "worker";
+export type MemberRole = "admin" | "manager" | "viewer" | "agent" | "worker" | "store";
 
 export interface UserContext {
   userId: string;

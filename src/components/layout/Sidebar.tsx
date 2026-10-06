@@ -25,6 +25,7 @@ import {
   BadgeCheck,
   Calculator,
   ListChecks,
+  Store,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -99,6 +100,12 @@ const fullNavSections: NavSection[] = [
     ],
   },
   {
+    label: "Магазини",
+    items: [
+      { href: "/store", icon: Store, label: "Магазин — продажби" },
+    ],
+  },
+  {
     label: "Регулация и оферти",
     items: [
       { href: "/notify", icon: BadgeCheck, label: "Уведомления БАБХ" },
@@ -144,6 +151,13 @@ const fullNavSections: NavSection[] = [
 ];
 
 function buildSections(role: string | null): NavSection[] {
+  // Store staff = само магазинния портал + слим профил.
+  if (role === "store") {
+    return [
+      { label: "Магазин", items: [{ href: "/store", icon: Store, label: "Продажби" }] },
+      { label: "Профил", items: [{ href: "/settings", icon: Settings, label: "Моят профил" }] },
+    ];
+  }
   // Worker = HR-only sidebar with a slim settings link for their own profile.
   if (role === "worker") {
     return [
