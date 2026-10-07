@@ -218,7 +218,31 @@ interface StoresTableBodyProps {
   onRowClick: (storeId: string) => void;
 }
 
+// Сумарни стойности за всички магазини. ROAS-ите са blended (оборот ÷ разход),
+// не средно аритметично, за да е коректен общият показател.
+function computeTotals(rows: RowData[]) {
+  let shopRev = 0, shopOrders = 0, metaRev = 0, metaSpend = 0, gaSpend = 0, gaRev = 0, gaPurch = 0;
+  for (const { store } of rows) {
+    shopRev += store.shopifyTodayRevenue || 0;
+    shopOrders += store.shopifyTodayOrders || 0;
+    metaRev += store.todayRevenue || 0;
+    metaSpend += store.todaySpend || 0;
+    if (store.googleAds) {
+      gaSpend += store.googleAds.spend || 0;
+      gaPurch += store.googleAds.purchases || 0;
+      gaRev += (store.googleAds.roas || 0) * (store.googleAds.spend || 0);
+    }
+  }
+  return {
+    n: rows.length,
+    shopRev, shopOrders, metaRev, metaSpend,
+    metaRoas: metaSpend > 0 ? metaRev / metaSpend : 0,
+    gaSpend, gaPurch, gaRoas: gaSpend > 0 ? gaRev / gaSpend : 0,
+  };
+}
+
 function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
+  const t = computeTotals(rows);
   return (
     <>
       {/* Desktop: real table — composable columns. */}
@@ -321,6 +345,27 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-border bg-surface-2 font-semibold text-text">
+              <td className="px-4 py-3">ОБЩО ({t.n})</td>
+              <td className="px-4 py-3 text-right tabular-nums">
+                {fmtEur(t.shopRev)}
+                <div className="text-[11px] text-text-3 font-normal">{t.shopOrders} поръчки</div>
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums">
+                {fmtEur(t.metaRev)}
+                <div className="text-[11px] text-text-3 font-normal">{fmtPct(t.metaRev, t.shopRev)} от Shopify</div>
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmtEur(t.metaSpend)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmtRoas(t.metaRoas)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">
+                {fmtEur(t.gaSpend)}
+                <div className="text-[11px] text-text-3 font-normal">ROAS: {fmtRoas(t.gaRoas)} · {t.gaPurch} покупки</div>
+              </td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
@@ -414,6 +459,34 @@ function StoresTableBody({ rows, onRowClick }: StoresTableBodyProps) {
             </div>
           </div>
         ))}
+
+        {/* Сумарна карта */}
+        <div className="bg-surface-2 rounded-xl shadow-sm p-4">
+          <div className="font-semibold text-text mb-2">ОБЩО ({t.n} магазина)</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px]">
+            <div>
+              <SourceLabel source="shopify" label="Shopify приходи" />
+              <div className="font-semibold text-text tabular-nums">{fmtEur(t.shopRev)}</div>
+              <div className="text-[11px] text-text-3">{t.shopOrders} поръчки</div>
+            </div>
+            <div>
+              <SourceLabel source="meta" label="Meta attribution" />
+              <div className="font-semibold text-text tabular-nums">{fmtEur(t.metaRev)}</div>
+            </div>
+            <div>
+              <SourceLabel source="meta" label="Meta разход" />
+              <div className="font-semibold text-text tabular-nums">{fmtEur(t.metaSpend)}</div>
+            </div>
+            <div>
+              <SourceLabel source="meta" label="Meta ROAS" />
+              <div className="font-semibold text-text tabular-nums">{fmtRoas(t.metaRoas)}</div>
+            </div>
+            <div className="col-span-2">
+              <SourceLabel source="google_ads" label="Google Ads" />
+              <div className="font-semibold text-text tabular-nums">{fmtEur(t.gaSpend)} · ROAS {fmtRoas(t.gaRoas)} · {t.gaPurch} покупки</div>
+            </div>
+          </div>
+        </div>
       </div>
     </>
   );
