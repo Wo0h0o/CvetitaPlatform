@@ -49,8 +49,7 @@ function Login({ onLogin }: { onLogin: (w: Worker) => void }) {
       <div className="max-w-sm mx-auto">
         <div className="flex flex-col items-center mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/favicon.svg" alt="Цветита Хербал" width={56} height={56} className="rounded-2xl shadow-sm mb-2" />
-          <div className="text-[19px] font-bold text-text">Цветита Хербал</div>
+          <img src="/cvetita-logo.png" alt="Цветита Хербал" width={220} height={57} className="mb-2" />
           <div className="text-[13px] text-text-3">Производство · моят ден</div>
         </div>
         {!sel ? (
@@ -129,7 +128,7 @@ function DayForm({ worker, onLogout }: { worker: Worker; onLogout: () => void })
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/favicon.svg" alt="" width={28} height={28} className="rounded-lg" />
+            <img src="/cvetita-mark.png" alt="" width={28} height={28} className="rounded-lg" />
             <div className="text-[17px] font-bold text-text">Здравей, {worker.name}</div>
           </div>
           <button onClick={() => logout(onLogout)} className="text-[13px] text-text-3 border border-border rounded-lg px-3 py-1.5">Изход</button>
@@ -219,7 +218,7 @@ function Supervisor({ worker, onLogout }: { worker: Worker; onLogout: () => void
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/favicon.svg" alt="" width={28} height={28} className="rounded-lg" />
+            <img src="/cvetita-mark.png" alt="" width={28} height={28} className="rounded-lg" />
             <div className="text-[17px] font-bold text-text">{worker.name}</div>
           </div>
           <button onClick={() => logout(onLogout)} className="text-[13px] text-text-3 border border-border rounded-lg px-3 py-1.5">Изход</button>
