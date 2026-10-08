@@ -47,7 +47,7 @@ interface CreateStoreBody {
   apiVersion?: string;
 }
 
-const VALID_MARKETS = new Set(["bg", "gr", "ro", "de", "it", "uk", "hu", "hr", "rs"]);
+const VALID_MARKETS = new Set(["bg", "gr", "ro", "de", "it", "uk", "hu", "hr", "rs", "cz", "si"]);
 
 export async function POST(req: NextRequest) {
   const authError = await requireAuth(req);
@@ -88,41 +88,65 @@ export async function POST(req: NextRequest) {
   const schemaName = `store_${marketCode}`;
 
   try {
-    // 1. Check if schema already exists (prevent duplicate market codes)
-    const { data: existing } = await supabaseAdmin
+    // 1. Има ли вече магазин за този пазар?
+    const { data: existingRows } = await supabaseAdmin
       .from("stores")
-      .select("id")
+      .select("id, settings")
       .eq("market_code", marketCode)
       .limit(1);
+    const existingStore = existingRows?.[0];
 
-    if (existing && existing.length > 0) {
-      return NextResponse.json(
-        { error: `Store with market code '${marketCode}' already exists` },
-        { status: 409 }
-      );
+    let storeId: string;
+    let reuse = false;
+
+    if (existingStore) {
+      // Вече има Shopify креденшъли? → истински дубликат, отказваме.
+      const { data: cred } = await supabaseAdmin
+        .from("store_credentials")
+        .select("id")
+        .eq("store_id", existingStore.id)
+        .eq("service", "shopify")
+        .maybeSingle();
+      if (cred) {
+        return NextResponse.json(
+          { error: `Store with market code '${marketCode}' already exists` },
+          { status: 409 }
+        );
+      }
+      // Само-Meta запис (напр. HU) → надграждаме го с Shopify, пазим Meta връзката.
+      reuse = true;
+      storeId = existingStore.id as string;
+      const settings = { ...((existingStore.settings as Record<string, unknown>) || {}) };
+      delete settings.meta_only;
+      const { error: updErr } = await supabaseAdmin
+        .from("stores")
+        .update({ name: name.trim(), domain: domain.trim(), platform, is_active: true, settings })
+        .eq("id", storeId);
+      if (updErr) {
+        logger.error("Failed to update meta-only store", { storeId, error: updErr.message });
+        throw new Error("Failed to update store record");
+      }
+    } else {
+      // 2. Нов магазин
+      const { data: store, error: storeErr } = await supabaseAdmin
+        .from("stores")
+        .insert({
+          name: name.trim(),
+          market_code: marketCode,
+          platform,
+          domain: domain.trim(),
+          organization_id: organizationId,
+          is_active: true,
+          settings: {},
+        })
+        .select("id")
+        .single();
+      if (storeErr || !store) {
+        logger.error("Failed to insert store", { error: storeErr?.message });
+        throw new Error("Failed to create store record");
+      }
+      storeId = store.id;
     }
-
-    // 2. Insert store row
-    const { data: store, error: storeErr } = await supabaseAdmin
-      .from("stores")
-      .insert({
-        name: name.trim(),
-        market_code: marketCode,
-        platform,
-        domain: domain.trim(),
-        organization_id: organizationId,
-        is_active: true,
-        settings: {},
-      })
-      .select("id")
-      .single();
-
-    if (storeErr || !store) {
-      logger.error("Failed to insert store", { error: storeErr?.message });
-      throw new Error("Failed to create store record");
-    }
-
-    const storeId = store.id;
 
     // 3. Encrypt & insert credentials
     const credentials = {
@@ -143,22 +167,23 @@ export async function POST(req: NextRequest) {
 
     if (credErr) {
       logger.error("Failed to insert credentials", { storeId, error: credErr.message });
-      // Rollback store creation
-      await supabaseAdmin.from("stores").delete().eq("id", storeId);
+      if (!reuse) await supabaseAdmin.from("stores").delete().eq("id", storeId);
       throw new Error("Failed to save credentials");
     }
 
-    // 4. Create per-store schema (tables, indexes, grants)
+    // 4. Create per-store schema (idempotent — CREATE … IF NOT EXISTS). За reuse
+    // (HU) схемата вече съществува, затова грешка тук е незначителна.
     const { error: schemaErr } = await supabaseAdmin.rpc("create_store_schema", {
       p_schema: schemaName,
     });
 
-    if (schemaErr) {
+    if (schemaErr && !reuse) {
       logger.error("Failed to create store schema", { schemaName, error: schemaErr.message });
-      // Rollback
       await supabaseAdmin.from("store_credentials").delete().eq("store_id", storeId);
       await supabaseAdmin.from("stores").delete().eq("id", storeId);
       throw new Error("Failed to create database schema");
+    } else if (schemaErr) {
+      logger.warn("create_store_schema warning on reuse (non-fatal)", { schemaName, error: schemaErr.message });
     }
 
     // 5. Register schema in PostgREST
