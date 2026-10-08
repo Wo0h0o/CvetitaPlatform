@@ -26,6 +26,7 @@ import {
   Calculator,
   ListChecks,
   Store,
+  Gauge,
 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -97,6 +98,7 @@ const fullNavSections: NavSection[] = [
         ],
       },
       { href: "/production/orders", icon: ClipboardList, label: "Възлагателни писма" },
+      { href: "/productivity", icon: Gauge, label: "Продуктивност (цех)" },
     ],
   },
   {
