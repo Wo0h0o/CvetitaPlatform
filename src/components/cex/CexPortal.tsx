@@ -47,8 +47,12 @@ function Login({ onLogin }: { onLogin: (w: Worker) => void }) {
   return (
     <div className="min-h-screen px-5 py-8" style={{ background: "var(--bg)" }}>
       <div className="max-w-sm mx-auto">
-        <h1 className="text-[20px] font-bold text-text text-center mb-1">Производство</h1>
-        <p className="text-[13px] text-text-3 text-center mb-6">Моят работен ден</p>
+        <div className="flex flex-col items-center mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/favicon.svg" alt="Цветита Хербал" width={56} height={56} className="rounded-2xl shadow-sm mb-2" />
+          <div className="text-[19px] font-bold text-text">Цветита Хербал</div>
+          <div className="text-[13px] text-text-3">Производство · моят ден</div>
+        </div>
         {!sel ? (
           <>
             <p className="text-[14px] font-medium text-text mb-3">Избери името си:</p>
@@ -123,7 +127,11 @@ function DayForm({ worker, onLogout }: { worker: Worker; onLogout: () => void })
     <div className="min-h-screen px-4 py-6" style={{ background: "var(--bg)" }}>
       <div className="max-w-md mx-auto">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-[17px] font-bold text-text">Здравей, {worker.name}</div>
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/favicon.svg" alt="" width={28} height={28} className="rounded-lg" />
+            <div className="text-[17px] font-bold text-text">Здравей, {worker.name}</div>
+          </div>
           <button onClick={() => logout(onLogout)} className="text-[13px] text-text-3 border border-border rounded-lg px-3 py-1.5">Изход</button>
         </div>
         <div className="flex items-center justify-between bg-surface border border-border rounded-xl px-3 py-2 mb-4">
@@ -209,7 +217,11 @@ function Supervisor({ worker, onLogout }: { worker: Worker; onLogout: () => void
     <div className="min-h-screen px-4 py-5" style={{ background: "var(--bg)" }}>
       <div className="max-w-md mx-auto">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-[17px] font-bold text-text">{worker.name}</div>
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/favicon.svg" alt="" width={28} height={28} className="rounded-lg" />
+            <div className="text-[17px] font-bold text-text">{worker.name}</div>
+          </div>
           <button onClick={() => logout(onLogout)} className="text-[13px] text-text-3 border border-border rounded-lg px-3 py-1.5">Изход</button>
         </div>
         <div className="flex gap-2 mb-4">
@@ -226,8 +238,17 @@ function SupReview() {
   const [date, setDate] = useState(todayISO());
   const [data, setData] = useState<{ rows: RRow[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ id: string; qty: string; product: string; difficulty: number | null } | null>(null);
   const load = useCallback(() => { fetcher(`/api/cex/review?date=${date}`).then(setData); }, [date]);
   useEffect(() => { load(); }, [load]);
+  async function saveEdit(entry_id: number) {
+    if (!edit) return;
+    setBusy(edit.id);
+    try {
+      await fetch("/api/cex/review", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entry_id, line_id: edit.id, edit: { qty: Number(edit.qty) || 0, product: edit.product.trim() || null, difficulty: edit.difficulty } }) });
+      setEdit(null); load();
+    } finally { setBusy(null); }
+  }
   async function act(entry_id: number, line_id: string, status: Status) {
     let note: string | null = null;
     if (status === "rejected") note = prompt("Причина (по избор):") || null;
@@ -259,13 +280,27 @@ function SupReview() {
             )}
             {r.lines.length === 0 ? <p className="text-[12px] text-text-3">няма запис</p> : (
               <div className="space-y-2">
-                {r.lines.map((l) => (
+                {r.lines.map((l) => edit?.id === l.id ? (
+                  <div key={l.id} className="border-t border-border pt-2 space-y-2">
+                    <div className="text-[13px] font-medium text-text">{l.name}</div>
+                    <input value={edit.product} onChange={(e) => setEdit({ ...edit, product: e.target.value })} placeholder="продукт" className="w-full px-3 py-2 rounded-lg border border-border bg-surface-2 text-[14px]" />
+                    {l.difficulty != null && (
+                      <div className="flex gap-2">{[1, 2, 3].map((d) => <button key={d} onClick={() => setEdit({ ...edit, difficulty: d })} className={`flex-1 py-1.5 rounded-lg text-[14px] font-semibold border ${edit.difficulty === d ? "bg-accent text-white border-accent" : "border-border text-text-2"}`}>{d}</button>)}</div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input inputMode="numeric" value={edit.qty} onChange={(e) => setEdit({ ...edit, qty: e.target.value.replace(/[^\d]/g, "") })} className="flex-1 text-right text-[16px] font-semibold rounded-lg border border-border px-3 py-2 bg-surface-2" />
+                      <button onClick={() => r.entry_id && saveEdit(r.entry_id)} className="px-3 py-2 rounded-lg bg-accent text-white text-[13px]">Запази</button>
+                      <button onClick={() => setEdit(null)} className="px-3 py-2 rounded-lg border border-border text-text-3 text-[13px]">×</button>
+                    </div>
+                  </div>
+                ) : (
                   <div key={l.id} className="flex items-center gap-2 border-t border-border pt-2">
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] text-text">{l.name}{l.product ? ` · ${l.product}` : ""}{l.difficulty ? ` · тр.${l.difficulty}` : ""}</div>
                       <div className="text-[12px] text-text-3">{l.qty} бр{l.pct != null ? ` · ${l.pct}%` : l.norm == null ? " · няма норма" : ""}</div>
                     </div>
                     {l.status === "confirmed" ? <span className="text-[11px] text-accent">✅</span> : l.status === "rejected" ? <span className="text-[11px] text-red-500">↩</span> : null}
+                    <button onClick={() => setEdit({ id: l.id, qty: String(l.qty), product: l.product || "", difficulty: l.difficulty })} className="text-[13px] px-2 py-1.5 text-text-3" title="Редактирай">✎</button>
                     {l.status !== "confirmed" && <button onClick={() => r.entry_id && act(r.entry_id, l.id, "confirmed")} disabled={busy === l.id} className="text-[12px] px-2.5 py-1.5 rounded-lg bg-accent text-white">✓</button>}
                     {l.status !== "rejected" && <button onClick={() => r.entry_id && act(r.entry_id, l.id, "rejected")} disabled={busy === l.id} className="text-[12px] px-2.5 py-1.5 rounded-lg border border-red-400 text-red-500">↩</button>}
                   </div>

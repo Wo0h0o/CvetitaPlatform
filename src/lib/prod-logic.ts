@@ -107,6 +107,28 @@ export async function applyReview(entryId: number, opts: { lineId?: string; stat
   return data;
 }
 
+// ─────────── Редакция на ред от супервайзъра (корекция на стойности) ───────────
+export async function editLine(entryId: number, lineId: string, patch: { qty?: number; product?: string | null; difficulty?: number | null }, reviewerId?: string) {
+  const { data: entry } = await supabaseAdmin.from("prod_entries").select("*").eq("id", entryId).maybeSingle();
+  if (!entry) throw new Error("not found");
+  const items = ((entry.items ?? []) as PItem[]).map((it) =>
+    it.id !== lineId ? it : {
+      ...it,
+      qty: patch.qty != null ? Number(patch.qty) : it.qty,
+      product: patch.product !== undefined ? patch.product : it.product,
+      difficulty: patch.difficulty !== undefined ? patch.difficulty : it.difficulty,
+    }
+  );
+  const { data, error } = await supabaseAdmin
+    .from("prod_entries")
+    .update({ items, status: computeStatus(items), reviewed_by: reviewerId ?? null, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", entryId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 // ─────────── Дашборд за период (+ дневна серия за графики) ───────────
 export async function dashboard(from: string, to: string, onlyConfirmed: boolean) {
   const [ops, workersRes, entriesRes] = await Promise.all([

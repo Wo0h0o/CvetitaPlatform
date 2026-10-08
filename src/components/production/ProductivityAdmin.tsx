@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
-import { Gauge, Check, RotateCcw, Plus, Save } from "lucide-react";
+import { Gauge, Check, RotateCcw, Plus, Save, Pencil } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Sparkbars } from "@/components/cex/CexPortal";
@@ -76,8 +76,17 @@ function Review() {
   const [date, setDate] = useState(todayISO());
   const [data, setData] = useState<{ rows: RRow[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ id: string; qty: string; product: string; difficulty: number | null } | null>(null);
   const load = useCallback(() => { fetcher(`/api/prod/review?date=${date}`).then(setData); }, [date]);
   useEffect(() => { load(); }, [load]);
+  async function saveEdit(entry_id: number) {
+    if (!edit) return;
+    setBusy(edit.id);
+    try {
+      await fetch("/api/prod/review", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entry_id, line_id: edit.id, edit: { qty: Number(edit.qty) || 0, product: edit.product.trim() || null, difficulty: edit.difficulty } }) });
+      setEdit(null); load();
+    } finally { setBusy(null); }
+  }
   async function act(entry_id: number, line_id: string | undefined, status: string) {
     let note: string | null = null;
     if (status === "rejected") note = prompt("Причина за връщане (по избор):") || null;
@@ -105,7 +114,18 @@ function Review() {
             </div>
             {r.lines.length === 0 ? <div className="text-[12px] text-text-3">няма запис</div> : (
               <div className="divide-y divide-border">
-                {r.lines.map((l) => (
+                {r.lines.map((l) => edit?.id === l.id ? (
+                  <div key={l.id} className="flex items-center gap-2 py-2 flex-wrap">
+                    <span className="text-[13px] text-text">{l.name}</span>
+                    <input value={edit.product} onChange={(e) => setEdit({ ...edit, product: e.target.value })} placeholder="продукт" className={inputCls + " py-1 w-40"} />
+                    {l.difficulty != null && (
+                      <select value={edit.difficulty ?? 1} onChange={(e) => setEdit({ ...edit, difficulty: Number(e.target.value) })} className={inputCls + " py-1"}>{[1, 2, 3].map((d) => <option key={d} value={d}>трудност {d}</option>)}</select>
+                    )}
+                    <input value={edit.qty} onChange={(e) => setEdit({ ...edit, qty: e.target.value.replace(/[^\d]/g, "") })} className={inputCls + " py-1 w-24 text-right"} />
+                    <button onClick={() => saveEdit(r.entry_id!)} className="text-[12px] px-3 py-1.5 rounded-lg bg-accent text-white cursor-pointer">Запази</button>
+                    <button onClick={() => setEdit(null)} className="text-[12px] px-2 py-1.5 text-text-3 cursor-pointer">отказ</button>
+                  </div>
+                ) : (
                   <div key={l.id} className="flex items-center gap-3 py-2">
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] text-text">{l.name}{l.product ? ` · ${l.product}` : ""}{l.difficulty ? ` · трудност ${l.difficulty}` : ""}</div>
@@ -113,6 +133,7 @@ function Review() {
                     </div>
                     {l.status === "confirmed" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-600">потвърдено</span>}
                     {l.status === "rejected" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-600">върнато</span>}
+                    <button onClick={() => setEdit({ id: l.id, qty: String(l.qty), product: l.product || "", difficulty: l.difficulty })} className="text-text-3 hover:text-accent cursor-pointer" title="Редактирай"><Pencil size={14} /></button>
                     {l.status !== "confirmed" && <button onClick={() => act(r.entry_id!, l.id, "confirmed")} disabled={busy === l.id} className="text-[12px] px-2.5 py-1.5 rounded-lg bg-accent text-white cursor-pointer flex items-center gap-1"><Check size={13} /></button>}
                     {l.status !== "rejected" && <button onClick={() => act(r.entry_id!, l.id, "rejected")} disabled={busy === l.id} className="text-[12px] px-2.5 py-1.5 rounded-lg border border-red-400 text-red-500 cursor-pointer flex items-center gap-1"><RotateCcw size={13} /></button>}
                   </div>
