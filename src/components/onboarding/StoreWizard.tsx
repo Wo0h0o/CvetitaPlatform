@@ -43,8 +43,14 @@ const MARKETS = [
   { code: "gr", label: "Гърция" },
   { code: "ro", label: "Румъния" },
   { code: "hu", label: "Унгария" },
+  { code: "de", label: "Германия" },
+  { code: "it", label: "Италия" },
+  { code: "uk", label: "Великобритания" },
+  { code: "sk", label: "Словакия" },
   { code: "hr", label: "Хърватия" },
   { code: "rs", label: "Сърбия" },
+  { code: "cz", label: "Чехия" },
+  { code: "si", label: "Словения" },
 ];
 
 const inputClasses =

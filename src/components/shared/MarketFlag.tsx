@@ -35,6 +35,9 @@ const MARKET_LABEL: Record<string, string> = {
   uk: "Великобритания",
   sk: "Словакия",
   hu: "Унгария",
+  cz: "Чехия",
+  rs: "Сърбия",
+  si: "Словения",
 };
 
 export function MarketFlag({
@@ -182,6 +185,39 @@ export function MarketFlag({
         <rect width="3" height="0.6667" fill="#CE2939" />
         <rect y="0.6667" width="3" height="0.6667" fill="#ffffff" />
         <rect y="1.3333" width="3" height="0.6667" fill="#477050" />
+      </svg>
+    );
+  }
+
+  // Czechia 🇨🇿 — white top, red (#D7141A) bottom, blue (#11457E) hoist triangle.
+  if (code === "cz") {
+    return (
+      <svg {...commonProps}>
+        <rect width="3" height="1" fill="#ffffff" />
+        <rect y="1" width="3" height="1" fill="#D7141A" />
+        <path d="M0,0 L1.5,1 L0,2 Z" fill="#11457E" />
+      </svg>
+    );
+  }
+
+  // Serbia 🇷🇸 — red (#C6363C), blue (#0C4076), white horizontal thirds.
+  if (code === "rs") {
+    return (
+      <svg {...commonProps}>
+        <rect width="3" height="0.6667" fill="#C6363C" />
+        <rect y="0.6667" width="3" height="0.6667" fill="#0C4076" />
+        <rect y="1.3333" width="3" height="0.6667" fill="#ffffff" />
+      </svg>
+    );
+  }
+
+  // Slovenia 🇸🇮 — white, blue (#005DA4), red (#ED1C24) horizontal thirds.
+  if (code === "si") {
+    return (
+      <svg {...commonProps}>
+        <rect width="3" height="0.6667" fill="#ffffff" />
+        <rect y="0.6667" width="3" height="0.6667" fill="#005DA4" />
+        <rect y="1.3333" width="3" height="0.6667" fill="#ED1C24" />
       </svg>
     );
   }
