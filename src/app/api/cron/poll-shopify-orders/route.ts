@@ -24,7 +24,7 @@ import { logger } from "@/lib/logger";
 const FIRST_RUN_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const OVERLAP_MS = 5 * 60 * 1000;
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const cronError = requireCronSecret(req);
@@ -32,11 +32,15 @@ export async function GET(req: Request) {
 
   const startedAt = Date.now();
 
-  const { data: stores, error: storesErr } = await supabaseAdmin
+  // По избор ?market=gr → само този магазин (за ръчен backfill без timeout).
+  const marketFilter = new URL(req.url).searchParams.get("market");
+  let storesQuery = supabaseAdmin
     .from("stores")
     .select("id, market_code, settings")
     .eq("is_active", true)
     .eq("platform", "shopify");
+  if (marketFilter) storesQuery = storesQuery.eq("market_code", marketFilter);
+  const { data: stores, error: storesErr } = await storesQuery;
 
   if (storesErr) {
     logger.error("poll-shopify-orders: stores fetch failed", { error: storesErr.message });
