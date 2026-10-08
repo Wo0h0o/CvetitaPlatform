@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireManager } from "@/lib/prod-admin";
+import { getCexWorker } from "@/lib/cex-auth";
 import { dashboard } from "@/lib/prod-logic";
 
-/** Админ/мениджър (десктоп): дашборд за период + дневни серии за графики. */
+/** Супервайзър (телефон): дашборд за период + дневни серии за графики. */
 export async function GET(req: NextRequest) {
-  const a = await requireManager(req);
-  if ("error" in a) return a.error;
+  const w = await getCexWorker(req);
+  if (!w?.is_supervisor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const sp = new URL(req.url).searchParams;
   const to = sp.get("to") || new Date().toISOString().slice(0, 10);
   const from = sp.get("from") || to;

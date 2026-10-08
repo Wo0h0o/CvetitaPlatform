@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 export async function GET(req: NextRequest) {
   const a = await requireManager(req);
   if ("error" in a) return a.error;
-  const { data, error } = await supabaseAdmin.from("prod_workers").select("id, name, pin, active").order("name");
+  const { data, error } = await supabaseAdmin.from("prod_workers").select("id, name, pin, active, is_supervisor").order("name");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ workers: data ?? [] });
 }

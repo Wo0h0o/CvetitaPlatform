@@ -31,6 +31,8 @@ export async function PATCH(req: NextRequest) {
   if (b.name !== undefined) fields.name = b.name;
   if (b.unit !== undefined) fields.unit = b.unit;
   if (b.norm_per_day !== undefined) fields.norm_per_day = b.norm_per_day === "" || b.norm_per_day == null ? null : Number(b.norm_per_day);
+  if (b.has_difficulty !== undefined) fields.has_difficulty = !!b.has_difficulty;
+  if (b.diff_norms !== undefined) fields.diff_norms = b.diff_norms; // {"1":n,"2":n,"3":n}
   if (b.active !== undefined) fields.active = b.active;
   if (b.sort !== undefined) fields.sort = b.sort;
   const { data, error } = await supabaseAdmin.from("prod_operations").update(fields).eq("id", Number(b.id)).select().single();

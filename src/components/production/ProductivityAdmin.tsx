@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
-import { Gauge, Check, RotateCcw, Loader2, Plus, Save } from "lucide-react";
+import { Gauge, Check, RotateCcw, Plus, Save } from "lucide-react";
 import { Card } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Sparkbars } from "@/components/cex/CexPortal";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -32,13 +33,14 @@ export function ProductivityAdmin() {
   );
 }
 
-// ─────────── Дашборд ───────────
+// ─────────── Дашборд с графики ───────────
+interface DRow { worker_id: number; worker_name: string; days: number; avg_pct: number | null; series: { date: string; pct: number }[] }
 function Dashboard() {
   const [from, setFrom] = useState(daysAgoISO(6));
   const [to, setTo] = useState(todayISO());
   const [onlyConfirmed, setOnlyConfirmed] = useState(false);
   const { data } = useSWR(`/api/prod/dashboard?from=${from}&to=${to}${onlyConfirmed ? "&confirmed=1" : ""}`, fetcher, { revalidateOnFocus: false });
-  const rows = data?.rows ?? [];
+  const rows: DRow[] = data?.rows ?? [];
   const ops = data?.operations ?? [];
   return (
     <>
@@ -47,54 +49,43 @@ function Dashboard() {
         <div><label className="block text-[11px] text-text-3 mb-1">До</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} /></div>
         <label className="flex items-center gap-2 text-[13px] text-text-2"><input type="checkbox" checked={onlyConfirmed} onChange={(e) => setOnlyConfirmed(e.target.checked)} /> само потвърдени</label>
       </Card>
-      <Card className="overflow-hidden">
-        <table className="w-full text-[13px]">
-          <thead><tr className="text-[11px] uppercase tracking-wider text-text-3">
-            <th className="text-left px-4 py-2.5 font-medium">Колега</th>
-            <th className="text-right px-4 py-2.5 font-medium">Дни</th>
-            <th className="text-right px-4 py-2.5 font-medium">Средно %</th>
-            <th className="text-right px-4 py-2.5 font-medium">Потвърдени</th>
-            <th className="text-right px-4 py-2.5 font-medium">Чакащи</th>
-            <th className="text-right px-4 py-2.5 font-medium">Върнати</th>
-          </tr></thead>
-          <tbody>
-            {rows.map((r: { worker_id: number; worker_name: string; days: number; avg_pct: number | null; confirmed: number; submitted: number; rejected: number }) => (
-              <tr key={r.worker_id} className="border-t border-border">
-                <td className="px-4 py-2.5 font-medium text-text">{r.worker_name}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-text-2">{r.days}</td>
-                <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${pctColor(r.avg_pct)}`}>{fmtPct(r.avg_pct)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-accent">{r.confirmed}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-amber-600">{r.submitted || "—"}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-red-500">{r.rejected || "—"}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={6} className="text-center text-text-3 py-6">Няма данни за периода.</td></tr>}
-          </tbody>
-        </table>
-      </Card>
-      {ops.some((o: { norm_per_day: number | null }) => o.norm_per_day == null) && (
+      <div className="grid md:grid-cols-2 gap-4">
+        {rows.map((r) => (
+          <Card key={r.worker_id} className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[15px] font-semibold text-text">{r.worker_name}</span>
+              <span className={`text-[18px] font-bold ${pctColor(r.avg_pct)}`}>{fmtPct(r.avg_pct)}</span>
+            </div>
+            <Sparkbars series={r.series} />
+            <div className="text-[11px] text-text-3 mt-1">{r.days} дни с запис · средно {fmtPct(r.avg_pct)}</div>
+          </Card>
+        ))}
+        {rows.length === 0 && <Card className="p-6 text-center text-text-3 text-[13px] md:col-span-2">Няма данни за периода.</Card>}
+      </div>
+      {ops.some((o: { has_difficulty: boolean; norm_per_day: number | null; diff_norms: Record<string, number> | null }) => (o.has_difficulty ? !o.diff_norms : o.norm_per_day == null)) && (
         <p className="text-[12px] text-amber-600 mt-3">⚠ Някои операции нямат зададена норма → не влизат в % изчислението. Задай нормите в „Настройки“.</p>
       )}
     </>
   );
 }
 
-// ─────────── Преглед / потвърждаване ───────────
+// ─────────── Преглед / потвърждаване (по операция) ───────────
+interface RLine { id: string; name: string; qty: number; difficulty: number | null; product: string | null; status: string; note: string | null; pct: number | null; norm: number | null }
+interface RRow { worker_id: number; worker_name: string; entry_id: number | null; status: string; pct: number | null; lines: RLine[] }
 function Review() {
   const [date, setDate] = useState(todayISO());
-  const { data, mutate } = useSWR(`/api/prod/review?date=${date}`, fetcher, { revalidateOnFocus: false });
-  const rows = data?.rows ?? [];
-  const [busy, setBusy] = useState<number | null>(null);
-  async function act(id: number, status: string) {
+  const [data, setData] = useState<{ rows: RRow[] } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(() => { fetcher(`/api/prod/review?date=${date}`).then(setData); }, [date]);
+  useEffect(() => { load(); }, [load]);
+  async function act(entry_id: number, line_id: string | undefined, status: string) {
     let note: string | null = null;
-    if (status === "rejected") { note = prompt("Причина за връщане (по избор):") || null; }
-    setBusy(id);
-    try {
-      await fetch("/api/prod/review", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status, note }) });
-      mutate();
-    } finally { setBusy(null); }
+    if (status === "rejected") note = prompt("Причина за връщане (по избор):") || null;
+    setBusy(line_id || `all-${entry_id}`);
+    try { await fetch("/api/prod/review", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entry_id, line_id, status, note }) }); load(); } finally { setBusy(null); }
   }
   const shift = (n: number) => { const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + n); const iso = d.toISOString().slice(0, 10); if (iso <= todayISO()) setDate(iso); };
+  const rows = data?.rows ?? [];
   return (
     <>
       <Card className="p-3 mb-4 flex items-center justify-between">
@@ -103,50 +94,59 @@ function Review() {
         <button onClick={() => shift(1)} disabled={date >= todayISO()} className="px-3 py-1 text-text-2 disabled:opacity-30">›</button>
       </Card>
       <div className="space-y-3">
-        {rows.map((r: { worker_id: number; worker_name: string; entry_id: number | null; items: { name: string; qty: number }[]; status: string; pct: number | null; review_note: string | null }) => (
+        {rows.map((r) => (
           <Card key={r.worker_id} className="p-4">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[14px] font-semibold text-text">{r.worker_name}</span>
-                  {r.status === "confirmed" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-600">потвърдено</span>}
-                  {r.status === "submitted" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600">чака</span>}
-                  {r.status === "rejected" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-600">върнато</span>}
-                  {r.status === "none" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-2 text-text-3">няма запис</span>}
-                  {r.pct != null && <span className={`text-[13px] font-bold ${pctColor(r.pct)}`}>{fmtPct(r.pct)}</span>}
-                </div>
-                {r.items.length > 0 ? (
-                  <div className="text-[13px] text-text-2 mt-1">{r.items.map((it) => `${it.name}: ${it.qty}`).join(" · ")}</div>
-                ) : r.status !== "none" ? <div className="text-[12px] text-text-3 mt-1">празен запис</div> : null}
-                {r.review_note && <div className="text-[12px] text-red-500 mt-1">Бележка: {r.review_note}</div>}
-              </div>
-              {r.entry_id && r.status !== "none" && (
-                <div className="flex gap-2">
-                  {r.status !== "confirmed" && <button onClick={() => act(r.entry_id!, "confirmed")} disabled={busy === r.entry_id} className="flex items-center gap-1 text-[12px] px-3 py-1.5 rounded-lg bg-accent text-white cursor-pointer disabled:opacity-50">{busy === r.entry_id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Потвърди</button>}
-                  {r.status !== "rejected" && <button onClick={() => act(r.entry_id!, "rejected")} disabled={busy === r.entry_id} className="flex items-center gap-1 text-[12px] px-3 py-1.5 rounded-lg border border-red-400 text-red-500 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"><RotateCcw size={13} /> Върни</button>}
-                </div>
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <span className="text-[14px] font-semibold text-text">{r.worker_name}</span>
+              {r.pct != null && <span className={`text-[13px] font-bold ${pctColor(r.pct)}`}>{fmtPct(r.pct)}</span>}
+              {r.entry_id && r.lines.some((l) => l.status !== "confirmed") && (
+                <button onClick={() => act(r.entry_id!, undefined, "confirmed")} disabled={busy === `all-${r.entry_id}`} className="ml-auto text-[12px] px-3 py-1.5 rounded-lg bg-accent text-white cursor-pointer">✓ Потвърди всички</button>
               )}
             </div>
+            {r.lines.length === 0 ? <div className="text-[12px] text-text-3">няма запис</div> : (
+              <div className="divide-y divide-border">
+                {r.lines.map((l) => (
+                  <div key={l.id} className="flex items-center gap-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-text">{l.name}{l.product ? ` · ${l.product}` : ""}{l.difficulty ? ` · трудност ${l.difficulty}` : ""}</div>
+                      <div className="text-[12px] text-text-3">{l.qty} бр{l.pct != null ? ` · ${l.pct}%` : l.norm == null ? " · няма норма" : ""}{l.note ? ` · бел.: ${l.note}` : ""}</div>
+                    </div>
+                    {l.status === "confirmed" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-600">потвърдено</span>}
+                    {l.status === "rejected" && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-600">върнато</span>}
+                    {l.status !== "confirmed" && <button onClick={() => act(r.entry_id!, l.id, "confirmed")} disabled={busy === l.id} className="text-[12px] px-2.5 py-1.5 rounded-lg bg-accent text-white cursor-pointer flex items-center gap-1"><Check size={13} /></button>}
+                    {l.status !== "rejected" && <button onClick={() => act(r.entry_id!, l.id, "rejected")} disabled={busy === l.id} className="text-[12px] px-2.5 py-1.5 rounded-lg border border-red-400 text-red-500 cursor-pointer flex items-center gap-1"><RotateCcw size={13} /></button>}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         ))}
-        {rows.length === 0 && <Card className="p-6 text-center text-text-3 text-[13px]">Няма колеги.</Card>}
+        {rows.length === 0 && <Card className="p-6 text-center text-text-3 text-[13px]">Зареждане…</Card>}
       </div>
     </>
   );
 }
 
-// ─────────── Настройки (операции + колеги) ───────────
+// ─────────── Настройки ───────────
+interface Op { id: number; name: string; unit: string; norm_per_day: number | null; has_difficulty: boolean; diff_norms: Record<string, number> | null }
 function Settings() {
   const { data: opsData, mutate: mutateOps } = useSWR("/api/prod/operations", fetcher, { revalidateOnFocus: false });
   const { data: wkData, mutate: mutateWk } = useSWR("/api/prod/workers", fetcher, { revalidateOnFocus: false });
-  const ops = opsData?.operations ?? [];
+  const ops: Op[] = opsData?.operations ?? [];
   const workers = wkData?.workers ?? [];
   const [norms, setNorms] = useState<Record<number, string>>({});
+  const [diffs, setDiffs] = useState<Record<number, { 1: string; 2: string; 3: string }>>({});
   const [newOp, setNewOp] = useState("");
   const [newW, setNewW] = useState({ name: "", pin: "" });
 
-  async function saveNorm(id: number) {
-    await fetch("/api/prod/operations", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, norm_per_day: norms[id] }) });
+  const dval = (o: Op, d: 1 | 2 | 3) => diffs[o.id]?.[d] ?? (o.diff_norms?.[String(d)] != null ? String(o.diff_norms![String(d)]) : "");
+  async function saveNorm(o: Op) {
+    if (o.has_difficulty) {
+      const dn = { 1: Number(dval(o, 1)) || 0, 2: Number(dval(o, 2)) || 0, 3: Number(dval(o, 3)) || 0 };
+      await fetch("/api/prod/operations", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: o.id, diff_norms: dn }) });
+    } else {
+      await fetch("/api/prod/operations", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: o.id, norm_per_day: norms[o.id] ?? o.norm_per_day ?? "" }) });
+    }
     mutateOps();
   }
   async function addOp() { if (!newOp.trim()) return; await fetch("/api/prod/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newOp.trim() }) }); setNewOp(""); mutateOps(); }
@@ -157,18 +157,31 @@ function Settings() {
   return (
     <div className="grid lg:grid-cols-2 gap-5">
       <Card className="p-4">
-        <div className="text-[14px] font-semibold text-text mb-3">Операции и норми (на пълен ден)</div>
-        <div className="space-y-2">
-          {ops.map((o: { id: number; name: string; unit: string; norm_per_day: number | null }) => (
-            <div key={o.id} className="flex items-center gap-2">
-              <div className="flex-1 text-[14px] text-text">{o.name}</div>
-              <input value={norms[o.id] ?? (o.norm_per_day ?? "")} onChange={(e) => setNorms((n) => ({ ...n, [o.id]: e.target.value.replace(/[^\d.,]/g, "") }))} placeholder="норма" className={inputCls + " w-28 text-right py-1.5"} />
-              <span className="text-[12px] text-text-3 w-6">{o.unit}</span>
-              <button onClick={() => saveNorm(o.id)} className="text-text-3 hover:text-accent" title="Запази"><Save size={16} /></button>
+        <div className="text-[14px] font-semibold text-text mb-1">Операции и норми (на пълен ден)</div>
+        <p className="text-[12px] text-text-3 mb-3">Капсулирането има 3 норми по трудност (1 лесни · 2 средни · 3 трудни).</p>
+        <div className="space-y-3">
+          {ops.map((o) => (
+            <div key={o.id} className="border-b border-border pb-2">
+              <div className="text-[14px] text-text mb-1">{o.name}</div>
+              {o.has_difficulty ? (
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3].map((d) => (
+                    <input key={d} value={dval(o, d as 1 | 2 | 3)} onChange={(e) => setDiffs((s) => ({ ...s, [o.id]: { 1: dval(o, 1), 2: dval(o, 2), 3: dval(o, 3), [d]: e.target.value.replace(/[^\d.,]/g, "") } }))} placeholder={`тр.${d}`} className={inputCls + " w-20 text-right py-1.5"} />
+                  ))}
+                  <span className="text-[12px] text-text-3">{o.unit}</span>
+                  <button onClick={() => saveNorm(o)} className="text-text-3 hover:text-accent ml-auto" title="Запази"><Save size={16} /></button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input value={norms[o.id] ?? (o.norm_per_day ?? "")} onChange={(e) => setNorms((n) => ({ ...n, [o.id]: e.target.value.replace(/[^\d.,]/g, "") }))} placeholder="норма" className={inputCls + " w-28 text-right py-1.5"} />
+                  <span className="text-[12px] text-text-3">{o.unit}</span>
+                  <button onClick={() => saveNorm(o)} className="text-text-3 hover:text-accent ml-auto" title="Запази"><Save size={16} /></button>
+                </div>
+              )}
             </div>
           ))}
         </div>
-        <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+        <div className="flex gap-2 mt-3">
           <input value={newOp} onChange={(e) => setNewOp(e.target.value)} placeholder="нова операция" className={inputCls + " flex-1"} />
           <button onClick={addOp} className="px-3 rounded-lg bg-accent text-white cursor-pointer"><Plus size={16} /></button>
         </div>
@@ -177,9 +190,9 @@ function Settings() {
       <Card className="p-4">
         <div className="text-[14px] font-semibold text-text mb-3">Колеги и PIN кодове</div>
         <div className="space-y-2">
-          {workers.map((w: { id: number; name: string; pin: string; active: boolean }) => (
+          {workers.map((w: { id: number; name: string; pin: string; active: boolean; is_supervisor: boolean }) => (
             <div key={w.id} className={`flex items-center gap-2 ${w.active ? "" : "opacity-50"}`}>
-              <div className="flex-1 text-[14px] text-text">{w.name}</div>
+              <div className="flex-1 text-[14px] text-text">{w.name}{w.is_supervisor && <span className="text-[11px] text-accent ml-1">(ръководител)</span>}</div>
               <span className="text-[13px] font-mono tabular-nums bg-surface-2 rounded px-2 py-1">{w.pin}</span>
               <button onClick={() => resetPin(w.id)} className="text-[11px] text-accent hover:underline">смени PIN</button>
               <button onClick={() => toggleW(w.id, !w.active)} className="text-[11px] text-text-3 hover:underline">{w.active ? "скрий" : "върни"}</button>

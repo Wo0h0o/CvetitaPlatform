@@ -21,10 +21,10 @@ export function cexVerify(token: string | undefined | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function getCexWorker(req: NextRequest): Promise<{ id: number; name: string } | null> {
+export async function getCexWorker(req: NextRequest): Promise<{ id: number; name: string; is_supervisor: boolean } | null> {
   const id = cexVerify(req.cookies.get(CEX_COOKIE)?.value);
   if (!id) return null;
-  const { data } = await supabaseAdmin.from("prod_workers").select("id, name, active").eq("id", id).maybeSingle();
+  const { data } = await supabaseAdmin.from("prod_workers").select("id, name, active, is_supervisor").eq("id", id).maybeSingle();
   if (!data || !data.active) return null;
-  return { id: data.id, name: data.name };
+  return { id: data.id, name: data.name, is_supervisor: !!data.is_supervisor };
 }
