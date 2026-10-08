@@ -25,6 +25,18 @@ const ECB_HIST_FULL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_LOOKBACK_DAYS = 7; // walk back across weekends/holidays
 
+/**
+ * Managed (non-ECB) currencies. The ECB reference feed does not publish the
+ * Serbian dinar, so without this a store_rs order would fall back to rate=1.0
+ * and show ~117x inflated in EUR. RSD is a managed float the NBS holds in a
+ * very tight band (~117.0–117.6 / EUR for years), so a fixed peg is accurate
+ * to well under 1%. Add other non-ECB currencies here if new markets need them;
+ * upgrade to a live source (e.g. NBS) only if volume ever justifies it.
+ */
+const MANAGED_RATES: Record<string, number> = {
+  RSD: 117.2,
+};
+
 export interface DailyRates {
   date: string; // YYYY-MM-DD
   rates: Record<string, number>; // currency → units per 1 EUR
@@ -38,6 +50,7 @@ export interface DailyRates {
 export async function getRateToEur(currency: string, date: Date): Promise<number> {
   const cur = currency.toUpperCase();
   if (cur === "EUR") return 1.0;
+  if (MANAGED_RATES[cur] !== undefined) return MANAGED_RATES[cur];
 
   const target = isoDate(date);
 
