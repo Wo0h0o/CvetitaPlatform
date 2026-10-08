@@ -66,6 +66,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // „cex" е публичната PIN страница за производствените колеги (без Supabase акаунт).
-    "/((?!login|cex|api|_next/static|_next/image|favicon).*)",
+    // `.*\\.` изключва статичните файлове (png/svg/css/js…), за да не ги пренасочва към login.
+    "/((?!login|cex|api|_next/static|_next/image|favicon|.*\\.).*)",
   ],
 };
