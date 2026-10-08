@@ -46,7 +46,9 @@ const cache = new Map<string, CacheEntry>();
 /** Drop cached results. Call after seeding or binding changes. */
 export function invalidateMarketResolverCache(marketCode?: string): void {
   if (marketCode) {
-    cache.delete(marketCode.toLowerCase());
+    const k = marketCode.toLowerCase();
+    cache.delete(k);
+    cache.delete(`${k}:soft`);
   } else {
     cache.clear();
   }
@@ -77,10 +79,18 @@ type BindingRow = {
  *
  * Throws if no active store or no primary meta_ads binding for the market.
  */
-export async function resolveMarket(marketCode: string): Promise<ResolvedMarket> {
+export async function resolveMarket(
+  marketCode: string,
+  opts: { requireMetaBinding?: boolean } = {}
+): Promise<ResolvedMarket> {
+  const requireMetaBinding = opts.requireMetaBinding ?? true;
   const key = marketCode.toLowerCase();
 
-  const cached = cache.get(key);
+  // Strict and soft resolutions differ only for markets WITHOUT a meta
+  // binding (strict throws, soft returns an empty-binding card), so cache
+  // them under separate keys to avoid a soft result leaking to a strict caller.
+  const cacheKey = requireMetaBinding ? key : `${key}:soft`;
+  const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.result;
   }
@@ -136,7 +146,11 @@ export async function resolveMarket(marketCode: string): Promise<ResolvedMarket>
     }
   }
 
-  if (!primaryId) {
+  // Shopify-only markets (e.g. si/cz/rs — selling but no Meta ad account)
+  // have no meta_ads binding. Strict callers (Meta drill-downs) still treat
+  // that as an error; the home page resolves soft so the store renders a card
+  // with its Shopify revenue and zeroed Meta spend/ROAS.
+  if (!primaryId && requireMetaBinding) {
     throw new Error(`No primary meta_ads binding for market '${key}'`);
   }
 
@@ -149,7 +163,7 @@ export async function resolveMarket(marketCode: string): Promise<ResolvedMarket>
     bindings,
   };
 
-  cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+  cache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
   return result;
 }
 
@@ -157,7 +171,7 @@ export async function resolveMarket(marketCode: string): Promise<ResolvedMarket>
 // Convenience: resolve all three home-page markets in parallel
 // ============================================================
 
-export const HOME_MARKET_CODES = ["bg", "gr", "ro", "de", "it", "uk", "sk", "hu"] as const;
+export const HOME_MARKET_CODES = ["bg", "gr", "ro", "de", "it", "uk", "sk", "hu", "si", "cz", "rs"] as const;
 export type HomeMarketCode = (typeof HOME_MARKET_CODES)[number];
 
 /**
@@ -173,8 +187,11 @@ export type HomeMarketCode = (typeof HOME_MARKET_CODES)[number];
  * against HOME_MARKET_CODES.
  */
 export async function resolveAllHomeMarkets(): Promise<ResolvedMarket[]> {
+  // Soft resolve: Shopify-only markets (si/cz/rs) have no Meta binding but must
+  // still appear as cards with their Shopify revenue. A market only drops out
+  // if it has no active store at all.
   const results = await Promise.allSettled(
-    HOME_MARKET_CODES.map((code) => resolveMarket(code))
+    HOME_MARKET_CODES.map((code) => resolveMarket(code, { requireMetaBinding: false }))
   );
   const resolved: ResolvedMarket[] = [];
   for (let i = 0; i < results.length; i++) {
